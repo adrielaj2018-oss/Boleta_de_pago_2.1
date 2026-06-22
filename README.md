@@ -1,15 +1,32 @@
-# Nisira GCH Mobile
+# P&A Mobile
 
-Aplicativo Flask listo para Render en solo 5 archivos.
+Aplicativo móvil estilo P&A para Render.
 
-Usuario demo: `11223344`
+Incluye en un solo `app.py`:
+
+- Splash screen P&A.
+- Login.
+- Home dashboard.
+- Asistencia con ubicación y reloj táctil tipo wheel picker.
+- Documentos.
+- Firma digital con canvas.
+- Perfil.
+
+## Usuario demo
+
+Usuario: `11223344`  
 Contraseña: `123456`
 
-Subir a GitHub:
-- app.py
-- Procfile
-- requirements.txt
-- runtime.txt
-- README.md
+## Render
 
-Start command en Render: `gunicorn app:app`
+Build command:
+
+```bash
+pip install -r requirements.txt
+```
+
+Start command:
+
+```bash
+gunicorn app:app
+```
