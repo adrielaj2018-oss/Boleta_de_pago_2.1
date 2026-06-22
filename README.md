@@ -1,10 +1,6 @@
-# P&A Mobile
+# P&A Mobile V4
 
-Aplicativo P&A Mobile para asistencia, documentos, firma digital y configuración.
+Aplicativo Flask en 5 archivos para Render.
 
-## Render
-Build Command: `pip install -r requirements.txt`
-Start Command: `gunicorn app:app`
-
-Usuario demo: `11223344`
-Contraseña: `123456`
+Usuario demo: 11223344
+Contraseña: 123456
