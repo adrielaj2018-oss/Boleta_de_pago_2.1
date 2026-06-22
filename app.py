@@ -2014,16 +2014,25 @@ def _pin_conductor(dni):
 @app.route('/transporte')
 @login_required
 def transporte():
+    hoy = today_str()
     rutas = rows_to_dict(execute("""SELECT r.*, v.placa, v.tipo AS vehiculo_tipo, v.capacidad, c.nombres AS conductor
                                    FROM transporte_rutas r
                                    LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
                                    LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
-                                   ORDER BY r.fecha DESC, r.id DESC LIMIT 20""", fetchall=True))
+                                   ORDER BY CASE WHEN r.fecha=? THEN 0 ELSE 1 END, r.fecha DESC, r.id DESC LIMIT 12""", (hoy,), fetchall=True))
+    conductores_rows = rows_to_dict(execute("""SELECT * FROM transporte_conductores ORDER BY id DESC LIMIT 6""", fetchall=True))
+    vehiculos_rows = rows_to_dict(execute("""SELECT * FROM transporte_vehiculos ORDER BY id DESC LIMIT 6""", fetchall=True))
     conductores = scalar('SELECT COUNT(*) AS c FROM transporte_conductores')
     vehiculos = scalar('SELECT COUNT(*) AS c FROM transporte_vehiculos')
-    hoy = today_str()
     rutas_hoy = scalar('SELECT COUNT(*) AS c FROM transporte_rutas WHERE fecha=?', (hoy,))
+    rutas_en_ruta = scalar("SELECT COUNT(*) AS c FROM transporte_rutas WHERE fecha=? AND UPPER(COALESCE(estado,'')) IN ('EN RUTA','EN_RUTA')", (hoy,))
+    rutas_pend = scalar("SELECT COUNT(*) AS c FROM transporte_rutas WHERE fecha=? AND UPPER(COALESCE(estado,'')) IN ('PROGRAMADA','PENDIENTE')", (hoy,))
+    rutas_fin = scalar("SELECT COUNT(*) AS c FROM transporte_rutas WHERE fecha=? AND UPPER(COALESCE(estado,'')) IN ('FINALIZADA','CERRADA')", (hoy,))
     abordajes = scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE fecha=?', (hoy,))
+    no_subieron = scalar("""SELECT COUNT(*) AS c FROM transporte_ruta_esperados e
+                           LEFT JOIN transporte_pasajeros p ON p.ruta_id=e.ruta_id AND p.dni=e.dni
+                           LEFT JOIN transporte_rutas r ON r.id=e.ruta_id
+                           WHERE r.fecha=? AND p.id IS NULL""", (hoy,))
     req_conductores = scalar("""SELECT COUNT(*) AS c FROM transporte_conductores
                                WHERE (venc_licencia IS NOT NULL AND venc_licencia<>'' AND venc_licencia<=?)
                                   OR (venc_cert_medico IS NOT NULL AND venc_cert_medico<>'' AND venc_cert_medico<=?)
@@ -2031,54 +2040,96 @@ def transporte():
     req_vehiculos = scalar("""SELECT COUNT(*) AS c FROM transporte_vehiculos
                               WHERE (soat_venc IS NOT NULL AND soat_venc<>'' AND soat_venc<=?)
                                  OR (revision_tecnica_venc IS NOT NULL AND revision_tecnica_venc<>'' AND revision_tecnica_venc<=?)""", (hoy,hoy))
+    vencidos = []
+    for c in conductores_rows:
+        for campo, nombre in [('venc_licencia','Licencia de conducir'),('venc_cert_medico','Certificado médico'),('venc_sctr','SCTR')]:
+            v = c.get(campo)
+            if v and str(v) <= hoy:
+                vencidos.append({'tipo':nombre,'detalle':c.get('categoria') or c.get('licencia') or '-', 'persona':(c.get('nombres') or '-') + ' (' + (c.get('dni') or '') + ')', 'vencimiento':v, 'estado':'VENCIDO'})
+    for v in vehiculos_rows:
+        for campo, nombre in [('soat_venc','SOAT'),('revision_tecnica_venc','Revisión técnica')]:
+            fv = v.get(campo)
+            if fv and str(fv) <= hoy:
+                vencidos.append({'tipo':nombre,'detalle':v.get('placa') or '-', 'persona':(v.get('tipo') or 'Vehículo') + ' ' + (v.get('placa') or ''), 'vencimiento':fv, 'estado':'VENCIDO'})
+    capacidad_total = sum(int(r.get('capacidad') or 0) for r in rutas if str(r.get('fecha')) == hoy)
+    capacidad_txt = f"{abordajes} / {capacidad_total}" if capacidad_total else str(abordajes)
     body = """
     <style>
-      .trans-section{margin:10px 0 6px;font-size:11px;font-weight:900;color:#166534;letter-spacing:.3px;text-transform:uppercase}
-      .trans-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-      .trans-btn{border:1px solid #b9d7bd;border-radius:10px;background:#fff;color:#08713b;text-decoration:none;font-weight:900;text-align:center;padding:12px 6px;min-height:73px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(0,0,0,.08)}
-      .trans-btn.primary{background:#2f773b;color:#fff;border-color:#2f773b}.trans-btn.warn{border-color:#f4b4b4;color:#b42318}.trans-btn i{font-size:25px;margin-bottom:4px}.trans-kpi{background:#e7f7ea;border:1px solid #8ad092;border-radius:8px;padding:7px 9px;font-weight:900;color:#006b2e;text-align:center}.trans-kpi label{display:block;font-size:8px;color:#5f7d65}.trans-list-title{font-size:12px;font-weight:900;color:#166534;margin:10px 8px 4px}
+      .shell{max-width:1020px!important;padding:0!important}.phone-wrap{max-width:1000px!important;width:100%!important}.page-card{max-width:1000px!important;width:100%!important;border-radius:0!important;border:0!important;box-shadow:none!important}.trans-head{background:linear-gradient(135deg,#075d2a,#2f773b);color:#fff;height:72px;display:flex;align-items:center;gap:16px;padding:0 24px;box-shadow:0 4px 12px rgba(0,0,0,.12)}.trans-head .back{color:#fff;text-decoration:none;font-size:34px;line-height:1}.trans-head .title{font-size:22px;font-weight:900;letter-spacing:.3px;display:flex;align-items:center;gap:12px;flex:1}.trans-head .title i{font-size:34px}.trans-config{border:1px solid rgba(255,255,255,.8);border-radius:9px;color:#fff;text-decoration:none;font-size:15px;font-weight:900;padding:9px 14px;display:flex;align-items:center;gap:7px}.trans-config i{font-size:22px}.trans-wrap{padding:18px 20px 28px;background:#fff}.trans-section{margin:10px 6px 9px;font-size:16px;font-weight:900;color:#065f2a;letter-spacing:.3px;text-transform:uppercase}.trans-panel{background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.08);padding:12px;margin-bottom:16px}.trans-menu{display:grid;grid-template-columns:repeat(4,1fr);gap:0}.trans-action{min-height:94px;text-decoration:none;color:#111827;font-weight:800;display:flex;align-items:center;justify-content:center;gap:10px;flex-direction:column;border-right:1px solid #e5e7eb}.trans-action:last-child{border-right:0}.trans-action i{font-size:31px;color:#08713b}.trans-action.active{background:linear-gradient(135deg,#075d2a,#2f773b);color:#fff;border-radius:9px;box-shadow:0 5px 13px rgba(0,0,0,.16)}.trans-action.active i{color:#fff}.trans-action.warn{color:#b91c1c}.trans-action.warn i{color:#dc2626}.trans-table{width:100%;border-collapse:collapse;font-size:12px}.trans-table th{font-size:11px;color:#374151;font-weight:900;background:#fafafa;border-bottom:1px solid #e5e7eb;padding:9px 10px;text-align:left}.trans-table td{border-bottom:1px solid #edf0ed;padding:9px 10px;vertical-align:middle}.trans-table tr:last-child td{border-bottom:0}.panel-title{display:flex;align-items:center;justify-content:space-between;margin:2px 4px 10px}.panel-title b{font-size:15px;color:#065f2a;font-weight:900}.panel-title a{font-size:12px;color:#08713b;text-decoration:none;font-weight:900}.status-mini{display:inline-block;border-radius:6px;padding:4px 8px;font-size:10px;font-weight:900;background:#dcfce7;color:#166534;border:1px solid #86efac}.status-pend{background:#fff7ed;color:#ea580c;border-color:#fdba74}.status-fin{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd}.status-bad{background:#fee2e2;color:#dc2626;border-color:#fca5a5}.kpi-row{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:12px}.kpi-box{border:1px solid #9fcfa9;border-radius:7px;background:#fbfffb;text-align:center;padding:8px 6px;color:#065f2a;font-weight:900}.kpi-box label{display:block;font-size:10px;font-weight:800;color:#28723c}.kpi-box strong{font-size:21px}.control-row{display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:14px}.syncbar{display:flex;align-items:center;justify-content:space-between;background:#f2fbf4;border-radius:10px;margin-top:18px;padding:11px 18px;color:#065f2a;font-size:12px;font-weight:800}.empty-line{text-align:center;color:#6b7280;padding:16px}.btn-icon{border:1px solid #8bbf95;border-radius:6px;color:#08713b;text-decoration:none;padding:4px 7px;font-weight:900}.mobile-only-note{display:none}@media(max-width:760px){.shell{max-width:430px!important;padding:4px 6px!important}.phone-wrap,.page-card{max-width:390px!important}.trans-head{height:68px;padding:0 12px;border-radius:12px 12px 0 0}.trans-head .title{font-size:15px;justify-content:center}.trans-head .title i{font-size:27px}.trans-config{font-size:0;padding:8px;border-radius:8px}.trans-config i{font-size:21px}.trans-wrap{padding:11px 10px}.trans-section{font-size:13px;margin-left:0}.trans-panel{padding:9px;border-radius:11px}.trans-menu{grid-template-columns:repeat(2,1fr);gap:8px}.trans-action{border:1px solid #dbe7de!important;border-radius:10px;min-height:78px;font-size:12px;box-shadow:0 4px 10px rgba(0,0,0,.05)}.trans-action i{font-size:25px}.table-scroll{overflow-x:auto}.trans-table{min-width:720px}.kpi-row{grid-template-columns:repeat(2,1fr)}.control-row{grid-template-columns:1fr}.syncbar{font-size:11px;padding:9px 10px}.mobile-only-note{display:block;font-size:11px;color:#6b7280;margin-top:6px}}
     </style>
     <div class="phone-wrap desktop-pad"><div class="page-card">
-      <div class="panel-green"><a class="text-white text-decoration-none float-start" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><i class="bi bi-bus-front"></i><h4>MÓDULO TRANSPORTE</h4></div>
-      <div class="floating-card" style="margin:-24px 9px 10px">
-        <div class="trans-section">Operación</div>
-        <div class="trans-grid">
-          <a class="trans-btn primary" href="{{url_for('transporte_rutas')}}"><i class="bi bi-calendar2-check"></i>Rutas de hoy</a>
-          <a class="trans-btn primary" href="{{url_for('conductor_movil_login')}}"><i class="bi bi-phone"></i>Móvil conductor</a>
-          <a class="trans-btn" href="{{url_for('transporte')}}#rutas"><i class="bi bi-qr-code-scan"></i>Abordaje trabajadores</a>
-          <a class="trans-btn" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-geo-alt"></i>GPS / seguimiento</a>
-        </div>
-        <div class="trans-section">Maestros</div>
-        <div class="trans-grid">
-          <a class="trans-btn" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i>Conductores</a>
-          <a class="trans-btn" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i>Vehículos</a>
-          <a class="trans-btn" href="{{url_for('transporte_carga_masiva')}}"><i class="bi bi-upload"></i>Carga masiva</a>
-          <a class="trans-btn" href="{{url_for('transporte_conductores')}}"><i class="bi bi-key"></i>PIN conductor</a>
-        </div>
-        <div class="trans-section">Control</div>
-        <div class="trans-grid">
-          <a class="trans-btn warn" href="{{url_for('transporte_requisitos')}}"><i class="bi bi-exclamation-triangle"></i>Requisitos vencidos</a>
-          <a class="trans-btn" href="{{url_for('exportar_transporte_pasajeros')}}"><i class="bi bi-file-earmark-excel"></i>Reporte abordajes</a>
-        </div>
-        <div class="worker-grid mt-2">
-          <div class="trans-kpi"><label>RUTAS HOY</label>{{rutas_hoy}}</div>
-          <div class="trans-kpi"><label>CONDUCTORES</label>{{conductores}}</div>
-          <div class="trans-kpi"><label>VEHÍCULOS</label>{{vehiculos}}</div>
-        </div>
-        <div class="worker-grid mt-2">
-          <div class="trans-kpi"><label>ABORDARON HOY</label>{{abordajes}}</div>
-          <div class="trans-kpi"><label>COND. VENC.</label>{{req_conductores}}</div>
-          <div class="trans-kpi"><label>VEH. VENC.</label>{{req_vehiculos}}</div>
-        </div>
+      <div class="trans-head">
+        <a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a>
+        <div class="title"><i class="bi bi-bus-front"></i> MÓDULO TRANSPORTE</div>
+        <a class="trans-config" href="{{url_for('transporte_config')}}"><i class="bi bi-gear"></i> Config.</a>
       </div>
-      <div class="trans-list-title" id="rutas">Rutas programadas</div>
-      {% for r in rutas %}<div class="worker-card"><div class="worker-title"><div>{{r.fecha}} {{r.hora_salida or ''}}<br><b>{{r.nombre or 'RUTA'}}</b></div><div class="text-end">{{r.placa or 'SIN BUS'}}<br><b>{{r.estado}}</b></div></div>
-        <div class="worker-grid"><div><label>CONDUCTOR</label><div class="small-value">{{r.conductor or '-'}}</div></div><div><label>ORIGEN</label><div class="small-value">{{r.origen or '-'}}</div></div><div><label>DESTINO</label><div class="small-value">{{r.destino or '-'}}</div></div></div>
-        <div class="d-grid gap-1 mt-2"><a class="btn btn-green btn-sm" href="{{url_for('transporte_ruta_detalle', ruta_id=r.id)}}"><i class="bi bi-qr-code-scan"></i> Abrir ruta / subir trabajadores</a></div>
-      </div>{% else %}<div class="worker-card text-center text-muted">Aún no hay rutas programadas.</div>{% endfor %}
-    </div></div>"""
-    return render_page(body, rutas=rutas, conductores=conductores, vehiculos=vehiculos, abordajes=abordajes, rutas_hoy=rutas_hoy, req_conductores=req_conductores, req_vehiculos=req_vehiculos)
+      <div class="trans-wrap">
+        <div class="trans-section">Operación</div>
+        <div class="trans-panel">
+          <div class="trans-menu">
+            <a class="trans-action active" href="{{url_for('transporte_rutas')}}"><i class="bi bi-calendar2-check"></i>Rutas de hoy</a>
+            <a class="trans-action" href="{{url_for('transporte')}}#rutas"><i class="bi bi-qr-code-scan"></i>Abordaje<br>trabajadores</a>
+            <a class="trans-action" href="{{url_for('conductor_movil_login')}}"><i class="bi bi-phone"></i>Móvil<br>conductor</a>
+            <a class="trans-action" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-geo-alt"></i>GPS /<br>seguimiento</a>
+          </div>
+          <div class="panel-title mt-3" id="rutas"><b>RUTAS DE HOY</b><a href="{{url_for('transporte_rutas')}}">Ver todas <i class="bi bi-chevron-right"></i></a></div>
+          <div class="table-scroll"><table class="trans-table"><thead><tr><th>Ruta</th><th>Fecha</th><th>Conductor</th><th>Vehículo</th><th>Origen → Destino</th><th>Salida prog.</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+          {% for r in rutas %}<tr><td>{{r.nombre or ('R-' ~ r.id)}}</td><td>{{r.fecha}}</td><td>{{r.conductor or '-'}}</td><td>{{r.placa or 'SIN BUS'}}<br><small>{{r.vehiculo_tipo or ''}} {{r.capacidad or ''}}</small></td><td>{{r.origen or '-'}} → {{r.destino or '-'}}</td><td>{{r.hora_salida or '-'}}</td><td><span class="status-mini {% if (r.estado or '')|upper in ['PROGRAMADA','PENDIENTE'] %}status-pend{% elif (r.estado or '')|upper in ['FINALIZADA','CERRADA'] %}status-fin{% endif %}">{{r.estado or 'PROGRAMADA'}}</span></td><td><a class="btn-icon" href="{{url_for('transporte_ruta_detalle', ruta_id=r.id)}}"><i class="bi bi-chevron-right"></i></a></td></tr>{% else %}<tr><td colspan="8" class="empty-line">Aún no hay rutas programadas.</td></tr>{% endfor %}
+          </tbody></table></div>
+          <div class="kpi-row"><div class="kpi-box"><label>Rutas programadas</label><strong>{{rutas_hoy}}</strong></div><div class="kpi-box"><label>En ruta</label><strong>{{rutas_en_ruta}}</strong></div><div class="kpi-box"><label>Pendientes</label><strong>{{rutas_pend}}</strong></div><div class="kpi-box"><label>Finalizadas</label><strong>{{rutas_fin}}</strong></div><div class="kpi-box"><label>Trabajadores abordados</label><strong>{{abordajes}}</strong></div><div class="kpi-box"><label>Capacidad ocupada</label><strong>{{capacidad_txt}}</strong></div></div>
+        </div>
 
+        <div class="trans-section">Maestros</div>
+        <div class="trans-panel">
+          <div class="trans-menu">
+            <a class="trans-action active" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i>Conductores</a>
+            <a class="trans-action" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i>Vehículos</a>
+            <a class="trans-action" href="{{url_for('transporte_carga_masiva')}}"><i class="bi bi-upload"></i>Carga masiva</a>
+            <a class="trans-action" href="{{url_for('transporte_conductores')}}"><i class="bi bi-key"></i>PIN conductor</a>
+          </div>
+          <div class="panel-title mt-3"><b>CONDUCTORES</b><a href="{{url_for('transporte_conductores')}}">Ver todos <i class="bi bi-chevron-right"></i></a></div>
+          <div class="table-scroll"><table class="trans-table"><thead><tr><th>DNI</th><th>Nombre completo</th><th>Teléfono</th><th>Licencia</th><th>Venc. licencia</th><th>Estado</th><th>PIN móvil</th><th>Acciones</th></tr></thead><tbody>
+          {% for c in conductores_rows %}<tr><td>{{c.dni}}</td><td>{{c.nombres}}</td><td>{{c.telefono or '-'}}</td><td>{{c.categoria or c.licencia or '-'}}</td><td>{{c.venc_licencia or '-'}}</td><td><span class="status-mini {% if c.estado and c.estado|upper != 'APTO' and c.estado|upper != 'ACTIVO' %}status-pend{% endif %}">{{c.estado or 'ACTIVO'}}</span></td><td>{{c.movil_pin or '-'}}</td><td><a class="btn-icon" href="{{url_for('transporte_reset_pin', conductor_id=c.id)}}"><i class="bi bi-key"></i></a></td></tr>{% else %}<tr><td colspan="8" class="empty-line">Sin conductores registrados.</td></tr>{% endfor %}
+          </tbody></table></div>
+          <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)"><div class="kpi-box"><label>Total conductores</label><strong>{{conductores}}</strong></div><div class="kpi-box"><label>Vehículos</label><strong>{{vehiculos}}</strong></div><div class="kpi-box"><label>Cond. vencidos</label><strong>{{req_conductores}}</strong></div><div class="kpi-box"><label>Veh. vencidos</label><strong>{{req_vehiculos}}</strong></div></div>
+        </div>
+
+        <div class="trans-section">Control</div>
+        <div class="trans-panel">
+          <div class="control-row">
+            <a class="trans-action warn" href="{{url_for('transporte_requisitos')}}"><i class="bi bi-exclamation-triangle"></i>Requisitos vencidos</a>
+            <a class="trans-action" href="{{url_for('exportar_transporte_pasajeros')}}"><i class="bi bi-file-earmark-excel"></i>Reporte abordajes</a>
+            <div class="kpi-row" style="grid-template-columns:repeat(4,1fr);margin-top:0"><div class="kpi-box"><label>Rutas hoy</label><strong>{{rutas_hoy}}</strong></div><div class="kpi-box"><label>Abordaron</label><strong>{{abordajes}}</strong></div><div class="kpi-box"><label>No subieron</label><strong>{{no_subieron}}</strong></div><div class="kpi-box"><label>Vencidos</label><strong>{{req_conductores + req_vehiculos}}</strong></div></div>
+          </div>
+          <div class="panel-title mt-3"><b>REQUISITOS VENCIDOS</b><a href="{{url_for('transporte_requisitos')}}">Ver todos <i class="bi bi-chevron-right"></i></a></div>
+          <div class="table-scroll"><table class="trans-table"><thead><tr><th>Tipo</th><th>Detalle</th><th>Conductor / Vehículo</th><th>Vencimiento</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+          {% for v in vencidos[:8] %}<tr><td>{{v.tipo}}</td><td>{{v.detalle}}</td><td>{{v.persona}}</td><td>{{v.vencimiento}}</td><td><span class="status-mini status-bad">{{v.estado}}</span></td><td><a class="btn-icon" href="{{url_for('transporte_requisitos')}}"><i class="bi bi-eye"></i></a></td></tr>{% else %}<tr><td colspan="6" class="empty-line">No hay requisitos vencidos.</td></tr>{% endfor %}
+          </tbody></table></div>
+        </div>
+        <div class="syncbar"><span><i class="bi bi-clock"></i> Última sincronización: {{hoy}} {{hora_sync}}</span><a class="text-success text-decoration-none fw-bold" href="{{url_for('transporte')}}"><i class="bi bi-arrow-repeat"></i> Sincronizar ahora</a></div>
+      </div>
+    </div></div>"""
+    return render_page(body, rutas=rutas, conductores_rows=conductores_rows, vehiculos_rows=vehiculos_rows,
+                       conductores=conductores, vehiculos=vehiculos, abordajes=abordajes, rutas_hoy=rutas_hoy,
+                       rutas_en_ruta=rutas_en_ruta, rutas_pend=rutas_pend, rutas_fin=rutas_fin, no_subieron=no_subieron,
+                       req_conductores=req_conductores, req_vehiculos=req_vehiculos, vencidos=vencidos,
+                       capacidad_txt=capacidad_txt, hoy=hoy, hora_sync=datetime.now().strftime('%H:%M'))
+
+@app.route('/transporte/config')
+@login_required
+def transporte_config():
+    body = """
+    <style>.shell{max-width:520px!important}.phone-wrap,.page-card{max-width:500px!important}.cfg-head{background:linear-gradient(135deg,#075d2a,#2f773b);color:#fff;padding:14px 16px;border-radius:12px 12px 0 0;display:flex;align-items:center;gap:10px;font-weight:900;font-size:18px}.cfg-list{background:#fff;border:1px solid #e5e7eb;border-top:0;border-radius:0 0 12px 12px;box-shadow:0 6px 18px rgba(0,0,0,.08)}.cfg-item{display:flex;align-items:center;gap:14px;padding:15px 18px;border-bottom:1px solid #edf0ed;color:#1f2937;text-decoration:none;font-weight:800}.cfg-item:last-child{border-bottom:0}.cfg-item i{font-size:23px;color:#08713b}.cfg-item .chev{margin-left:auto;color:#111}</style>
+    <div class="phone-wrap desktop-pad"><div class="page-card"><div class="cfg-head"><a class="text-white text-decoration-none" href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><i class="bi bi-gear"></i> CONFIGURACIONES</div><div class="cfg-list">
+      <a class="cfg-item" href="{{url_for('transporte')}}"><i class="bi bi-sliders"></i>Parámetros del módulo <i class="bi bi-chevron-right chev"></i></a>
+      <a class="cfg-item" href="{{url_for('transporte_conductores')}}"><i class="bi bi-phone"></i>Relación conductor - móvil <i class="bi bi-chevron-right chev"></i></a>
+      <a class="cfg-item" href="{{url_for('transporte')}}"><i class="bi bi-clipboard2-check"></i>Causas de no abordaje <i class="bi bi-chevron-right chev"></i></a>
+      <a class="cfg-item" href="{{url_for('transporte')}}"><i class="bi bi-geo-alt"></i>Zonas / paraderos <i class="bi bi-chevron-right chev"></i></a>
+      <a class="cfg-item" href="{{url_for('transporte')}}"><i class="bi bi-bell"></i>Notificaciones <i class="bi bi-chevron-right chev"></i></a>
+      <a class="cfg-item" href="{{url_for('transporte')}}"><i class="bi bi-cloud-arrow-up"></i>Respaldos <i class="bi bi-chevron-right chev"></i></a>
+      <a class="cfg-item" href="{{url_for('transporte')}}"><i class="bi bi-info-circle"></i>Acerca del módulo <i class="bi bi-chevron-right chev"></i></a>
+    </div></div></div>"""
+    return render_page(body)
 
 @app.route('/transporte/conductores', methods=['GET','POST'])
 @login_required
