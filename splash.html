@@ -1,9 +1,0 @@
-{% extends 'base.html' %}
-{% from 'partials.html' import logo %}
-{% block content %}
-<div class="splash">
-  <div class="splash-overlay"></div>
-  <div class="splash-logo">{{ logo() }}</div>
-</div>
-<script>setTimeout(()=>location.href="{{ url_for('home') }}", 1200)</script>
-{% endblock %}
