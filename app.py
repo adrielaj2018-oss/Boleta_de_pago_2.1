@@ -2771,6 +2771,175 @@ try:
 except Exception as e:
     print('ERROR inicializando base de datos:', e)
 
+
+
+# ========================= PATCH UI TRANSPORTE MÓVIL SUBMÓDULOS =========================
+# Implementación compacta solicitada: portada delgada + submódulos internos.
+
+def _tm_css():
+    return """
+    <style>
+      .shell{max-width:430px!important;margin:0 auto!important;padding:4px 6px!important;background:#fff!important;overflow-x:hidden!important}
+      .phone-wrap,.page-card{max-width:390px!important;width:100%!important;margin:0 auto!important;border-radius:14px!important;overflow:hidden!important}
+      .tm-head{height:132px;background:#28783b;color:white;border-radius:12px 12px 0 0;position:relative;text-align:center;padding:16px 12px 0;box-shadow:0 4px 12px rgba(0,0,0,.12)}
+      .tm-back{position:absolute;left:12px;top:24px;color:#fff;text-decoration:none;font-size:35px;line-height:1}.tm-bus{font-size:34px;line-height:1;margin-top:4px}.tm-title{font-weight:900;font-size:13px;margin-top:8px;letter-spacing:.2px}.tm-config{position:absolute;right:12px;top:12px;color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.75);border-radius:9px;padding:7px 9px;font-weight:900;font-size:12px;display:flex;gap:5px;align-items:center}.tm-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 16px rgba(0,0,0,.10);padding:12px;margin:-38px 9px 10px;position:relative;z-index:4}.tm-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.tm-tab{height:74px;border-radius:10px;background:#2f773b;color:#fff;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;font-size:13px;box-shadow:0 7px 14px rgba(0,0,0,.12)}.tm-tab i{font-size:23px;margin-bottom:5px}.tm-section{font-size:12px;color:#06622d;font-weight:900;margin:13px 2px 7px;text-transform:uppercase}.tm-list{border:1px solid #e5e7eb;border-radius:9px;overflow:hidden;background:#fff}.tm-item{display:flex;align-items:center;gap:11px;padding:12px 13px;border-bottom:1px solid #edf0ed;color:#1f2937;text-decoration:none;font-weight:800;font-size:13px}.tm-item:last-child{border-bottom:0}.tm-item i{color:#08713b;font-size:20px;width:23px;text-align:center}.tm-item .chev{margin-left:auto;color:#111;font-size:17px;width:auto}.tm-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:10px}.tm-kpi{border:1px solid #9fcea8;background:#f7fff8;border-radius:8px;text-align:center;color:#06622d;padding:8px 3px;font-weight:900}.tm-kpi label{display:block;font-size:9px;line-height:1.1}.tm-kpi strong{font-size:19px;line-height:1.15}.tm-page{background:#fff;border:1px solid #e5e7eb;border-radius:0 0 12px 12px;box-shadow:0 6px 18px rgba(0,0,0,.08);margin-top:-38px;position:relative;z-index:4;padding:12px}.tm-topbar{height:56px;background:linear-gradient(135deg,#075d2a,#2f773b);color:#fff;display:flex;align-items:center;gap:10px;padding:0 12px;border-radius:12px 12px 0 0;font-weight:900}.tm-topbar a{color:#fff;text-decoration:none;font-size:28px}.tm-topbar .ttl{flex:1;text-align:center;margin-right:26px}.tm-search-row{display:flex;gap:8px;margin:10px 0}.tm-search{flex:1;border:1px solid #e5e7eb;border-radius:8px;height:37px;padding:0 10px;font-weight:700;font-size:12px}.tm-btn{background:#08713b;color:#fff!important;border:0;border-radius:8px;font-weight:900;text-decoration:none;padding:8px 11px;font-size:12px}.tm-btn-outline{background:#fff;color:#08713b!important;border:1px solid #08713b;border-radius:8px;font-weight:900;text-decoration:none;padding:8px 11px;font-size:12px}.tm-table{width:100%;border-collapse:collapse;font-size:11px}.tm-table th{background:#fafafa;color:#374151;font-weight:900;border-bottom:1px solid #e5e7eb;padding:8px 6px}.tm-table td{border-bottom:1px solid #edf0ed;padding:8px 6px;vertical-align:middle}.tm-table tr:last-child td{border-bottom:0}.tm-scroll{overflow-x:auto}.tm-scroll .tm-table{min-width:430px}.tm-badge{display:inline-block;padding:3px 6px;border-radius:5px;background:#dcfce7;color:#166534;font-weight:900;font-size:9px}.tm-warn{background:#fff7ed!important;color:#ea580c!important}.tm-bad{background:#fee2e2!important;color:#dc2626!important}.tm-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:9px;padding:10px;font-size:12px;font-weight:700}.tm-mini-cards{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}.tm-mini{border:1px solid #e5e7eb;border-radius:10px;background:#fff;padding:10px;color:#065f2a;font-weight:900}.tm-mini small{display:block;color:#6b7280;font-weight:700}.tm-action-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.tm-scanner-box{height:150px;border:1px solid #e5e7eb;border-radius:10px;display:grid;place-items:center;color:#08713b;background:#fbfffb;text-align:center;font-weight:900}.tm-map{height:220px;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);border-radius:10px;display:grid;place-items:center;color:#08713b;font-weight:900}.tm-form-card{border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin:8px 0;background:#fbfffb}.tm-form-card label{font-size:10px;font-weight:900;color:#2f773b;margin-bottom:3px}.tm-form-card .form-control,.tm-form-card .form-select{height:34px;font-size:12px;border-radius:8px}.tm-hide{display:none}
+    </style>
+    """
+
+def _tm_top(title, back='transporte', icon='bi-bus-front'):
+    return f"""<div class='phone-wrap desktop-pad'><div class='tm-topbar'><a href='{{{{url_for('{back}')}}}}'><i class='bi bi-chevron-left'></i></a><div class='ttl'><i class='bi {icon}'></i> {title}</div></div><div class='tm-page'>"""
+
+def _estado_badge(estado):
+    e=(estado or 'ACTIVO').upper()
+    cls='tm-badge'
+    if 'VENC' in e or 'INACT' in e: cls+=' tm-bad'
+    elif 'PEND' in e or 'POR' in e: cls+=' tm-warn'
+    return f"<span class='{cls}'>{e}</span>"
+
+@login_required
+def transporte_mobile_home():
+    hoy=today_str()
+    conductores=scalar('SELECT COUNT(*) AS c FROM transporte_conductores')
+    vehiculos=scalar('SELECT COUNT(*) AS c FROM transporte_vehiculos')
+    rutas_hoy=scalar('SELECT COUNT(*) AS c FROM transporte_rutas WHERE fecha=?',(hoy,))
+    abordaron=scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE fecha=?',(hoy,))
+    no_subieron=scalar("""SELECT COUNT(*) AS c FROM transporte_ruta_esperados e LEFT JOIN transporte_pasajeros p ON p.ruta_id=e.ruta_id AND p.dni=e.dni LEFT JOIN transporte_rutas r ON r.id=e.ruta_id WHERE r.fecha=? AND p.id IS NULL""",(hoy,))
+    vencidos=scalar("""SELECT COUNT(*) AS c FROM transporte_conductores WHERE (venc_licencia IS NOT NULL AND venc_licencia<>'' AND venc_licencia<=?) OR (venc_cert_medico IS NOT NULL AND venc_cert_medico<>'' AND venc_cert_medico<=?) OR (venc_sctr IS NOT NULL AND venc_sctr<>'' AND venc_sctr<=?)""",(hoy,hoy,hoy)) + scalar("""SELECT COUNT(*) AS c FROM transporte_vehiculos WHERE (soat_venc IS NOT NULL AND soat_venc<>'' AND soat_venc<=?) OR (revision_tecnica_venc IS NOT NULL AND revision_tecnica_venc<>'' AND revision_tecnica_venc<=?)""",(hoy,hoy))
+    body=_tm_css()+"""
+    <div class="phone-wrap desktop-pad"><div class="page-card">
+      <div class="tm-head">
+        <a class="tm-back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a>
+        <a class="tm-config" href="{{url_for('transporte_config')}}"><i class="bi bi-gear"></i> Config.</a>
+        <div class="tm-bus"><i class="bi bi-bus-front"></i></div><div class="tm-title">MÓDULO TRANSPORTE</div>
+      </div>
+      <div class="tm-card">
+        <div class="tm-tabs">
+          <a class="tm-tab" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i>Conductores</a>
+          <a class="tm-tab" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i>Buses</a>
+          <a class="tm-tab" href="{{url_for('transporte_rutas')}}"><i class="bi bi-geo-alt"></i>Rutas</a>
+        </div>
+        <div class="tm-section">Operación</div><div class="tm-list">
+          <a class="tm-item" href="{{url_for('transporte_abordaje_home')}}"><i class="bi bi-qr-code-scan"></i>Abordaje trabajadores<i class="bi bi-chevron-right chev"></i></a>
+          <a class="tm-item" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-geo-alt"></i>GPS / seguimiento<i class="bi bi-chevron-right chev"></i></a>
+          <a class="tm-item" href="{{url_for('transporte_rutas')}}"><i class="bi bi-calendar2-check"></i>Rutas de hoy<i class="bi bi-chevron-right chev"></i></a>
+          <a class="tm-item" href="{{url_for('conductor_movil_login')}}"><i class="bi bi-phone"></i>Móvil conductor<i class="bi bi-chevron-right chev"></i></a>
+        </div>
+        <div class="tm-section">Maestros</div><div class="tm-list">
+          <a class="tm-item" href="{{url_for('transporte_carga_masiva')}}"><i class="bi bi-upload"></i>Carga masiva<i class="bi bi-chevron-right chev"></i></a>
+          <a class="tm-item" href="{{url_for('transporte_pin_conductor')}}"><i class="bi bi-key"></i>PIN conductor<i class="bi bi-chevron-right chev"></i></a>
+        </div>
+        <div class="tm-section">Control</div><div class="tm-list">
+          <a class="tm-item" href="{{url_for('exportar_transporte_pasajeros')}}"><i class="bi bi-file-earmark-excel"></i>Reporte abordajes<i class="bi bi-chevron-right chev"></i></a>
+          <a class="tm-item" href="{{url_for('transporte_requisitos')}}"><i class="bi bi-exclamation-triangle"></i>Requisitos vencidos<i class="bi bi-chevron-right chev"></i></a>
+        </div>
+        <div class="tm-kpis"><div class="tm-kpi"><label>Rutas hoy</label><strong>{{rutas_hoy}}</strong></div><div class="tm-kpi"><label>Abordaron hoy</label><strong>{{abordaron}}</strong></div><div class="tm-kpi"><label>No subieron</label><strong>{{no_subieron}}</strong></div><div class="tm-kpi"><label>Conductores</label><strong>{{conductores}}</strong></div><div class="tm-kpi"><label>Buses</label><strong>{{vehiculos}}</strong></div><div class="tm-kpi"><label>Vencidos</label><strong>{{vencidos}}</strong></div></div>
+      </div>
+    </div></div>"""
+    return render_page(body, conductores=conductores, vehiculos=vehiculos, rutas_hoy=rutas_hoy, abordaron=abordaron, no_subieron=no_subieron, vencidos=vencidos)
+
+@login_required
+def transporte_conductores_mobile():
+    if request.method=='POST':
+        dni=limpiar_dni(request.form.get('dni')); nombres=limpiar_texto(request.form.get('nombres'))
+        if len(dni)!=8 or not nombres:
+            flash('Ingrese DNI de 8 dígitos y nombres del conductor.','danger'); return redirect(url_for('transporte_conductores'))
+        pin=(request.form.get('movil_pin') or _pin_conductor(dni)).strip()
+        vals=(dni,nombres,request.form.get('telefono',''),limpiar_texto(request.form.get('licencia')),limpiar_texto(request.form.get('categoria')),request.form.get('venc_licencia',''),request.form.get('venc_cert_medico',''),request.form.get('venc_sctr',''),limpiar_texto(request.form.get('estado') or 'ACTIVO'),dni,pin,now_str())
+        try:
+            execute('INSERT INTO transporte_conductores(dni,nombres,telefono,licencia,categoria,venc_licencia,venc_cert_medico,venc_sctr,estado,movil_usuario,movil_pin,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', vals, commit=True)
+            flash(f'Conductor registrado. PIN: {pin}','success')
+        except Exception:
+            execute('UPDATE transporte_conductores SET nombres=?,telefono=?,licencia=?,categoria=?,venc_licencia=?,venc_cert_medico=?,venc_sctr=?,estado=?,movil_usuario=?,movil_pin=? WHERE dni=?', (nombres,vals[2],vals[3],vals[4],vals[5],vals[6],vals[7],vals[8],dni,pin,dni), commit=True)
+            flash('Conductor actualizado.','success')
+        return redirect(url_for('transporte_conductores'))
+    rows=rows_to_dict(execute('SELECT * FROM transporte_conductores ORDER BY id DESC LIMIT 80', fetchall=True))
+    total=len(rows); activos=sum(1 for r in rows if (r.get('estado') or '').upper() in ('ACTIVO','APTO',''))
+    venc=sum(1 for r in rows if any(r.get(c) and str(r.get(c))<today_str() for c in ('venc_licencia','venc_cert_medico','venc_sctr')))
+    body=_tm_css()+_tm_top('Conductores')+"""
+      <form method="post" class="tm-form-card"><div class="row g-1"><div class="col-5"><label>DNI</label><input name="dni" class="form-control" maxlength="8" required></div><div class="col-7"><label>Nombre</label><input name="nombres" class="form-control" required></div><div class="col-6"><label>Teléfono</label><input name="telefono" class="form-control"></div><div class="col-6"><label>Licencia</label><input name="licencia" class="form-control"></div><div class="col-6"><label>Categoría</label><input name="categoria" class="form-control"></div><div class="col-6"><label>PIN móvil</label><input name="movil_pin" class="form-control" placeholder="Auto"></div><div class="col-6"><label>Venc. licencia</label><input name="venc_licencia" type="date" class="form-control"></div><div class="col-6"><label>Estado</label><select name="estado" class="form-select"><option>ACTIVO</option><option>APTO</option><option>POR VENCER</option><option>VENCIDA</option><option>INACTIVO</option></select></div></div><button class="tm-btn w-100 mt-2">+ Guardar conductor</button></form>
+      <div class="tm-search-row"><input class="tm-search" placeholder="Buscar conductor..."><a class="tm-btn" href="#">+ Nuevo</a></div>
+      <div class="tm-scroll"><table class="tm-table"><thead><tr><th>DNI</th><th>Nombre</th><th>Licencia</th><th>Estado</th><th>PIN</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{{r.categoria or r.licencia or '-'}}</td><td>{{badge(r.estado)|safe}}</td><td>{{r.movil_pin or '-'}}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Sin conductores.</td></tr>{% endfor %}</tbody></table></div>
+      <div class="tm-mini-cards"><div class="tm-mini"><small>Total conductores</small>{{total}}</div><div class="tm-mini"><small>Activos</small>{{activos}}</div><div class="tm-mini"><small>Vencidos</small>{{venc}}</div></div>
+    </div></div>"""
+    return render_page(body, rows=rows, total=total, activos=activos, venc=venc, badge=_estado_badge)
+
+@login_required
+def transporte_vehiculos_mobile():
+    if request.method=='POST':
+        placa=limpiar_texto(request.form.get('placa'))
+        if not placa:
+            flash('Ingrese placa.','danger'); return redirect(url_for('transporte_vehiculos'))
+        vals=(placa,limpiar_texto(request.form.get('tipo') or 'BUS'),int(request.form.get('capacidad') or 0),limpiar_texto(request.form.get('empresa_transportista')),request.form.get('soat_venc',''),request.form.get('revision_tecnica_venc',''),limpiar_texto(request.form.get('gps_codigo')),limpiar_texto(request.form.get('estado') or 'ACTIVO'),now_str())
+        try:
+            execute('INSERT INTO transporte_vehiculos(placa,tipo,capacidad,empresa_transportista,soat_venc,revision_tecnica_venc,gps_codigo,estado,creado_en) VALUES(?,?,?,?,?,?,?,?,?)', vals, commit=True)
+            flash('Vehículo registrado.','success')
+        except Exception:
+            execute('UPDATE transporte_vehiculos SET tipo=?,capacidad=?,empresa_transportista=?,soat_venc=?,revision_tecnica_venc=?,gps_codigo=?,estado=? WHERE placa=?', (vals[1],vals[2],vals[3],vals[4],vals[5],vals[6],vals[7],placa), commit=True)
+            flash('Vehículo actualizado.','success')
+        return redirect(url_for('transporte_vehiculos'))
+    rows=rows_to_dict(execute('SELECT * FROM transporte_vehiculos ORDER BY id DESC LIMIT 80', fetchall=True))
+    total=len(rows); activos=sum(1 for r in rows if (r.get('estado') or '').upper() in ('ACTIVO',''))
+    venc=sum(1 for r in rows if any(r.get(c) and str(r.get(c))<today_str() for c in ('soat_venc','revision_tecnica_venc')))
+    body=_tm_css()+_tm_top('Buses / Vehículos')+"""
+      <form method="post" class="tm-form-card"><div class="row g-1"><div class="col-5"><label>Placa</label><input name="placa" class="form-control" required></div><div class="col-7"><label>Tipo</label><select name="tipo" class="form-select"><option>BUS</option><option>MINIBUS</option><option>VAN</option><option>CAMIONETA</option></select></div><div class="col-6"><label>Capacidad</label><input name="capacidad" type="number" class="form-control"></div><div class="col-6"><label>Empresa</label><input name="empresa_transportista" class="form-control"></div><div class="col-6"><label>SOAT venc.</label><input name="soat_venc" type="date" class="form-control"></div><div class="col-6"><label>Rev. técnica</label><input name="revision_tecnica_venc" type="date" class="form-control"></div></div><button class="tm-btn w-100 mt-2">+ Guardar vehículo</button></form>
+      <div class="tm-search-row"><input class="tm-search" placeholder="Buscar vehículo..."><a class="tm-btn" href="#">+ Nuevo</a></div><div class="tm-scroll"><table class="tm-table"><thead><tr><th>Placa</th><th>Tipo</th><th>Capacidad</th><th>Estado</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.placa}}</td><td>{{r.tipo}}</td><td>{{r.capacidad}}</td><td>{{badge(r.estado)|safe}}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Sin vehículos.</td></tr>{% endfor %}</tbody></table></div>
+      <div class="tm-mini-cards"><div class="tm-mini"><small>Total vehículos</small>{{total}}</div><div class="tm-mini"><small>Activos</small>{{activos}}</div><div class="tm-mini"><small>Vencidos</small>{{venc}}</div></div>
+    </div></div>"""
+    return render_page(body, rows=rows, total=total, activos=activos, venc=venc, badge=_estado_badge)
+
+@login_required
+def transporte_rutas_mobile():
+    if request.method=='POST':
+        fecha=request.form.get('fecha') or today_str(); nombre=limpiar_texto(request.form.get('nombre') or 'RUTA')
+        execute('INSERT INTO transporte_rutas(fecha,nombre,origen,destino,sede,hora_salida,hora_retorno,vehiculo_id,conductor_id,estado,creado_por,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', (fecha,nombre,limpiar_texto(request.form.get('origen')),limpiar_texto(request.form.get('destino')),limpiar_texto(request.form.get('sede')),request.form.get('hora_salida',''),request.form.get('hora_retorno',''),request.form.get('vehiculo_id') or None,request.form.get('conductor_id') or None,limpiar_texto(request.form.get('estado') or 'PROGRAMADA'),session.get('usuario'),now_str()), commit=True)
+        flash('Ruta programada.','success'); return redirect(url_for('transporte_rutas'))
+    rutas=rows_to_dict(execute('SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id LEFT JOIN transporte_conductores c ON c.id=r.conductor_id ORDER BY r.fecha DESC, r.id DESC LIMIT 80', fetchall=True))
+    vehiculos=rows_to_dict(execute('SELECT id, placa, tipo, capacidad FROM transporte_vehiculos ORDER BY placa', fetchall=True))
+    conductores=rows_to_dict(execute('SELECT id, dni, nombres FROM transporte_conductores ORDER BY nombres', fetchall=True))
+    hoy=today_str(); prog=len(rutas); en=sum(1 for r in rutas if (r.get('estado') or '').upper()=='EN RUTA'); pend=sum(1 for r in rutas if (r.get('estado') or '').upper() in ('PROGRAMADA','PENDIENTE')); fin=sum(1 for r in rutas if (r.get('estado') or '').upper() in ('FINALIZADA','CERRADA'))
+    body=_tm_css()+_tm_top('Rutas')+"""
+      <form method="post" class="tm-form-card"><div class="row g-1"><div class="col-6"><label>Fecha</label><input name="fecha" type="date" value="{{hoy}}" class="form-control"></div><div class="col-6"><label>Ruta</label><input name="nombre" class="form-control" placeholder="R-001"></div><div class="col-6"><label>Origen</label><input name="origen" class="form-control"></div><div class="col-6"><label>Destino</label><input name="destino" class="form-control"></div><div class="col-6"><label>Salida</label><input name="hora_salida" type="time" class="form-control"></div><div class="col-6"><label>Estado</label><select name="estado" class="form-select"><option>PROGRAMADA</option><option>EN RUTA</option><option>CERRADA</option></select></div><div class="col-6"><label>Vehículo</label><select name="vehiculo_id" class="form-select"><option value="">-</option>{% for v in vehiculos %}<option value="{{v.id}}">{{v.placa}}</option>{% endfor %}</select></div><div class="col-6"><label>Conductor</label><select name="conductor_id" class="form-select"><option value="">-</option>{% for c in conductores %}<option value="{{c.id}}">{{c.nombres}}</option>{% endfor %}</select></div></div><button class="tm-btn w-100 mt-2">+ Nueva ruta</button></form>
+      <div class="tm-search-row"><input class="tm-search" placeholder="Buscar ruta..."><a class="tm-btn" href="#">+ Nueva ruta</a></div><div class="tm-scroll"><table class="tm-table"><thead><tr><th>Código</th><th>Ruta</th><th>Salida</th><th>Estado</th><th></th></tr></thead><tbody>{% for r in rutas %}<tr><td>R-{{'%03d'%r.id}}</td><td>{{r.nombre}}<br><small>{{r.origen}} → {{r.destino}}</small></td><td>{{r.hora_salida or '-'}}</td><td>{{badge(r.estado)|safe}}</td><td><a class="btn-icon" href="{{url_for('transporte_ruta_detalle', ruta_id=r.id)}}">›</a></td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Sin rutas.</td></tr>{% endfor %}</tbody></table></div>
+      <div class="tm-kpis"><div class="tm-kpi"><label>Programadas</label><strong>{{prog}}</strong></div><div class="tm-kpi"><label>En ruta</label><strong>{{en}}</strong></div><div class="tm-kpi"><label>Pendientes</label><strong>{{pend}}</strong></div><div class="tm-kpi"><label>Finalizadas</label><strong>{{fin}}</strong></div></div>
+    </div></div>"""
+    return render_page(body, rutas=rutas, vehiculos=vehiculos, conductores=conductores, hoy=hoy, prog=prog, en=en, pend=pend, fin=fin, badge=_estado_badge)
+
+@login_required
+def transporte_abordaje_home():
+    hoy=today_str()
+    rutas=rows_to_dict(execute('SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id LEFT JOIN transporte_conductores c ON c.id=r.conductor_id ORDER BY CASE WHEN r.fecha=? THEN 0 ELSE 1 END, r.fecha DESC LIMIT 30',(hoy,), fetchall=True))
+    total=scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE fecha=?',(hoy,))
+    body=_tm_css()+_tm_top('Abordaje trabajadores')+"""
+      <div class="tm-info">Escanee QR / Código de barras desde la ruta o ingrese DNI manualmente.</div>
+      <div class="tm-scanner-box mt-2"><div><i class="bi bi-qr-code-scan" style="font-size:42px"></i><br>Seleccione una ruta para escanear</div></div>
+      <div class="tm-section">Rutas disponibles</div><div class="tm-list">{% for r in rutas %}<a class="tm-item" href="{{url_for('transporte_ruta_detalle', ruta_id=r.id)}}"><i class="bi bi-bus-front"></i>{{r.nombre}} · {{r.placa or 'SIN BUS'}}<i class="bi bi-chevron-right chev"></i></a>{% else %}<div class="tm-item text-muted">No hay rutas programadas.</div>{% endfor %}</div>
+      <div class="tm-mini-cards"><div class="tm-mini"><small>Total abordados hoy</small>{{total}}</div></div>
+    </div></div>"""
+    return render_page(body, rutas=rutas, total=total)
+
+@app.route('/transporte/abordaje')
+@login_required
+def transporte_abordaje_home_route():
+    return transporte_abordaje_home()
+
+@app.route('/transporte/pin')
+@login_required
+def transporte_pin_conductor():
+    rows=rows_to_dict(execute('SELECT id,dni,nombres,movil_pin,movil_estado FROM transporte_conductores ORDER BY nombres', fetchall=True))
+    body=_tm_css()+_tm_top('PIN conductor')+"""
+      <div class="tm-info"><b>El PIN</b> es utilizado por el conductor para acceder al app móvil. Debe tener 4 dígitos.</div>
+      <div class="tm-search-row"><input class="tm-search" placeholder="Buscar conductor..."></div><div class="tm-scroll"><table class="tm-table"><thead><tr><th>Conductor</th><th>PIN móvil</th><th>Acción</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.nombres}}<br><small>{{r.dni}}</small></td><td>{{r.movil_pin or '-'}}</td><td><a class="btn-icon" href="{{url_for('transporte_reset_pin', conductor_id=r.id)}}" onclick="return confirm('¿Resetear PIN?')"><i class="bi bi-arrow-clockwise"></i></a></td></tr>{% else %}<tr><td colspan="3" class="text-center text-muted">Sin conductores.</td></tr>{% endfor %}</tbody></table></div><a class="tm-btn w-100 mt-3 d-block text-center" href="{{url_for('transporte_conductores')}}">Gestionar conductores</a>
+    </div></div>"""
+    return render_page(body, rows=rows)
+
+# Reasignación de vistas existentes sin duplicar URL rules.
+app.view_functions['transporte'] = transporte_mobile_home
+app.view_functions['transporte_conductores'] = transporte_conductores_mobile
+app.view_functions['transporte_vehiculos'] = transporte_vehiculos_mobile
+app.view_functions['transporte_rutas'] = transporte_rutas_mobile
+# endpoint lógico para url_for desde el menú principal
+app.add_url_rule('/transporte/abordaje-home', 'transporte_abordaje_home', transporte_abordaje_home)
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
