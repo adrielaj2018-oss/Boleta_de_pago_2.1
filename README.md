@@ -1,15 +1,10 @@
 # P&A Mobile
 
-Aplicativo móvil para Render en 5 archivos.
+Aplicativo P&A Mobile para asistencia, documentos, firma digital y configuración.
 
-## Usuario demo
-- Usuario: 11223344
-- Contraseña: 123456
+## Render
+Build Command: `pip install -r requirements.txt`
+Start Command: `gunicorn app:app`
 
-## Incluye
-- Asistencia con ubicación real por navegador.
-- Botones con hover, mensaje y sonido.
-- Reloj táctil tipo wheel.
-- Documentos habilitados para descarga.
-- Firma digital con canvas.
-- Configuración robusta para trabajadores, firmas y futura conexión SQL Server.
+Usuario demo: `11223344`
+Contraseña: `123456`
