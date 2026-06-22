@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% from 'partials.html' import nav %}
+{% block content %}
+<div class="app-body docs-screen">
+  <div class="docs-card">
+    <div class="docs-head"><b>Centro de Pago</b><i class="bi bi-cash-coin"></i></div>
+    {% for c,icon in cats %}
+    <a class="menu-row" href="{{ url_for('documentos_categoria', categoria=c) }}"><span><i class="bi {{ icon }}"></i></span><b>{{ c }}</b><i class="bi bi-chevron-right"></i></a>
+    {% endfor %}
+  </div>
+  <section class="dark-caption"><i class="bi bi-file-earmark-text-fill"></i><h1>Gestión de documentos</h1><p>Accede a tus boletas, constancias y documentos laborales de forma rápida, organizada y segura.</p></section>
+  {{ nav(active) }}
+</div>
+{% endblock %}

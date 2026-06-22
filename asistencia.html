@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% from 'partials.html' import nav %}
+{% block content %}
+<div class="app-body">
+  <section class="assist-head">
+    <div class="promo-icon"><i class="bi bi-calendar3"></i></div>
+    <h1>Registra tu asistencia fácil</h1>
+    <p>Registra tu ingreso, salida y refrigerio de forma rápida y segura desde tu celular.</p>
+  </section>
+  <section class="assist-card tilted">
+    <div class="clock"><span>HORA ACTUAL DEL SISTEMA</span><b id="liveTime">06:00 PM</b><small id="liveDate">Martes, 10 de Marzo de 2026</small></div>
+    <form id="frmMarcacion">
+      <input type="hidden" name="latitud" id="lat"><input type="hidden" name="longitud" id="lng"><input type="hidden" name="direccion" id="dir"><input type="hidden" name="precision_gps" id="acc">
+      <button class="btn green" name="tipo" value="INGRESO"><i class="bi bi-box-arrow-in-right"></i> Registrar Ingreso</button>
+      <div class="two"><button class="btn soft" name="tipo" value="SALIDA_REFRIGERIO">Salida a Refrigerio</button><button class="btn soft" name="tipo" value="RETORNO_REFRIGERIO">Retorno de Refrigerio</button></div>
+      <button class="btn soft" name="tipo" value="SALIDA"><i class="bi bi-box-arrow-left"></i> Registrar Salida</button>
+    </form>
+    <div class="gps-line"><b>UBICACIÓN ACTUAL</b><span>SEÑAL FUERTE</span></div>
+    <div class="map"><div class="roads"></div><i class="bi bi-geo-alt-fill pin"></i><em>Tu ubicación actual</em></div>
+    <p class="address" id="gpsText">Obteniendo ubicación actual...</p>
+    <a class="history" href="#historial">Ver historial</a>
+  </section>
+  <section class="historial" id="historial">
+    <b>REPORTE DEL DÍA</b>
+    {% for a in ultimas %}<div class="mini-row"><span>{{ a.tipo.replace('_',' ') }}</span><small>{{ a.fecha }} {{ a.hora }}</small></div>{% else %}<small>Aún no hay marcaciones.</small>{% endfor %}
+  </section>
+  {{ nav(active) }}
+</div>
+{% endblock %}
+{% block scripts %}<script>initAsistencia();</script>{% endblock %}
