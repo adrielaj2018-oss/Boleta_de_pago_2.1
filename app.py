@@ -171,6 +171,206 @@ html,body{background:#fff!important;min-height:100dvh!important;overflow-x:hidde
 @media(min-width:800px){body{display:block!important}.phone{margin:0 auto!important}.login-pro{margin:0 auto!important}.sync-card{left:10px!important;transform:none!important;width:330px!important;bottom:10px!important}.login-pro .help{left:50%!important}.login-pro:after{content:'';position:fixed;right:16px;bottom:13px;width:20px;height:20px;border:2px solid #ef4444;border-left:0;border-radius:2px}.login-pro:before{content:'➜';position:fixed;right:13px;bottom:8px;color:#ef4444;font-size:24px;font-weight:900;z-index:1}}
 """
 
+
+CSS += """
+/* ===== V7 CLÁSICO: P&A con apariencia Tareo Móvil real, compacto y centrado ===== */
+:root{
+  --green:#2f773b!important;
+  --green-dark:#286b34!important;
+  --lime:#a7d129!important;
+  --ink:#05200c!important;
+  --shadow:0 6px 16px rgba(0,0,0,.16)!important;
+}
+html,body{
+  width:100%!important;
+  min-height:100dvh!important;
+  margin:0!important;
+  background:#fff!important;
+  overflow-x:hidden!important;
+  font-family:Inter,Segoe UI,Arial,sans-serif!important;
+  font-weight:800!important;
+}
+body{
+  display:block!important;
+  justify-content:initial!important;
+}
+.phone{
+  width:390px!important;
+  max-width:390px!important;
+  min-height:100dvh!important;
+  margin:0 auto!important;
+  background:#fff!important;
+  border-left:1px solid #e1e7e1!important;
+  border-right:1px solid #e1e7e1!important;
+  box-shadow:none!important;
+  overflow-x:hidden!important;
+  position:relative!important;
+}
+@media(max-width:430px){
+  .phone{width:100%!important;max-width:100%!important;border-left:0!important;border-right:0!important}
+}
+
+/* Splash clásico */
+.splash.green-grad,.green-grad{
+  background:#23773f!important;
+  background-image:radial-gradient(circle at 50% 36%,#2d8547 0%,#23773f 44%,#156430 100%)!important;
+}
+.splash{height:100dvh!important;justify-content:center!important}
+.logo-circle{
+  width:145px!important;height:145px!important;border:6px solid #92bd33!important;
+  box-shadow:0 4px 12px rgba(0,0,0,.25)!important;
+}
+.logo-inner{font-size:45px!important;color:#23773f!important}
+.brand-title{font-size:24px!important;color:#fff!important;text-transform:uppercase!important;margin-top:18px!important}
+.splash-foot{font-size:11px!important;color:#e3f4e5!important;bottom:26px!important}
+
+/* Login igual a referencia: verde arriba, tarjeta flotante, letras pequeñas */
+.login-pro{
+  width:390px!important;max-width:390px!important;margin:0 auto!important;
+  padding:0 18px 20px!important;background:#fff!important;min-height:100dvh!important;overflow:hidden!important;
+}
+.login-green{
+  height:260px!important;margin:0 -18px!important;background:#2f773b!important;background-image:none!important;
+  border-radius:0!important;padding:16px 16px 0!important;text-align:center!important;color:#fff!important;
+}
+.mini-top{display:flex!important;justify-content:space-between!important;align-items:center!important}
+.mini-top button{font-size:11px!important;font-weight:1000!important;color:#fff!important;background:transparent!important;border:0!important;padding:0!important}
+.mini-top .svgico{width:13px!important;height:13px!important;margin-right:3px!important}
+.login-mark{
+  width:108px!important;height:108px!important;border-radius:999px!important;background:#fff!important;
+  border:6px solid #92bd33!important;margin:36px auto 13px!important;color:#23773f!important;
+  box-shadow:0 4px 12px rgba(0,0,0,.24)!important;
+}
+.login-mark .svgico{width:52px!important;height:52px!important}
+.login-green h1{font-size:20px!important;font-weight:1000!important;letter-spacing:.2px!important;margin:0!important;text-transform:uppercase!important}
+.login-green p{font-size:11px!important;font-weight:1000!important;margin:4px 0 0!important;text-transform:uppercase!important}
+.login-float{
+  margin:-28px auto 0!important;border-radius:9px!important;padding:12px 14px 16px!important;border:0!important;
+  box-shadow:0 10px 24px rgba(0,0,0,.16)!important;background:#fff!important;
+}
+.login-card h2{font-size:12px!important;color:#2f2f2f!important;margin-bottom:13px!important;font-weight:900!important}
+.label{font-size:10px!important;color:#334155!important;margin:8px 0 4px!important;font-weight:900!important}
+.input{
+  height:36px!important;border-radius:8px!important;border:1px solid #dce7dc!important;
+  background:#fff!important;font-size:13px!important;color:#0f172a!important;font-weight:900!important;
+}
+.login-btn{
+  height:41px!important;border-radius:8px!important;background:#2f773b!important;
+  font-size:15px!important;text-transform:uppercase!important;box-shadow:none!important;margin-top:14px!important;
+}
+.link{font-size:10px!important;margin-top:11px!important}
+.login-mini-tiles{
+  display:flex!important;justify-content:center!important;gap:18px!important;margin:26px auto 0!important;
+}
+.mini-login-tile{
+  width:72px!important;height:70px!important;border-radius:8px!important;background:#fff!important;color:#2f773b!important;
+  box-shadow:0 7px 17px rgba(0,0,0,.14)!important;font-size:9px!important;font-weight:1000!important;
+  display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;text-align:center!important;
+}
+.mini-login-tile .svgico{width:25px!important;height:25px!important;margin-bottom:5px!important}
+.login-leaf{
+  width:78px!important;height:104px!important;margin:12px auto 0!important;opacity:.55!important;
+  border-radius:70% 30% 70% 30%!important;background:linear-gradient(135deg,#fff9c5,#e9edca,#cad9b0)!important;transform:rotate(-18deg)!important;
+}
+.help{
+  position:fixed!important;left:50%!important;bottom:15px!important;transform:translateX(-50%)!important;
+  width:390px!important;max-width:100%!important;text-align:center!important;font-size:10px!important;color:#6b7280!important;padding:0!important;
+}
+
+/* Home clásico */
+.top-green{
+  height:205px!important;background:#2f773b!important;background-image:none!important;border-radius:0 0 16px 16px!important;
+  padding:10px 14px 0!important;color:#fff!important;
+}
+.pill-row{margin-top:0!important}
+.pill{background:transparent!important;color:#fff!important;box-shadow:none!important;font-size:11px!important;font-weight:1000!important;padding:0!important;border-radius:0!important}
+.pill .svgico{width:13px!important;height:13px!important;margin-right:3px!important}
+.avatar-pa{
+  width:78px!important;height:78px!important;border-radius:999px!important;background:#fff!important;color:#2f773b!important;
+  margin:18px auto 8px!important;box-shadow:0 5px 13px rgba(0,0,0,.16)!important;border:0!important;
+}
+.avatar-pa .svgico{width:48px!important;height:48px!important}
+.user-name{font-size:13px!important;font-weight:1000!important;color:#fff!important;text-transform:uppercase!important}
+.welcome-card{
+  left:18px!important;right:18px!important;bottom:-22px!important;min-height:42px!important;border-radius:9px!important;
+  box-shadow:0 6px 15px rgba(0,0,0,.16)!important;padding:10px!important;background:#fff!important;
+}
+.welcome-card b{font-size:12px!important;color:#0f172a!important}
+.welcome-card p{display:none!important}
+.content{
+  min-height:calc(100dvh - 205px)!important;padding:51px 17px 84px!important;background:#fff!important;
+}
+.stats-row{display:none!important}
+.tile-grid{display:grid!important;grid-template-columns:1fr 1fr!important;gap:14px!important;margin-top:0!important}
+.tile{
+  height:86px!important;border-radius:8px!important;background:#fff!important;border:0!important;
+  box-shadow:0 7px 17px rgba(0,0,0,.14)!important;font-size:10px!important;font-weight:1000!important;color:#00112b!important;gap:7px!important;
+}
+.tile .ico{font-size:0!important;color:#2f773b!important}.tile .svgico{width:30px!important;height:30px!important}
+.tile:hover{background:#f7fff8!important;transform:none!important}
+.leaves{
+  width:108px!important;height:108px!important;margin:22px auto 18px!important;opacity:.38!important;
+}
+.sync-card{
+  position:fixed!important;left:10px!important;right:auto!important;bottom:10px!important;transform:none!important;
+  width:330px!important;max-width:calc(100vw - 66px)!important;background:#fff!important;border-radius:8px!important;
+  padding:7px 10px!important;box-shadow:0 4px 12px rgba(0,0,0,.16)!important;grid-template-columns:32px 1fr!important;
+}
+.sync-btn{width:30px!important;height:30px!important;background:#2f773b!important;border:2px solid #0d421e!important;font-size:18px!important}
+.sync-title{font-size:10px!important;color:#123d1f!important;font-weight:1000!important}
+.sync-sub{font-size:8.5px!important;color:#16823c!important;font-weight:1000!important}
+.exit{
+  position:fixed!important;right:12px!important;bottom:12px!important;z-index:80!important;color:#ef4444!important;font-size:23px!important;
+}
+.exit .svgico{width:24px!important;height:24px!important}
+
+/* Páginas internas compactas tipo Tareo */
+.page-head{
+  height:125px!important;background:#2f773b!important;background-image:none!important;border-radius:0 0 16px 16px!important;
+  padding:12px!important;
+}
+.page-head h1{font-size:13px!important;margin-top:65px!important;color:#fff!important;font-weight:1000!important;text-transform:uppercase!important}
+.head-ico{top:30px!important;color:#fff!important}.head-ico .svgico{width:30px!important;height:30px!important}
+.back{left:12px!important;top:12px!important;color:#fff!important}.back .svgico{width:20px!important;height:20px!important}
+.doc-list,.form-card,.config-card,.profile-card{font-size:11px!important}
+.doc-list{padding:14px 9px 76px!important;background:#fff!important}
+.doc-row{height:60px!important;border-radius:8px!important;margin:8px 0!important;box-shadow:0 3px 11px rgba(0,0,0,.10)!important;grid-template-columns:42px 1fr 14px!important;padding:0 10px!important}
+.doc-ico{width:32px!important;height:32px!important;border-radius:7px!important;color:#2f773b!important;border-color:#d9eadc!important}
+.doc-title{font-size:12px!important;color:#00112b!important}.doc-sub{font-size:9.5px!important;color:#6b7280!important}
+.chev{font-size:22px!important}
+.hero-att{
+  height:142px!important;background:#2f773b!important;background-image:none!important;padding:12px 18px 0!important;
+  border-radius:0 0 16px 16px!important;
+}
+.hero-att .cal{font-size:0!important;margin:15px 0 6px!important}.hero-att .svgico{width:28px!important;height:28px!important;color:#fff!important}
+.hero-att h1{font-size:14px!important;line-height:1.1!important;text-transform:uppercase!important}.hero-att p{display:none!important}
+.att-card{margin:-18px 9px 70px!important;border-radius:9px!important;padding:10px!important;box-shadow:0 4px 13px rgba(0,0,0,.16)!important}
+.sys{font-size:9px!important}.big-clock{font-size:30px!important;margin-top:5px!important}.date-line{font-size:10px!important;margin-bottom:9px!important}
+.mark-btn{height:42px!important;border-radius:7px!important;font-size:12px!important}
+.btn-row{gap:7px!important;margin:8px 0!important}.selected-time{height:38px!important;font-size:11px!important}.map-title{font-size:9px!important;margin-top:12px!important}.signal{font-size:9px!important;padding:5px 9px!important}.map{height:105px!important}.loc-foot{font-size:9px!important}.history-card{font-size:10px!important;margin-top:8px!important}
+.config-card,.form-card,.profile-card{
+  margin:10px 8px 74px!important;border-radius:9px!important;padding:10px!important;box-shadow:0 5px 14px rgba(0,0,0,.13)!important;
+}
+.cfg-btn{min-height:38px!important;border-radius:7px!important;font-size:12px!important;margin-bottom:8px!important}
+.field label{font-size:9px!important}.field input,.field select{height:32px!important;font-size:11px!important;border-radius:7px!important}
+.form-title{font-size:10px!important}.mini-help{font-size:9.5px!important}
+.profile-photo{width:70px!important;height:70px!important;font-size:40px!important}.profile-card h2{font-size:15px!important}.profile-card p{font-size:11px!important}
+.kv{grid-template-columns:1fr!important;gap:7px!important}.kv div{padding:9px!important;border-radius:8px!important}.kv small{font-size:9px!important}.kv b{font-size:10px!important}
+.sign-box{height:160px!important;margin:10px 8px!important}.mini-btn{height:36px!important;font-size:11px!important}.grid2{gap:7px!important;margin:0 8px 8px!important}.grid1{margin:0 8px 8px!important}
+.bottom-nav{
+  position:fixed!important;left:50%!important;right:auto!important;bottom:0!important;transform:translateX(-50%)!important;
+  width:390px!important;max-width:100%!important;height:52px!important;background:#fff!important;border-top:1px solid #e6ece6!important;
+  color:#477b4d!important;font-size:9px!important;font-weight:900!important;z-index:70!important;
+}
+.bottom-nav .svgico{width:18px!important;height:18px!important}.bottom-nav a.active{color:#2f773b!important}
+.mass-preview{font-size:9px!important;max-height:130px!important}.mass-ok,.mass-bad{font-size:10px!important;padding:8px!important}
+@media(min-width:800px){
+  .phone{margin:0 auto!important}
+  .sync-card{left:10px!important}
+  .exit{right:12px!important}
+}
+"""
+
 JS = """
 function tone(ok=true){try{const C=window.AudioContext||window.webkitAudioContext;const ctx=new C();const o=ctx.createOscillator();const g=ctx.createGain();o.type='sine';o.frequency.value=ok?880:220;g.gain.value=.07;o.connect(g);g.connect(ctx.destination);o.start();setTimeout(()=>{o.stop();ctx.close()},150)}catch(e){}}
 function showToast(msg,ok=true){tone(ok);let t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2400)}
@@ -253,7 +453,7 @@ def home():
     c=conn(); hoy=date.today().isoformat()
     marcas=c.execute("SELECT tipo,hora FROM marcas WHERE usuario=? AND fecha=? ORDER BY id",(session['usuario'],hoy)).fetchall(); c.close()
     ult = dict(marcas[-1]) if marcas else None
-    body=f'''<div class="top-green"><div class="pill-row"><button class="pill" onclick="fakeOk('Soporte habilitado')">{app_icon('support')} Soporte</button><a class="pill" href="/config">{app_icon('settings')} Config.</a></div><div class="avatar avatar-pa">{app_icon('profile')}</div><div class="user-name">{esc(u.get('nombres','NISEDM01'))}</div><div class="welcome-card"><b>Bienvenido(a)</b><p>Sistema de Asistencia</p></div></div><div class="content"><div class="stats-row"><div class="stat-card">Marcaciones<b>{len(marcas)}</b></div><div class="stat-card">Último<b>{esc(ult['tipo'].replace('_',' ') if ult else 'SIN REG.')}</b></div></div><div class="tile-grid"><a class="tile" href="/asistencia"><div class="ico">{app_icon('attendance')}</div><div>ASISTENCIA</div></a><a class="tile" href="/documentos"><div class="ico">{app_icon('docs')}</div><div>DOCUMENTOS</div></a><a class="tile" href="/firma"><div class="ico">{app_icon('sign')}</div><div>FIRMA</div></a><a class="tile" href="/perfil"><div class="ico">{app_icon('profile')}</div><div>PERFIL</div></a></div>{leaves()}<div class="sync-card"><button class="sync-btn" onclick="fakeOk('Datos sincronizados')">↻</button><div><div class="sync-title">Sincronizar Tablas Maestras</div><div class="sync-sub">Actualizado hasta: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</div></div><a class="exit" href="/logout">{app_icon('logout')}</a></div></div>'''
+    body=f'''<div class="top-green"><div class="pill-row"><button class="pill" onclick="fakeOk('Soporte habilitado')">{app_icon('support')} Soporte</button><a class="pill" href="/config">{app_icon('settings')} Config.</a></div><div class="avatar avatar-pa">{app_icon('profile')}</div><div class="user-name">{esc(u.get('nombres','NISEDM01'))}</div><div class="welcome-card"><b>Bienvenido(a)</b><p>Sistema de Asistencia</p></div></div><div class="content"><div class="tile-grid"><a class="tile" href="/asistencia"><div class="ico">{app_icon('attendance')}</div><div>ASISTENCIA</div></a><a class="tile" href="/documentos"><div class="ico">{app_icon('docs')}</div><div>DOCUMENTOS</div></a><a class="tile" href="/firma"><div class="ico">{app_icon('sign')}</div><div>FIRMA</div></a><a class="tile" href="/perfil"><div class="ico">{app_icon('profile')}</div><div>PERFIL</div></a></div>{leaves()}<div class="sync-card"><button class="sync-btn" onclick="fakeOk('Datos sincronizados')">↻</button><div><div class="sync-title">Sincronizar Tablas Maestras</div><div class="sync-sub">Actualizado hasta: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</div></div><a class="exit" href="/logout">{app_icon('logout')}</a></div></div>'''
     return shell(body,"Home P&A")
 
 @app.route("/asistencia")
