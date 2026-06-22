@@ -2010,6 +2010,7 @@ def _pin_conductor(dni):
     d = limpiar_dni(dni)
     return d[-4:] if len(d) >= 4 else '1234'
 
+
 @app.route('/transporte')
 @login_required
 def transporte():
@@ -2021,34 +2022,63 @@ def transporte():
     conductores = scalar('SELECT COUNT(*) AS c FROM transporte_conductores')
     vehiculos = scalar('SELECT COUNT(*) AS c FROM transporte_vehiculos')
     hoy = today_str()
+    rutas_hoy = scalar('SELECT COUNT(*) AS c FROM transporte_rutas WHERE fecha=?', (hoy,))
     abordajes = scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE fecha=?', (hoy,))
+    req_conductores = scalar("""SELECT COUNT(*) AS c FROM transporte_conductores
+                               WHERE (venc_licencia IS NOT NULL AND venc_licencia<>'' AND venc_licencia<=?)
+                                  OR (venc_cert_medico IS NOT NULL AND venc_cert_medico<>'' AND venc_cert_medico<=?)
+                                  OR (venc_sctr IS NOT NULL AND venc_sctr<>'' AND venc_sctr<=?)""", (hoy,hoy,hoy))
+    req_vehiculos = scalar("""SELECT COUNT(*) AS c FROM transporte_vehiculos
+                              WHERE (soat_venc IS NOT NULL AND soat_venc<>'' AND soat_venc<=?)
+                                 OR (revision_tecnica_venc IS NOT NULL AND revision_tecnica_venc<>'' AND revision_tecnica_venc<=?)""", (hoy,hoy))
     body = """
+    <style>
+      .trans-section{margin:10px 0 6px;font-size:11px;font-weight:900;color:#166534;letter-spacing:.3px;text-transform:uppercase}
+      .trans-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+      .trans-btn{border:1px solid #b9d7bd;border-radius:10px;background:#fff;color:#08713b;text-decoration:none;font-weight:900;text-align:center;padding:12px 6px;min-height:73px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(0,0,0,.08)}
+      .trans-btn.primary{background:#2f773b;color:#fff;border-color:#2f773b}.trans-btn.warn{border-color:#f4b4b4;color:#b42318}.trans-btn i{font-size:25px;margin-bottom:4px}.trans-kpi{background:#e7f7ea;border:1px solid #8ad092;border-radius:8px;padding:7px 9px;font-weight:900;color:#006b2e;text-align:center}.trans-kpi label{display:block;font-size:8px;color:#5f7d65}.trans-list-title{font-size:12px;font-weight:900;color:#166534;margin:10px 8px 4px}
+    </style>
     <div class="phone-wrap desktop-pad"><div class="page-card">
       <div class="panel-green"><a class="text-white text-decoration-none float-start" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><i class="bi bi-bus-front"></i><h4>MÓDULO TRANSPORTE</h4></div>
       <div class="floating-card" style="margin:-24px 9px 10px">
-        <div class="worker-grid">
-          <a class="btn btn-green btn-sm" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i><br>Conductores</a>
-          <a class="btn btn-green btn-sm" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i><br>Buses</a>
-          <a class="btn btn-green btn-sm" href="{{url_for('transporte_rutas')}}"><i class="bi bi-geo-alt"></i><br>Rutas</a>
+        <div class="trans-section">Operación</div>
+        <div class="trans-grid">
+          <a class="trans-btn primary" href="{{url_for('transporte_rutas')}}"><i class="bi bi-calendar2-check"></i>Rutas de hoy</a>
+          <a class="trans-btn primary" href="{{url_for('conductor_movil_login')}}"><i class="bi bi-phone"></i>Móvil conductor</a>
+          <a class="trans-btn" href="{{url_for('transporte')}}#rutas"><i class="bi bi-qr-code-scan"></i>Abordaje trabajadores</a>
+          <a class="trans-btn" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-geo-alt"></i>GPS / seguimiento</a>
+        </div>
+        <div class="trans-section">Maestros</div>
+        <div class="trans-grid">
+          <a class="trans-btn" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i>Conductores</a>
+          <a class="trans-btn" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i>Vehículos</a>
+          <a class="trans-btn" href="{{url_for('transporte_carga_masiva')}}"><i class="bi bi-upload"></i>Carga masiva</a>
+          <a class="trans-btn" href="{{url_for('transporte_conductores')}}"><i class="bi bi-key"></i>PIN conductor</a>
+        </div>
+        <div class="trans-section">Control</div>
+        <div class="trans-grid">
+          <a class="trans-btn warn" href="{{url_for('transporte_requisitos')}}"><i class="bi bi-exclamation-triangle"></i>Requisitos vencidos</a>
+          <a class="trans-btn" href="{{url_for('exportar_transporte_pasajeros')}}"><i class="bi bi-file-earmark-excel"></i>Reporte abordajes</a>
         </div>
         <div class="worker-grid mt-2">
-          <a class="btn btn-outline-success btn-sm" href="{{url_for('transporte_carga_masiva')}}"><i class="bi bi-upload"></i><br>Carga masiva</a>
-          <a class="btn btn-outline-success btn-sm" href="{{url_for('conductor_movil_login')}}"><i class="bi bi-phone"></i><br>Móvil conductor</a>
-          <a class="btn btn-outline-success btn-sm" href="{{url_for('exportar_transporte_pasajeros')}}"><i class="bi bi-file-earmark-excel"></i><br>Reporte</a>
+          <div class="trans-kpi"><label>RUTAS HOY</label>{{rutas_hoy}}</div>
+          <div class="trans-kpi"><label>CONDUCTORES</label>{{conductores}}</div>
+          <div class="trans-kpi"><label>VEHÍCULOS</label>{{vehiculos}}</div>
         </div>
         <div class="worker-grid mt-2">
-          <div><label>CONDUCTORES</label><div class="metric-box">{{conductores}}</div></div>
-          <div><label>VEHÍCULOS</label><div class="metric-box">{{vehiculos}}</div></div>
-          <div><label>ABORDARON HOY</label><div class="metric-box">{{abordajes}}</div></div>
+          <div class="trans-kpi"><label>ABORDARON HOY</label>{{abordajes}}</div>
+          <div class="trans-kpi"><label>COND. VENC.</label>{{req_conductores}}</div>
+          <div class="trans-kpi"><label>VEH. VENC.</label>{{req_vehiculos}}</div>
         </div>
-        <a class="btn btn-outline-success w-100 mt-2" href="{{url_for('exportar_transporte_pasajeros')}}"><i class="bi bi-file-earmark-excel"></i> Exportar abordajes</a>
       </div>
+      <div class="trans-list-title" id="rutas">Rutas programadas</div>
       {% for r in rutas %}<div class="worker-card"><div class="worker-title"><div>{{r.fecha}} {{r.hora_salida or ''}}<br><b>{{r.nombre or 'RUTA'}}</b></div><div class="text-end">{{r.placa or 'SIN BUS'}}<br><b>{{r.estado}}</b></div></div>
         <div class="worker-grid"><div><label>CONDUCTOR</label><div class="small-value">{{r.conductor or '-'}}</div></div><div><label>ORIGEN</label><div class="small-value">{{r.origen or '-'}}</div></div><div><label>DESTINO</label><div class="small-value">{{r.destino or '-'}}</div></div></div>
         <div class="d-grid gap-1 mt-2"><a class="btn btn-green btn-sm" href="{{url_for('transporte_ruta_detalle', ruta_id=r.id)}}"><i class="bi bi-qr-code-scan"></i> Abrir ruta / subir trabajadores</a></div>
       </div>{% else %}<div class="worker-card text-center text-muted">Aún no hay rutas programadas.</div>{% endfor %}
     </div></div>"""
-    return render_page(body, rutas=rutas, conductores=conductores, vehiculos=vehiculos, abordajes=abordajes)
+    return render_page(body, rutas=rutas, conductores=conductores, vehiculos=vehiculos, abordajes=abordajes, rutas_hoy=rutas_hoy, req_conductores=req_conductores, req_vehiculos=req_vehiculos)
+
 
 @app.route('/transporte/conductores', methods=['GET','POST'])
 @login_required
@@ -2062,7 +2092,7 @@ def transporte_conductores():
         params=(dni,nombres,request.form.get('telefono',''),limpiar_texto(request.form.get('licencia')),limpiar_texto(request.form.get('categoria')),request.form.get('venc_licencia',''),request.form.get('venc_cert_medico',''),request.form.get('venc_sctr',''),limpiar_texto(request.form.get('estado') or 'APTO'),limpiar_texto(request.form.get('observacion'), upper=False),dni,movil_pin,movil_estado,now_str())
         try:
             execute("""INSERT INTO transporte_conductores(dni,nombres,telefono,licencia,categoria,venc_licencia,venc_cert_medico,venc_sctr,estado,observacion,movil_usuario,movil_pin,movil_estado,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", params, commit=True)
-            flash('Conductor registrado correctamente. Acceso móvil: DNI + PIN.', 'success')
+            flash(f'Conductor registrado. Acceso móvil: DNI {dni} + PIN {movil_pin}.', 'success')
         except Exception:
             execute("""UPDATE transporte_conductores SET nombres=?,telefono=?,licencia=?,categoria=?,venc_licencia=?,venc_cert_medico=?,venc_sctr=?,estado=?,observacion=?,movil_usuario=?,movil_pin=?,movil_estado=? WHERE dni=?""", (nombres,params[2],params[3],params[4],params[5],params[6],params[7],params[8],params[9],dni,movil_pin,movil_estado,dni), commit=True)
             flash('Conductor actualizado correctamente.', 'success')
@@ -2074,10 +2104,21 @@ def transporte_conductores():
         r['sctr_estado']=transporte_estado_requisito(r.get('venc_sctr'))
     body="""
     <div class="phone-wrap desktop-pad"><div class="config-header"><a class="back-mini" href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><h2 class="header-title mb-2">CONDUCTORES</h2></div>
-      <form class="floating-card mb-2" method="post"><div class="row g-2"><div class="col-5"><label class="form-label">DNI</label><input name="dni" class="form-control" maxlength="8" required></div><div class="col-7"><label class="form-label">Conductor</label><input name="nombres" class="form-control" required></div><div class="col-6"><label class="form-label">Licencia</label><input name="licencia" class="form-control"></div><div class="col-6"><label class="form-label">Categoría</label><input name="categoria" class="form-control"></div><div class="col-4"><label class="form-label">Venc. Lic.</label><input name="venc_licencia" type="date" class="form-control"></div><div class="col-4"><label class="form-label">Cert. Médico</label><input name="venc_cert_medico" type="date" class="form-control"></div><div class="col-4"><label class="form-label">SCTR</label><input name="venc_sctr" type="date" class="form-control"></div><div class="col-6"><label class="form-label">Teléfono</label><input name="telefono" class="form-control"></div><div class="col-6"><label class="form-label">Estado</label><select name="estado" class="form-select"><option>APTO</option><option>OBSERVADO</option><option>VENCIDO</option></select></div><div class="col-12"><input name="observacion" class="form-control" placeholder="Observación"></div></div><button class="btn btn-green w-100 mt-2">Guardar conductor</button></form>
-      {% for c in rows %}<div class="worker-card"><div class="worker-title"><div>{{c.dni}}<br><b>{{c.nombres}}</b></div><div class="text-end">{{c.categoria or ''}}<br><b>{{c.estado}}</b></div></div><div class="worker-grid"><div><label>LICENCIA</label><div class="small-value">{{c.lic_estado}}</div></div><div><label>MÉDICO</label><div class="small-value">{{c.med_estado}}</div></div><div><label>SCTR</label><div class="small-value">{{c.sctr_estado}}</div></div></div></div>{% else %}<div class="worker-card text-center text-muted">Sin conductores.</div>{% endfor %}
+      <form class="floating-card mb-2" method="post"><div class="alert alert-light border small mb-2">Aquí también se crea el acceso al <b>Móvil conductor</b>. El conductor ingresa con su <b>DNI + PIN</b>, no con usuario ADMIN.</div><div class="row g-2"><div class="col-5"><label class="form-label">DNI</label><input name="dni" class="form-control" maxlength="8" required></div><div class="col-7"><label class="form-label">Conductor</label><input name="nombres" class="form-control" required></div><div class="col-6"><label class="form-label">Licencia</label><input name="licencia" class="form-control"></div><div class="col-6"><label class="form-label">Categoría</label><input name="categoria" class="form-control"></div><div class="col-4"><label class="form-label">Venc. Lic.</label><input name="venc_licencia" type="date" class="form-control"></div><div class="col-4"><label class="form-label">Cert. Médico</label><input name="venc_cert_medico" type="date" class="form-control"></div><div class="col-4"><label class="form-label">SCTR</label><input name="venc_sctr" type="date" class="form-control"></div><div class="col-6"><label class="form-label">Teléfono</label><input name="telefono" class="form-control"></div><div class="col-6"><label class="form-label">Estado</label><select name="estado" class="form-select"><option>APTO</option><option>OBSERVADO</option><option>VENCIDO</option></select></div><div class="col-6"><label class="form-label">PIN móvil</label><input name="movil_pin" class="form-control" placeholder="Por defecto últimos 4 DNI"></div><div class="col-6"><label class="form-label">Acceso móvil</label><select name="movil_estado" class="form-select"><option>ACTIVO</option><option>BLOQUEADO</option></select></div><div class="col-12"><input name="observacion" class="form-control" placeholder="Observación"></div></div><button class="btn btn-green w-100 mt-2">Guardar conductor / PIN</button></form>
+      {% for c in rows %}<div class="worker-card"><div class="worker-title"><div>{{c.dni}}<br><b>{{c.nombres}}</b></div><div class="text-end">{{c.categoria or ''}}<br><b>{{c.estado}}</b></div></div><div class="worker-grid"><div><label>LICENCIA</label><div class="small-value">{{c.lic_estado}}</div></div><div><label>MÉDICO</label><div class="small-value">{{c.med_estado}}</div></div><div><label>SCTR</label><div class="small-value">{{c.sctr_estado}}</div></div></div><div class="worker-grid mt-2"><div><label>USUARIO MÓVIL</label><div class="small-value">{{c.movil_usuario or c.dni}}</div></div><div><label>PIN</label><div class="small-value">{{c.movil_pin or 'SIN PIN'}}</div></div><div><label>MÓVIL</label><div class="small-value">{{c.movil_estado or 'ACTIVO'}}</div></div></div><a class="btn btn-outline-success btn-sm w-100 mt-2" href="{{url_for('transporte_reset_pin', conductor_id=c.id)}}" onclick="return confirm('¿Resetear PIN a los últimos 4 dígitos del DNI?')"><i class="bi bi-key"></i> Resetear PIN</a></div>{% else %}<div class="worker-card text-center text-muted">Sin conductores.</div>{% endfor %}
     </div>"""
     return render_page(body, rows=rows)
+
+@app.route('/transporte/conductor/<int:conductor_id>/reset-pin')
+@login_required
+def transporte_reset_pin(conductor_id):
+    c = row_to_dict(execute('SELECT * FROM transporte_conductores WHERE id=?', (conductor_id,), fetchone=True))
+    if not c:
+        flash('Conductor no encontrado.', 'danger'); return redirect(url_for('transporte_conductores'))
+    pin = _pin_conductor(c.get('dni'))
+    execute("UPDATE transporte_conductores SET movil_usuario=?, movil_pin=?, movil_estado='ACTIVO' WHERE id=?", (c.get('dni'), pin, conductor_id), commit=True)
+    flash(f'PIN móvil reseteado para {c.get("nombres")}: {pin}', 'success')
+    return redirect(url_for('transporte_conductores'))
 
 @app.route('/transporte/vehiculos', methods=['GET','POST'])
 @login_required
@@ -2270,8 +2311,8 @@ def conductor_movil_login():
         session['conductor_id'] = c['id']; session['conductor_nombre'] = c.get('nombres')
         return redirect(url_for('conductor_movil_panel'))
     body = """
-    <div class="phone-wrap"><div class="page-card"><div class="panel-green"><i class="bi bi-phone"></i><h4>ACCESO MÓVIL CONDUCTOR</h4></div>
-      <form class="floating-card" style="margin:-24px 9px 10px" method="post"><label class="form-label">DNI conductor</label><input name="dni" class="form-control mb-2" maxlength="8" required autofocus><label class="form-label">PIN móvil</label><input name="pin" class="form-control mb-2" type="password" required><button class="btn btn-green w-100">INGRESAR</button><a class="btn btn-outline-success w-100 mt-2" href="{{url_for('transporte')}}">Volver</a></form>
+    <div class="phone-wrap"><div class="page-card"><div class="panel-green"><a class="text-white text-decoration-none float-start" href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><i class="bi bi-phone"></i><h4>ACCESO MÓVIL CONDUCTOR</h4></div>
+      <form class="floating-card" style="margin:-24px 9px 10px" method="post"><div class="alert alert-light border small mb-2"><b>Solo conductores:</b> ingrese DNI del conductor + PIN móvil creado en Transporte &gt; Conductores. No usar ADMIN.</div><label class="form-label">DNI conductor</label><input name="dni" class="form-control mb-2" maxlength="8" inputmode="numeric" required autofocus placeholder="Ej. 12345678"><label class="form-label">PIN móvil</label><input name="pin" class="form-control mb-2" type="password" required placeholder="Últimos 4 DNI o PIN asignado"><button class="btn btn-green w-100">INGRESAR</button><a class="btn btn-outline-success w-100 mt-2" href="{{url_for('transporte_conductores')}}">Crear / resetear PIN</a><a class="btn btn-outline-secondary w-100 mt-2" href="{{url_for('transporte')}}">Volver</a></form>
     </div></div>"""
     return render_page(body)
 
@@ -2394,6 +2435,47 @@ def transporte_mapa(ruta_id):
       {% for p in puntos %}<div class="worker-card"><div class="worker-title"><div>{{p.fecha_hora}}<br><b>{{p.latitud}}, {{p.longitud}}</b></div><div class="text-end"><b>{{p.registrado_por}}</b></div></div></div>{% endfor %}
     </div>"""
     return render_page(body, ruta=ruta, puntos=puntos, map_url=map_url)
+
+
+@app.route('/transporte/requisitos')
+@login_required
+def transporte_requisitos():
+    hoy=today_str()
+    conductores=rows_to_dict(execute("""SELECT dni,nombres,'CONDUCTOR' AS tipo,
+        venc_licencia, venc_cert_medico, venc_sctr, estado
+        FROM transporte_conductores
+        WHERE (venc_licencia IS NOT NULL AND venc_licencia<>'' AND venc_licencia<=?)
+           OR (venc_cert_medico IS NOT NULL AND venc_cert_medico<>'' AND venc_cert_medico<=?)
+           OR (venc_sctr IS NOT NULL AND venc_sctr<>'' AND venc_sctr<=?)
+        ORDER BY nombres""", (hoy,hoy,hoy), fetchall=True))
+    vehiculos=rows_to_dict(execute("""SELECT placa,tipo,empresa_transportista,soat_venc,revision_tecnica_venc,estado
+        FROM transporte_vehiculos
+        WHERE (soat_venc IS NOT NULL AND soat_venc<>'' AND soat_venc<=?)
+           OR (revision_tecnica_venc IS NOT NULL AND revision_tecnica_venc<>'' AND revision_tecnica_venc<=?)
+        ORDER BY placa""", (hoy,hoy), fetchall=True))
+    body="""
+    <div class="phone-wrap desktop-pad"><div class="config-header"><a class="back-mini" href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><h2 class="header-title mb-2">REQUISITOS VENCIDOS</h2></div>
+      <div class="worker-card text-center"><b>Conductores:</b> {{conductores|length}} &nbsp; <b>Vehículos:</b> {{vehiculos|length}}</div>
+      <div class="trans-section mx-2">Conductores</div>
+      {% for c in conductores %}<div class="worker-card"><div class="worker-title"><div>{{c.dni}}<br><b>{{c.nombres}}</b></div><div class="text-end"><b>{{c.estado}}</b></div></div><div class="worker-grid"><div><label>LICENCIA</label><div class="small-value">{{c.venc_licencia or '-'}}</div></div><div><label>MÉDICO</label><div class="small-value">{{c.venc_cert_medico or '-'}}</div></div><div><label>SCTR</label><div class="small-value">{{c.venc_sctr or '-'}}</div></div></div></div>{% else %}<div class="worker-card text-center text-muted">Sin conductores vencidos.</div>{% endfor %}
+      <div class="trans-section mx-2">Vehículos</div>
+      {% for v in vehiculos %}<div class="worker-card"><div class="worker-title"><div>{{v.placa}}<br><b>{{v.tipo or 'VEHÍCULO'}}</b></div><div class="text-end"><b>{{v.estado}}</b></div></div><div class="worker-grid"><div><label>SOAT</label><div class="small-value">{{v.soat_venc or '-'}}</div></div><div><label>REV. TÉCNICA</label><div class="small-value">{{v.revision_tecnica_venc or '-'}}</div></div><div><label>EMPRESA</label><div class="small-value">{{v.empresa_transportista or '-'}}</div></div></div></div>{% else %}<div class="worker-card text-center text-muted">Sin vehículos vencidos.</div>{% endfor %}
+    </div>"""
+    return render_page(body, conductores=conductores, vehiculos=vehiculos)
+
+@app.route('/transporte/mapa-general')
+@login_required
+def transporte_mapa_general():
+    rutas=rows_to_dict(execute("""SELECT r.*, v.placa, c.nombres AS conductor FROM transporte_rutas r
+                               LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                               LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                               WHERE COALESCE(r.latitud,'')<>'' AND COALESCE(r.longitud,'')<>''
+                               ORDER BY r.ultima_ubicacion DESC, r.fecha DESC LIMIT 50""", fetchall=True))
+    body="""
+    <div class="phone-wrap desktop-pad"><div class="config-header"><a class="back-mini" href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><h2 class="header-title mb-2">GPS / SEGUIMIENTO</h2></div>
+      {% for r in rutas %}<div class="worker-card"><div class="worker-title"><div>{{r.fecha}}<br><b>{{r.nombre}}</b></div><div class="text-end">{{r.placa or 'SIN BUS'}}<br><b>{{r.estado}}</b></div></div><div class="small-value">{{r.conductor or '-'}} · {{r.ultima_ubicacion or ''}}</div><a class="btn btn-outline-success btn-sm w-100 mt-2" href="{{url_for('transporte_mapa', ruta_id=r.id)}}"><i class="bi bi-map"></i> Ver mapa</a></div>{% else %}<div class="worker-card text-center text-muted">Aún no hay rutas con GPS registrado.</div>{% endfor %}
+    </div>"""
+    return render_page(body, rutas=rutas)
 
 # ========================= SOPORTE / CONFIG / SINC =========================
 @app.route('/soporte')
