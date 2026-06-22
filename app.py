@@ -173,7 +173,7 @@ function testDB(){document.getElementById('dbOk')?.classList.add('ok');document.
 """
 
 def shell(body, title="P&A Mobile"):
-    return f"<!doctype html><html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><meta name='theme-color' content='{GREEN}'><title>{title}</title><style>{CSS}</style></head><body><div class='phone'>{body}</div><script>{JS}</script></body></html>"
+    return f"<!doctype html><html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><meta name='theme-color' content='{GREEN}'><link rel='manifest' href='/manifest.json'><title>{title}</title><style>{CSS}</style></head><body><div class='phone'>{body}</div><script>{JS}</script></body></html>"
 
 @app.route("/")
 def index():
@@ -373,6 +373,43 @@ def api_documento(tipo):
     title = {"boletas":"BOLETA NORMAL","utilidades":"CONSTANCIA DE UTILIDADES","vacaciones":"BOLETA DE VACACIONES","cts":"CONSTANCIA DE CTS","liquidaciones":"CONSTANCIA DE LIQUIDACIÓN","gratificaciones":"BOLETA DE GRATIFICACIÓN","constancia-grati":"CONSTANCIA DE GRATIFICACIÓN"}.get(tipo, "DOCUMENTO")
     content=f"{title}\nEmpresa: {u.get('empresa','')}\nTrabajador: {u.get('nombres','')} {u.get('apellidos','')}\nDNI: {u.get('usuario','')}\nCargo: {u.get('cargo','')}\nÁrea: {u.get('area','')}\nFecha de emisión: {today_es()}\nEstado: DISPONIBLE\n"
     return Response(content, mimetype="text/plain; charset=utf-8", headers={"Content-Disposition":f"attachment; filename={tipo}_pa.txt"})
+
+
+@app.after_request
+def no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+@app.route("/sw.js")
+def service_worker():
+    js = """
+self.addEventListener('install', event => {
+  self.skipWaiting();
+});
+self.addEventListener('activate', event => {
+  event.waitUntil(self.clients.claim());
+});
+self.addEventListener('fetch', event => {
+  event.respondWith(fetch(event.request));
+});
+"""
+    return Response(js, mimetype="application/javascript", headers={"Cache-Control":"no-store"})
+
+@app.route("/manifest.json")
+def manifest_json():
+    manifest = {
+        "name": "P&A Mobile Clásico",
+        "short_name": "P&A Mobile",
+        "start_url": "/login",
+        "display": "standalone",
+        "background_color": "#ffffff",
+        "theme_color": "#2f773b",
+        "description": "Asistencia, documentos, firma y perfil P&A.",
+        "icons": []
+    }
+    return jsonify(manifest)
 
 @app.route("/logout")
 def logout():
