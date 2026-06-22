@@ -189,6 +189,25 @@ def init_db():
         id {idtype}, dni TEXT NOT NULL, trabajador TEXT, empresa TEXT, area TEXT, cargo TEXT,
         documento TEXT NOT NULL, estado TEXT DEFAULT 'FIRMADO', fecha TEXT NOT NULL, hora TEXT NOT NULL, fecha_hora TEXT NOT NULL,
         metodo TEXT, firma_path TEXT, foto_path TEXT, registrado_por TEXT, observacion TEXT)"""))
+    cur.execute(qmark(f"""CREATE TABLE IF NOT EXISTS transporte_conductores(
+        id {idtype}, dni TEXT UNIQUE, nombres TEXT, telefono TEXT, licencia TEXT, categoria TEXT,
+        venc_licencia TEXT, venc_cert_medico TEXT, venc_sctr TEXT, estado TEXT DEFAULT 'APTO',
+        observacion TEXT, creado_en TEXT)"""))
+    cur.execute(qmark(f"""CREATE TABLE IF NOT EXISTS transporte_vehiculos(
+        id {idtype}, placa TEXT UNIQUE NOT NULL, tipo TEXT, capacidad INTEGER DEFAULT 0,
+        empresa_transportista TEXT, soat_venc TEXT, revision_tecnica_venc TEXT, gps_codigo TEXT,
+        estado TEXT DEFAULT 'ACTIVO', observacion TEXT, creado_en TEXT)"""))
+    cur.execute(qmark(f"""CREATE TABLE IF NOT EXISTS transporte_rutas(
+        id {idtype}, fecha TEXT NOT NULL, nombre TEXT, origen TEXT, destino TEXT, sede TEXT,
+        hora_salida TEXT, hora_retorno TEXT, vehiculo_id INTEGER, conductor_id INTEGER,
+        estado TEXT DEFAULT 'PROGRAMADA', latitud TEXT, longitud TEXT, ultima_ubicacion TEXT,
+        creado_por TEXT, creado_en TEXT)"""))
+    cur.execute(qmark(f"""CREATE TABLE IF NOT EXISTS transporte_pasajeros(
+        id {idtype}, ruta_id INTEGER NOT NULL, dni TEXT NOT NULL, trabajador TEXT, empresa TEXT, area TEXT, cargo TEXT,
+        fecha TEXT NOT NULL, hora TEXT NOT NULL, fecha_hora TEXT NOT NULL, metodo TEXT,
+        latitud TEXT, longitud TEXT, registrado_por TEXT, observacion TEXT)"""))
+    cur.execute(qmark(f"""CREATE TABLE IF NOT EXISTS transporte_gps(
+        id {idtype}, ruta_id INTEGER NOT NULL, latitud TEXT, longitud TEXT, fecha_hora TEXT, registrado_por TEXT)"""))
     cur.execute(qmark(f"""CREATE TABLE IF NOT EXISTS tareos(
         id {idtype}, hoja_id INTEGER, labor_id INTEGER, dni TEXT NOT NULL, trabajador TEXT, empresa TEXT, area TEXT, cargo TEXT,
         fecha TEXT NOT NULL, labor TEXT, lote TEXT, fundo TEXT, horas REAL DEFAULT 0,
@@ -939,6 +958,7 @@ def home():
           <a class="tile text-decoration-none" href="{{url_for('hojas_tareo')}}"><i class="bi bi-list-check"></i>TAREO</a>
           <a class="tile text-decoration-none" href="{{url_for('asistencia_modulo')}}"><i class="bi bi-fingerprint"></i>ASIST.</a>
           <a class="tile text-decoration-none" href="{{url_for('documentos_firma')}}"><i class="bi bi-pen"></i>FIRMAS</a>
+          <a class="tile text-decoration-none" href="{{url_for('transporte')}}"><i class="bi bi-bus-front"></i>TRANSP.</a>
           <a class="tile text-decoration-none" href="{{url_for('reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i>REPORTES<br>TAREO</a>
           <a class="tile text-decoration-none" href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-repeat"></i>SINC.</a>
         </div>
@@ -1949,6 +1969,186 @@ def exportar_firmas():
     rows = rows_to_dict(execute('SELECT fecha,hora,dni,trabajador,empresa,area,cargo,documento,estado,metodo,registrado_por,observacion,fecha_hora FROM documentos_firma ORDER BY fecha_hora DESC', fetchall=True))
     headers=['FECHA','HORA','DNI','TRABAJADOR','EMPRESA','AREA','CARGO','DOCUMENTO','ESTADO','METODO','REGISTRADO_POR','OBSERVACION','FECHA_HORA']
     return excel_response(headers, rows, 'firmas_documentos.xlsx', 'FIRMAS')
+
+# ========================= TRANSPORTE =========================
+def transporte_estado_requisito(vencimiento):
+    if not vencimiento:
+        return 'SIN FECHA'
+    try:
+        dias = (datetime.strptime(vencimiento, '%Y-%m-%d').date() - date.today()).days
+        if dias < 0: return 'VENCIDO'
+        if dias <= 30: return 'POR VENCER'
+        return 'VIGENTE'
+    except Exception:
+        return 'SIN FECHA'
+
+@app.route('/transporte')
+@login_required
+def transporte():
+    rutas = rows_to_dict(execute("""SELECT r.*, v.placa, v.tipo AS vehiculo_tipo, v.capacidad, c.nombres AS conductor
+                                   FROM transporte_rutas r
+                                   LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                   LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                                   ORDER BY r.fecha DESC, r.id DESC LIMIT 20""", fetchall=True))
+    conductores = scalar('SELECT COUNT(*) AS c FROM transporte_conductores')
+    vehiculos = scalar('SELECT COUNT(*) AS c FROM transporte_vehiculos')
+    hoy = today_str()
+    abordajes = scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE fecha=?', (hoy,))
+    body = """
+    <div class="phone-wrap desktop-pad"><div class="page-card">
+      <div class="panel-green"><a class="text-white text-decoration-none float-start" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><i class="bi bi-bus-front"></i><h4>MÓDULO TRANSPORTE</h4></div>
+      <div class="floating-card" style="margin:-24px 9px 10px">
+        <div class="worker-grid">
+          <a class="btn btn-green btn-sm" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i><br>Conductores</a>
+          <a class="btn btn-green btn-sm" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i><br>Buses</a>
+          <a class="btn btn-green btn-sm" href="{{url_for('transporte_rutas')}}"><i class="bi bi-geo-alt"></i><br>Rutas</a>
+        </div>
+        <div class="worker-grid mt-2">
+          <div><label>CONDUCTORES</label><div class="metric-box">{{conductores}}</div></div>
+          <div><label>VEHÍCULOS</label><div class="metric-box">{{vehiculos}}</div></div>
+          <div><label>ABORDARON HOY</label><div class="metric-box">{{abordajes}}</div></div>
+        </div>
+        <a class="btn btn-outline-success w-100 mt-2" href="{{url_for('exportar_transporte_pasajeros')}}"><i class="bi bi-file-earmark-excel"></i> Exportar abordajes</a>
+      </div>
+      {% for r in rutas %}<div class="worker-card"><div class="worker-title"><div>{{r.fecha}} {{r.hora_salida or ''}}<br><b>{{r.nombre or 'RUTA'}}</b></div><div class="text-end">{{r.placa or 'SIN BUS'}}<br><b>{{r.estado}}</b></div></div>
+        <div class="worker-grid"><div><label>CONDUCTOR</label><div class="small-value">{{r.conductor or '-'}}</div></div><div><label>ORIGEN</label><div class="small-value">{{r.origen or '-'}}</div></div><div><label>DESTINO</label><div class="small-value">{{r.destino or '-'}}</div></div></div>
+        <div class="d-grid gap-1 mt-2"><a class="btn btn-green btn-sm" href="{{url_for('transporte_ruta_detalle', ruta_id=r.id)}}"><i class="bi bi-qr-code-scan"></i> Abrir ruta / subir trabajadores</a></div>
+      </div>{% else %}<div class="worker-card text-center text-muted">Aún no hay rutas programadas.</div>{% endfor %}
+    </div></div>"""
+    return render_page(body, rutas=rutas, conductores=conductores, vehiculos=vehiculos, abordajes=abordajes)
+
+@app.route('/transporte/conductores', methods=['GET','POST'])
+@login_required
+def transporte_conductores():
+    if request.method == 'POST':
+        dni=limpiar_dni(request.form.get('dni')); nombres=limpiar_texto(request.form.get('nombres'))
+        if len(dni)!=8 or not nombres:
+            flash('Ingrese DNI de 8 dígitos y nombres del conductor.', 'danger'); return redirect(url_for('transporte_conductores'))
+        params=(dni,nombres,request.form.get('telefono',''),limpiar_texto(request.form.get('licencia')),limpiar_texto(request.form.get('categoria')),request.form.get('venc_licencia',''),request.form.get('venc_cert_medico',''),request.form.get('venc_sctr',''),limpiar_texto(request.form.get('estado') or 'APTO'),limpiar_texto(request.form.get('observacion'), upper=False),now_str())
+        try:
+            execute("""INSERT INTO transporte_conductores(dni,nombres,telefono,licencia,categoria,venc_licencia,venc_cert_medico,venc_sctr,estado,observacion,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?)""", params, commit=True)
+            flash('Conductor registrado correctamente.', 'success')
+        except Exception:
+            execute("""UPDATE transporte_conductores SET nombres=?,telefono=?,licencia=?,categoria=?,venc_licencia=?,venc_cert_medico=?,venc_sctr=?,estado=?,observacion=? WHERE dni=?""", (nombres,params[2],params[3],params[4],params[5],params[6],params[7],params[8],params[9],dni), commit=True)
+            flash('Conductor actualizado correctamente.', 'success')
+        return redirect(url_for('transporte_conductores'))
+    rows=rows_to_dict(execute('SELECT * FROM transporte_conductores ORDER BY id DESC LIMIT 100', fetchall=True))
+    for r in rows:
+        r['lic_estado']=transporte_estado_requisito(r.get('venc_licencia'))
+        r['med_estado']=transporte_estado_requisito(r.get('venc_cert_medico'))
+        r['sctr_estado']=transporte_estado_requisito(r.get('venc_sctr'))
+    body="""
+    <div class="phone-wrap desktop-pad"><div class="config-header"><a class="back-mini" href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><h2 class="header-title mb-2">CONDUCTORES</h2></div>
+      <form class="floating-card mb-2" method="post"><div class="row g-2"><div class="col-5"><label class="form-label">DNI</label><input name="dni" class="form-control" maxlength="8" required></div><div class="col-7"><label class="form-label">Conductor</label><input name="nombres" class="form-control" required></div><div class="col-6"><label class="form-label">Licencia</label><input name="licencia" class="form-control"></div><div class="col-6"><label class="form-label">Categoría</label><input name="categoria" class="form-control"></div><div class="col-4"><label class="form-label">Venc. Lic.</label><input name="venc_licencia" type="date" class="form-control"></div><div class="col-4"><label class="form-label">Cert. Médico</label><input name="venc_cert_medico" type="date" class="form-control"></div><div class="col-4"><label class="form-label">SCTR</label><input name="venc_sctr" type="date" class="form-control"></div><div class="col-6"><label class="form-label">Teléfono</label><input name="telefono" class="form-control"></div><div class="col-6"><label class="form-label">Estado</label><select name="estado" class="form-select"><option>APTO</option><option>OBSERVADO</option><option>VENCIDO</option></select></div><div class="col-12"><input name="observacion" class="form-control" placeholder="Observación"></div></div><button class="btn btn-green w-100 mt-2">Guardar conductor</button></form>
+      {% for c in rows %}<div class="worker-card"><div class="worker-title"><div>{{c.dni}}<br><b>{{c.nombres}}</b></div><div class="text-end">{{c.categoria or ''}}<br><b>{{c.estado}}</b></div></div><div class="worker-grid"><div><label>LICENCIA</label><div class="small-value">{{c.lic_estado}}</div></div><div><label>MÉDICO</label><div class="small-value">{{c.med_estado}}</div></div><div><label>SCTR</label><div class="small-value">{{c.sctr_estado}}</div></div></div></div>{% else %}<div class="worker-card text-center text-muted">Sin conductores.</div>{% endfor %}
+    </div>"""
+    return render_page(body, rows=rows)
+
+@app.route('/transporte/vehiculos', methods=['GET','POST'])
+@login_required
+def transporte_vehiculos():
+    if request.method == 'POST':
+        placa=limpiar_texto(request.form.get('placa'))
+        if not placa:
+            flash('Ingrese placa del vehículo.', 'danger'); return redirect(url_for('transporte_vehiculos'))
+        try: capacidad=int(request.form.get('capacidad') or 0)
+        except Exception: capacidad=0
+        params=(placa,limpiar_texto(request.form.get('tipo') or 'BUS'),capacidad,limpiar_texto(request.form.get('empresa_transportista')),request.form.get('soat_venc',''),request.form.get('revision_tecnica_venc',''),limpiar_texto(request.form.get('gps_codigo')),limpiar_texto(request.form.get('estado') or 'ACTIVO'),limpiar_texto(request.form.get('observacion'), upper=False),now_str())
+        try:
+            execute("""INSERT INTO transporte_vehiculos(placa,tipo,capacidad,empresa_transportista,soat_venc,revision_tecnica_venc,gps_codigo,estado,observacion,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?)""", params, commit=True)
+            flash('Vehículo registrado correctamente.', 'success')
+        except Exception:
+            execute("""UPDATE transporte_vehiculos SET tipo=?,capacidad=?,empresa_transportista=?,soat_venc=?,revision_tecnica_venc=?,gps_codigo=?,estado=?,observacion=? WHERE placa=?""", (params[1],params[2],params[3],params[4],params[5],params[6],params[7],params[8],placa), commit=True)
+            flash('Vehículo actualizado correctamente.', 'success')
+        return redirect(url_for('transporte_vehiculos'))
+    rows=rows_to_dict(execute('SELECT * FROM transporte_vehiculos ORDER BY id DESC LIMIT 100', fetchall=True))
+    for r in rows:
+        r['soat_estado']=transporte_estado_requisito(r.get('soat_venc'))
+        r['rev_estado']=transporte_estado_requisito(r.get('revision_tecnica_venc'))
+    body="""
+    <div class="phone-wrap desktop-pad"><div class="config-header"><a class="back-mini" href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><h2 class="header-title mb-2">BUSES / MINIBUSES</h2></div>
+      <form class="floating-card mb-2" method="post"><div class="row g-2"><div class="col-5"><label class="form-label">Placa</label><input name="placa" class="form-control" required></div><div class="col-7"><label class="form-label">Tipo</label><select name="tipo" class="form-select"><option>BUS</option><option>MINIBUS</option><option>VAN</option><option>CAMIONETA</option></select></div><div class="col-6"><label class="form-label">Capacidad</label><input name="capacidad" type="number" class="form-control" value="30"></div><div class="col-6"><label class="form-label">Transportista</label><input name="empresa_transportista" class="form-control"></div><div class="col-6"><label class="form-label">SOAT vence</label><input name="soat_venc" type="date" class="form-control"></div><div class="col-6"><label class="form-label">Rev. técnica</label><input name="revision_tecnica_venc" type="date" class="form-control"></div><div class="col-6"><label class="form-label">Código GPS</label><input name="gps_codigo" class="form-control"></div><div class="col-6"><label class="form-label">Estado</label><select name="estado" class="form-select"><option>ACTIVO</option><option>OBSERVADO</option><option>INACTIVO</option></select></div><div class="col-12"><input name="observacion" class="form-control" placeholder="Observación"></div></div><button class="btn btn-green w-100 mt-2">Guardar vehículo</button></form>
+      {% for v in rows %}<div class="worker-card"><div class="worker-title"><div>{{v.placa}}<br><b>{{v.tipo}}</b></div><div class="text-end">CAP. {{v.capacidad}}<br><b>{{v.estado}}</b></div></div><div class="worker-grid"><div><label>SOAT</label><div class="small-value">{{v.soat_estado}}</div></div><div><label>REV. TÉCNICA</label><div class="small-value">{{v.rev_estado}}</div></div><div><label>GPS</label><div class="small-value">{{v.gps_codigo or '-'}}</div></div></div></div>{% else %}<div class="worker-card text-center text-muted">Sin vehículos.</div>{% endfor %}
+    </div>"""
+    return render_page(body, rows=rows)
+
+@app.route('/transporte/rutas', methods=['GET','POST'])
+@login_required
+def transporte_rutas():
+    if request.method == 'POST':
+        fecha=request.form.get('fecha') or today_str(); nombre=limpiar_texto(request.form.get('nombre') or 'RUTA')
+        vehiculo_id=request.form.get('vehiculo_id') or None; conductor_id=request.form.get('conductor_id') or None
+        execute("""INSERT INTO transporte_rutas(fecha,nombre,origen,destino,sede,hora_salida,hora_retorno,vehiculo_id,conductor_id,estado,creado_por,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (fecha,nombre,limpiar_texto(request.form.get('origen')),limpiar_texto(request.form.get('destino')),limpiar_texto(request.form.get('sede')),request.form.get('hora_salida',''),request.form.get('hora_retorno',''),vehiculo_id,conductor_id,limpiar_texto(request.form.get('estado') or 'PROGRAMADA'),session.get('usuario'),now_str()), commit=True)
+        flash('Ruta programada correctamente.', 'success'); return redirect(url_for('transporte_rutas'))
+    vehiculos=rows_to_dict(execute("SELECT id, placa, tipo, capacidad FROM transporte_vehiculos WHERE COALESCE(estado,'ACTIVO')<>'INACTIVO' ORDER BY placa", fetchall=True))
+    conductores=rows_to_dict(execute("SELECT id, dni, nombres, estado FROM transporte_conductores WHERE COALESCE(estado,'APTO')<>'INACTIVO' ORDER BY nombres", fetchall=True))
+    rutas=rows_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id LEFT JOIN transporte_conductores c ON c.id=r.conductor_id ORDER BY r.fecha DESC, r.id DESC LIMIT 80""", fetchall=True))
+    body="""
+    <div class="phone-wrap desktop-pad"><div class="config-header"><a class="back-mini" href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><h2 class="header-title mb-2">RUTAS</h2></div>
+      <form class="floating-card mb-2" method="post"><div class="row g-2"><div class="col-6"><label class="form-label">Fecha</label><input name="fecha" type="date" value="{{hoy}}" class="form-control"></div><div class="col-6"><label class="form-label">Ruta</label><input name="nombre" class="form-control" placeholder="Ej. RUTA 01"></div><div class="col-6"><label class="form-label">Origen</label><input name="origen" class="form-control"></div><div class="col-6"><label class="form-label">Destino</label><input name="destino" class="form-control"></div><div class="col-6"><label class="form-label">Sede/Fundo</label><input name="sede" class="form-control"></div><div class="col-3"><label class="form-label">Salida</label><input name="hora_salida" type="time" class="form-control"></div><div class="col-3"><label class="form-label">Retorno</label><input name="hora_retorno" type="time" class="form-control"></div><div class="col-6"><label class="form-label">Vehículo</label><select name="vehiculo_id" class="form-select"><option value="">Seleccionar</option>{% for v in vehiculos %}<option value="{{v.id}}">{{v.placa}} - {{v.tipo}} ({{v.capacidad}})</option>{% endfor %}</select></div><div class="col-6"><label class="form-label">Conductor</label><select name="conductor_id" class="form-select"><option value="">Seleccionar</option>{% for c in conductores %}<option value="{{c.id}}">{{c.nombres}}</option>{% endfor %}</select></div><div class="col-12"><select name="estado" class="form-select"><option>PROGRAMADA</option><option>EN RUTA</option><option>LLEGÓ</option><option>RETORNO</option><option>CERRADA</option></select></div></div><button class="btn btn-green w-100 mt-2">Crear ruta</button></form>
+      {% for r in rutas %}<div class="worker-card"><div class="worker-title"><div>{{r.fecha}} {{r.hora_salida or ''}}<br><b>{{r.nombre}}</b></div><div class="text-end">{{r.placa or 'SIN BUS'}}<br><b>{{r.estado}}</b></div></div><div class="worker-grid"><div><label>CONDUCTOR</label><div class="small-value">{{r.conductor or '-'}}</div></div><div><label>ORIGEN</label><div class="small-value">{{r.origen or '-'}}</div></div><div><label>DESTINO</label><div class="small-value">{{r.destino or '-'}}</div></div></div><a class="btn btn-green btn-sm w-100 mt-2" href="{{url_for('transporte_ruta_detalle', ruta_id=r.id)}}">Abrir ruta</a></div>{% else %}<div class="worker-card text-center text-muted">Sin rutas.</div>{% endfor %}
+    </div>"""
+    return render_page(body, vehiculos=vehiculos, conductores=conductores, rutas=rutas, hoy=today_str())
+
+@app.route('/transporte/ruta/<int:ruta_id>')
+@login_required
+def transporte_ruta_detalle(ruta_id):
+    ruta=row_to_dict(execute("""SELECT r.*, v.placa, v.tipo, v.capacidad, c.nombres AS conductor FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id LEFT JOIN transporte_conductores c ON c.id=r.conductor_id WHERE r.id=?""", (ruta_id,), fetchone=True))
+    if not ruta:
+        flash('Ruta no encontrada.', 'danger'); return redirect(url_for('transporte'))
+    pasajeros=rows_to_dict(execute('SELECT * FROM transporte_pasajeros WHERE ruta_id=? ORDER BY fecha_hora DESC', (ruta_id,), fetchall=True))
+    ocupados=len(pasajeros); capacidad=int(ruta.get('capacidad') or 0); libres=max(0, capacidad-ocupados) if capacidad else 0
+    body="""
+    <div class="phone-wrap desktop-pad"><div class="page-card"><div class="panel-green"><a class="text-white text-decoration-none float-start" href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><i class="bi bi-bus-front"></i><h4>{{ruta.nombre}} - {{ruta.placa or 'SIN BUS'}}</h4></div>
+      <form class="floating-card" style="margin:-24px 9px 10px" method="post" action="{{url_for('transporte_abordar', ruta_id=ruta.id)}}" id="frmAbordar"><div class="alert alert-light border small mb-2"><b>{{ruta.origen}}</b> → <b>{{ruta.destino}}</b><br>Conductor: {{ruta.conductor or '-'}} | Capacidad: {{capacidad or 'SIN DEFINIR'}} | Ocupados: {{ocupados}} | Libres: {{libres}}</div>
+        <label class="form-label">DNI / QR / Código de barras / Huella</label><div class="input-group mb-2"><input name="dni" id="dniTransporte" class="form-control" maxlength="20" placeholder="ESCANEAR O DIGITAR" required autofocus><button type="button" class="btn btn-green" onclick="abrirScanner('readerTransporte','dniTransporte')"><i class="bi bi-camera"></i></button></div><div id="readerTransporte" class="scan-box mb-2" style="display:none"></div><div id="transpStatus" class="field-help mb-2">Al completar 8 dígitos se validará y registrará el abordaje.</div>
+        <div class="row g-2"><div class="col-6"><label class="form-label">Método</label><select name="metodo" class="form-select"><option>QR</option><option>CODIGO DE BARRAS</option><option>HUELLA</option><option>DNI DIGITADO</option></select></div><div class="col-6"><label class="form-label">Observación</label><input name="observacion" class="form-control"></div></div><input type="hidden" name="latitud" id="latitudTrans"><input type="hidden" name="longitud" id="longitudTrans"><button class="btn btn-green w-100 mt-2"><i class="bi bi-person-check"></i> REGISTRAR SUBIDA</button>
+      </form><div class="mx-2 mb-2 d-grid gap-2"><button class="btn btn-outline-success" onclick="enviarGpsTransporte({{ruta.id}})"><i class="bi bi-geo-alt"></i> Actualizar GPS ruta</button><a class="btn btn-outline-success" href="{{url_for('exportar_transporte_pasajeros', ruta_id=ruta.id)}}"><i class="bi bi-file-earmark-excel"></i> Exportar ruta</a></div>
+      {% for p in pasajeros %}<div class="worker-card"><div class="worker-title"><div>{{p.hora}}<br><b>{{p.trabajador}}</b></div><div class="text-end">{{p.dni}}<br><b>{{p.metodo}}</b></div></div><div class="worker-grid"><div><label>EMPRESA</label><div class="small-value">{{p.empresa or '-'}}</div></div><div><label>ÁREA</label><div class="small-value">{{p.area or '-'}}</div></div><div><label>CARGO</label><div class="small-value">{{p.cargo or '-'}}</div></div></div></div>{% else %}<div class="worker-card text-center text-muted">Aún no hay trabajadores abordados.</div>{% endfor %}
+    </div></div><script>(function(){const dni=v=>String(v||'').replace(/\D/g,'').slice(-8), i=document.getElementById('dniTransporte'), st=document.getElementById('transpStatus'); async function val(){const d=dni(i.value); if(d.length<8){st.className='field-help mb-2'; st.innerHTML='Esperando 8 dígitos...'; return;} i.value=d; st.className='scan-ok mb-2'; st.innerHTML='Validando DNI '+d+'...'; try{const r=await fetch('/api/trabajador/'+d); const j=await r.json(); if(j.ok){st.className='scan-ok mb-2'; st.innerHTML='✓ '+(j.trabajador.trabajador||'TRABAJADOR')+' encontrado'; beep();}else{st.className='scan-bad mb-2'; st.innerHTML='✕ '+j.msg;}}catch(e){st.className='scan-bad mb-2'; st.innerHTML='Error validando DNI';}} if(i){i.addEventListener('input',val); i.addEventListener('paste',()=>setTimeout(val,80));} if(navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{document.getElementById('latitudTrans').value=p.coords.latitude;document.getElementById('longitudTrans').value=p.coords.longitude;},()=>{});}})(); async function enviarGpsTransporte(rid){if(!navigator.geolocation){alert('GPS no disponible');return;} navigator.geolocation.getCurrentPosition(async p=>{let fd=new FormData();fd.append('latitud',p.coords.latitude);fd.append('longitud',p.coords.longitude);let r=await fetch('/transporte/ruta/'+rid+'/gps',{method:'POST',body:fd});let j=await r.json();alert(j.msg||'GPS actualizado');location.reload();},()=>alert('Permite ubicación/GPS en el navegador'));}</script>"""
+    return render_page(body, ruta=ruta, pasajeros=pasajeros, ocupados=ocupados, capacidad=capacidad, libres=libres)
+
+@app.route('/transporte/ruta/<int:ruta_id>/abordar', methods=['POST'])
+@login_required
+def transporte_abordar(ruta_id):
+    ruta=row_to_dict(execute('SELECT r.*, v.capacidad FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id WHERE r.id=?', (ruta_id,), fetchone=True))
+    if not ruta:
+        flash('Ruta no encontrada.', 'danger'); return redirect(url_for('transporte'))
+    dni=limpiar_dni(request.form.get('dni'))
+    if len(dni)!=8:
+        flash('DNI inválido. No se registró subida.', 'danger'); return redirect(url_for('transporte_ruta_detalle', ruta_id=ruta_id))
+    t=row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if not t:
+        flash('DNI no existe en base trabajadores. No se registró subida.', 'danger'); return redirect(url_for('transporte_ruta_detalle', ruta_id=ruta_id))
+    dup=scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE ruta_id=? AND dni=?', (ruta_id,dni))
+    if dup:
+        flash('Este trabajador ya fue registrado en esta ruta.', 'danger'); return redirect(url_for('transporte_ruta_detalle', ruta_id=ruta_id))
+    capacidad=int(ruta.get('capacidad') or 0); ocupados=scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE ruta_id=?', (ruta_id,))
+    if capacidad and ocupados >= capacidad:
+        flash('Capacidad completa del vehículo. No se registró subida.', 'danger'); return redirect(url_for('transporte_ruta_detalle', ruta_id=ruta_id))
+    ahora=datetime.now(); fecha=ahora.strftime('%Y-%m-%d'); hora=ahora.strftime('%H:%M:%S')
+    execute("""INSERT INTO transporte_pasajeros(ruta_id,dni,trabajador,empresa,area,cargo,fecha,hora,fecha_hora,metodo,latitud,longitud,registrado_por,observacion) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (ruta_id,dni,t.get('trabajador'),t.get('empresa'),t.get('area'),t.get('cargo'),fecha,hora,ahora.strftime('%Y-%m-%d %H:%M:%S'),limpiar_texto(request.form.get('metodo') or 'QR'),request.form.get('latitud',''),request.form.get('longitud',''),session.get('usuario'),limpiar_texto(request.form.get('observacion'), upper=False)), commit=True)
+    flash(f'Subida registrada: {dni} - {t.get("trabajador")}', 'success')
+    return redirect(url_for('transporte_ruta_detalle', ruta_id=ruta_id))
+
+@app.route('/transporte/ruta/<int:ruta_id>/gps', methods=['POST'])
+@login_required
+def transporte_gps_actualizar(ruta_id):
+    lat=request.form.get('latitud',''); lon=request.form.get('longitud',''); fh=now_str()
+    execute('INSERT INTO transporte_gps(ruta_id,latitud,longitud,fecha_hora,registrado_por) VALUES(?,?,?,?,?)', (ruta_id,lat,lon,fh,session.get('usuario')), commit=True)
+    execute('UPDATE transporte_rutas SET latitud=?, longitud=?, ultima_ubicacion=?, estado=? WHERE id=?', (lat,lon,fh,'EN RUTA',ruta_id), commit=True)
+    return jsonify(ok=True, msg='GPS actualizado correctamente')
+
+@app.route('/exportar/transporte/pasajeros')
+@login_required
+def exportar_transporte_pasajeros():
+    ruta_id=request.args.get('ruta_id')
+    params=[]; where=''
+    if ruta_id:
+        where='WHERE p.ruta_id=?'; params=[ruta_id]
+    rows=rows_to_dict(execute(f"""SELECT r.fecha AS fecha_ruta, r.nombre AS ruta, r.origen, r.destino, v.placa, c.nombres AS conductor, p.fecha, p.hora, p.dni, p.trabajador, p.empresa, p.area, p.cargo, p.metodo, p.latitud, p.longitud, p.registrado_por, p.observacion, p.fecha_hora FROM transporte_pasajeros p LEFT JOIN transporte_rutas r ON r.id=p.ruta_id LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id LEFT JOIN transporte_conductores c ON c.id=r.conductor_id {where} ORDER BY p.fecha_hora DESC""", params, fetchall=True))
+    headers=['FECHA_RUTA','RUTA','ORIGEN','DESTINO','PLACA','CONDUCTOR','FECHA','HORA','DNI','TRABAJADOR','EMPRESA','AREA','CARGO','METODO','LATITUD','LONGITUD','REGISTRADO_POR','OBSERVACION','FECHA_HORA']
+    return excel_response(headers, rows, 'transporte_abordajes.xlsx', 'ABORDAJES')
 
 # ========================= SOPORTE / CONFIG / SINC =========================
 @app.route('/soporte')
