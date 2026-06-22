@@ -180,6 +180,26 @@ function testDB(){document.getElementById('dbOk')?.classList.add('show');showToa
 def shell(body, title="P&A Mobile", page_class=""):
     return f"""<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="{GREEN}"><title>{title}</title><style>{CSS}</style></head><body><div class="phone {page_class}">{body}</div><script>{JS}</script></body></html>"""
 
+
+
+def app_icon(name):
+    """Iconos SVG embebidos para evitar dependencias externas en Render."""
+    icons = {
+        "support": '<svg viewBox="0 0 24 24"><path d="M12 3a8 8 0 0 0-8 8v4a3 3 0 0 0 3 3h2v-7H6a6 6 0 0 1 12 0h-3v7h3a3 3 0 0 0 3-3v-4a8 8 0 0 0-8-8Zm-1 15h2v2h-2z"/></svg>',
+        "settings": '<svg viewBox="0 0 24 24"><path d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2.6-1.5L14 2h-4l-.4 2.5A7 7 0 0 0 7 6L4.6 5 2.6 8.5l2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2.6 1.5L10 22h4l.4-2.5A7 7 0 0 0 17 18l2.4 1 2-3.5-2-1.5ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>',
+        "profile": '<svg viewBox="0 0 24 24"><path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-5 0-8 2.5-8 5.5V21h16v-1.5c0-3-3-5.5-8-5.5Z"/></svg>',
+        "attendance": '<svg viewBox="0 0 24 24"><path d="M4 5h3v3H4V5Zm0 6h3v3H4v-3Zm0 6h3v3H4v-3ZM10 6h10v2H10V6Zm0 6h10v2H10v-2Zm0 6h10v2H10v-2Z"/></svg>',
+        "docs": '<svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6V2Zm8 1.5V8h4.5L14 3.5ZM8 11h8v2H8v-2Zm0 4h8v2H8v-2Z"/></svg>',
+        "sign": '<svg viewBox="0 0 24 24"><path d="M4 17.5V21h3.5L18.1 10.4l-3.5-3.5L4 17.5ZM20.7 7.8c.4-.4.4-1 0-1.4l-2.1-2.1a1 1 0 0 0-1.4 0l-1.6 1.6 3.5 3.5 1.6-1.6Z"/></svg>',
+        "home": '<svg viewBox="0 0 24 24"><path d="M3 11 12 3l9 8v10h-6v-6H9v6H3V11Z"/></svg>',
+        "logout": '<svg viewBox="0 0 24 24"><path d="M10 3h10v18H10v-2h8V5h-8V3ZM8.6 16.6 7.2 18 2 12.8 7.2 7.6 8.6 9l-2.8 2.8H14v2H5.8l2.8 2.8Z"/></svg>',
+        "arrow": '<svg viewBox="0 0 24 24"><path d="M15.5 4.5 8 12l7.5 7.5-1.8 1.8L4.4 12l9.3-9.3 1.8 1.8Z"/></svg>',
+        "download": '<svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2ZM13 4h-2v8H8l4 4 4-4h-3V4Z"/></svg>',
+        "location": '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5Z"/></svg>',
+        "time": '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 .1 20.1A10 10 0 0 0 12 2Zm1 11h5v-2h-4V6h-2v7Z"/></svg>',
+    }
+    return '<span class="svgico">' + icons.get(name, icons["docs"]) + '</span>'
+
 def leaves(): return '<div class="leaves"><i></i><i></i><i></i></div>'
 
 def head(title, icon="docs", back="/home"):
