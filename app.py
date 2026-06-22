@@ -3,7 +3,7 @@
 P&A Mobile - Asistencia, Documentos, Firma y Configuración
 Render 5 archivos: todo el HTML/CSS/JS está embebido en app.py.
 """
-import os, re, sqlite3, json
+import os, re, sqlite3, json, csv
 from datetime import datetime, date
 from functools import wraps
 from flask import Flask, request, redirect, url_for, session, jsonify, Response
@@ -164,6 +164,13 @@ html,body{background:#fff!important;font-family:Inter,Segoe UI,Arial,sans-serif!
 .doc-list{background:#f7f8f7!important;padding:22px 17px 82px!important}.doc-row{height:72px!important;border-radius:13px!important;margin-bottom:13px!important;box-shadow:0 5px 13px rgba(0,0,0,.055)!important}.doc-title{font-size:15px!important;color:#00112b!important;font-weight:1000!important}.doc-sub{font-size:11px!important;font-weight:500!important}.doc-ico{border-color:#59d5d1!important;color:#009f9d!important}.chev{font-size:27px!important;color:#929aa6!important}.hero-att{background:#0d887f!important;background:linear-gradient(180deg,#108b84 0%,#0a7147 100%)!important;height:185px!important}.hero-att h1{font-size:22px!important}.hero-att p{font-size:13px!important}.att-card{margin:-33px 15px 0!important;border-radius:18px!important;box-shadow:0 9px 23px rgba(0,0,0,.14)!important}.btn-main{background:#23b662!important;color:#fff!important}.mark-btn{border-radius:9px!important}.mark-btn:hover,.mark-btn.active{background:#2f773b!important;color:#fff!important}.mark-btn.done{background:#f0f2f4!important;color:#405064!important}.signal{background:#d9f8df!important;color:#077d3a!important;border:2px solid #2f773b!important}.selected-time{height:44px!important}.bottom-nav{position:fixed!important;left:50%!important;transform:translateX(-50%)!important;width:100%!important;max-width:390px!important;height:58px!important;background:#fff!important;border-top:1px solid #e5ece7!important;color:#73809a!important;z-index:40!important}.bottom-nav a.active{color:#008f82!important}.bottom-nav .svgico{width:23px!important;height:23px!important}.config-card,.form-card,.profile-card{box-shadow:0 12px 28px rgba(0,0,0,.12)!important;border-radius:13px!important}.cfg-btn.primary,.btn-green,.save{background:#2f773b!important;color:white!important}.cfg-btn{border-color:#2f773b!important;color:#2f773b!important}.profile-photo{color:#2f773b!important}.sign-box{border-color:#dce8df!important}.stats-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px}.stat-card{background:#f7fbf8;border:1px solid #e1ece4;border-radius:10px;padding:10px;text-align:center;color:#2f773b;font-weight:1000}.stat-card b{display:block;color:#00112b;font-size:18px;margin-top:3px}.history-card{margin-top:14px;background:#fbfffb;border:1px solid #dcebdd;border-radius:12px;padding:10px}.history-row{display:flex;justify-content:space-between;border-bottom:1px solid #e7f1e7;padding:8px 2px;font-size:12px}.history-row:last-child{border-bottom:0}.history-row b{color:#2f773b}.pdf-badge{display:inline-flex;gap:6px;align-items:center;background:#eaf5eb;border:1px solid #cfe6d4;border-radius:999px;padding:5px 9px;font-size:11px;color:#2f773b;font-weight:1000}@media(min-width:800px){body{background:#fff!important}.phone{margin:0 auto!important;border-radius:0!important;min-height:100dvh!important}}
 """
 
+
+CSS += """
+/* ===== V6 DEFINITIVO: distribución tipo Tareo Móvil en todo el lienzo ===== */
+html,body{background:#fff!important;min-height:100dvh!important;overflow-x:hidden!important}.phone{width:390px!important;max-width:390px!important;margin:0 auto!important;min-height:100dvh!important;border:0!important;box-shadow:none!important;background:#fff!important}.login-pro{width:390px!important;max-width:390px!important;margin:0 auto!important;padding:0 20px 22px!important}.login-green{height:270px!important;margin:0 -20px!important;background:#2f773b!important}.login-mark{width:112px!important;height:112px!important;margin-top:38px!important}.login-float{margin-top:-32px!important}.login-mini-tiles{margin-top:26px!important}.mini-login-tile{width:76px!important;height:76px!important}.login-leaf{margin-top:10px!important}.help{position:fixed!important;left:50%!important;transform:translateX(-50%)!important;bottom:18px!important;width:390px!important;max-width:390px!important;text-align:center!important}.top-green{background:#2f773b!important;height:210px!important;border-radius:0 0 16px 16px!important}.content{min-height:calc(100dvh - 210px)!important}.sync-card{position:fixed!important;left:50%!important;right:auto!important;transform:translateX(-50%)!important;width:370px!important;max-width:calc(100vw - 20px)!important;bottom:8px!important}.exit{position:fixed!important;right:12px!important;bottom:12px!important;z-index:80!important}.page-head,.hero-att{background:#2f773b!important;background-image:none!important}.bottom-nav{left:50%!important;right:auto!important;transform:translateX(-50%)!important}.mass-preview{max-height:180px;overflow:auto;background:white;border:1px solid #e5eee6;border-radius:9px;padding:8px;font-size:11px}.mass-preview table{width:100%;border-collapse:collapse}.mass-preview th,.mass-preview td{border-bottom:1px solid #eef3ef;padding:5px;text-align:left}.mass-ok{background:#e7f8eb;color:#166534;border:1px solid #bfe7c7;border-radius:10px;padding:10px;font-size:12px;font-weight:900;margin-bottom:10px}.mass-bad{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:10px;padding:10px;font-size:12px;font-weight:900;margin-bottom:10px}
+@media(min-width:800px){body{display:block!important}.phone{margin:0 auto!important}.login-pro{margin:0 auto!important}.sync-card{left:10px!important;transform:none!important;width:330px!important;bottom:10px!important}.login-pro .help{left:50%!important}.login-pro:after{content:'';position:fixed;right:16px;bottom:13px;width:20px;height:20px;border:2px solid #ef4444;border-left:0;border-radius:2px}.login-pro:before{content:'➜';position:fixed;right:13px;bottom:8px;color:#ef4444;font-size:24px;font-weight:900;z-index:1}}
+"""
+
 JS = """
 function tone(ok=true){try{const C=window.AudioContext||window.webkitAudioContext;const ctx=new C();const o=ctx.createOscillator();const g=ctx.createGain();o.type='sine';o.frequency.value=ok?880:220;g.gain.value=.07;o.connect(g);g.connect(ctx.destination);o.start();setTimeout(()=>{o.stop();ctx.close()},150)}catch(e){}}
 function showToast(msg,ok=true){tone(ok);let t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2400)}
@@ -298,8 +305,59 @@ def perfil():
 @app.route("/config")
 @login_required
 def config():
-    body=head("CONFIGURACIÓN","settings")+'''<div class="config-card"><a class="cfg-btn primary" style="display:grid;place-items:center" href="/config/trabajador">👥 Cargar trabajadores</a><a class="cfg-btn primary" style="display:grid;place-items:center" href="/config/plantilla-trabajadores">▤ Plantilla trabajadores</a><button class="cfg-btn disabled" onclick="fakeOk('Usuarios habilitado para etapa admin')">👥 Usuarios</button><a class="cfg-btn" style="display:grid;place-items:center" href="/config/firmas">Almacenamiento firmas</a><a class="cfg-btn" style="display:grid;place-items:center" href="/config/db">Conexión Base de Datos</a><a class="cfg-btn" style="display:grid;place-items:center" href="/home">Volver</a></div>'''
+    body=head("CONFIGURACIÓN","settings")+'''<div class="config-card"><a class="cfg-btn primary" style="display:grid;place-items:center" href="/config/trabajador">👥 Cargar trabajador</a><a class="cfg-btn primary" style="display:grid;place-items:center" href="/config/importar-trabajadores">⇧ Importación masiva trabajadores</a><a class="cfg-btn" style="display:grid;place-items:center" href="/config/plantilla-trabajadores">▤ Descargar plantilla trabajadores</a><button class="cfg-btn disabled" onclick="fakeOk('Usuarios habilitado para etapa admin')">👥 Usuarios</button><a class="cfg-btn" style="display:grid;place-items:center" href="/config/firmas">Almacenamiento firmas</a><a class="cfg-btn" style="display:grid;place-items:center" href="/config/db">Conexión Base de Datos</a><a class="cfg-btn" style="display:grid;place-items:center" href="/home">Volver</a></div>'''
     return shell(body,"Configuración P&A")
+
+
+@app.route("/config/importar-trabajadores", methods=["GET","POST"])
+@login_required
+def importar_trabajadores():
+    mensaje=''
+    preview=[]
+    if request.method=='POST':
+        texto = request.form.get('csv_text','') or ''
+        archivo = request.files.get('archivo')
+        if archivo and archivo.filename:
+            raw = archivo.read()
+            try:
+                texto = raw.decode('utf-8-sig')
+            except Exception:
+                texto = raw.decode('latin-1', errors='ignore')
+        if not texto.strip():
+            mensaje='<div class="mass-bad">No se recibió información. Pega datos CSV o sube un archivo .csv.</div>'
+        else:
+            try:
+                sample = texto[:2048]
+                dialect = csv.Sniffer().sniff(sample, delimiters=';,\t,')
+            except Exception:
+                dialect = csv.excel
+                dialect.delimiter = ';' if texto.count(';') >= texto.count(',') else ','
+            rows = list(csv.DictReader(texto.splitlines(), dialect=dialect))
+            guardados=0; errores=[]
+            c=conn(); cur=c.cursor()
+            for idx,row in enumerate(rows, start=2):
+                norm={str(k or '').strip().upper().replace('Á','A').replace('É','E').replace('Í','I').replace('Ó','O').replace('Ú','U'): (v or '').strip() for k,v in row.items()}
+                d=dni(norm.get('DNI') or norm.get('DOCUMENTO') or norm.get('NRO_DOC') or norm.get('NUMERO DE DOCUMENTO'))
+                nombres=norm.get('NOMBRES') or norm.get('NOMBRE') or norm.get('TRABAJADOR') or ''
+                apellidos=norm.get('APELLIDOS') or ''
+                if len(d)!=8 or not nombres:
+                    errores.append(f'Fila {idx}: DNI o nombres inválidos')
+                    continue
+                vals=(d,generate_password_hash('123456'),nombres,apellidos,COMPANY,norm.get('CARGO','TRABAJADOR') or 'TRABAJADOR',norm.get('AREA','OPERACIONES') or 'OPERACIONES',norm.get('REGIMEN','RÉGIMEN GENERAL') or 'RÉGIMEN GENERAL',norm.get('FECHA_INGRESO',''),norm.get('TIPO_DOC','DNI') or 'DNI',norm.get('NRO_DOC',d) or d,norm.get('BANCO',''),norm.get('CUENTA',''),norm.get('CORREO',''),norm.get('CELULAR',''),norm.get('DIRECCION',''), '')
+                cur.execute('''INSERT INTO users(usuario,password_hash,nombres,apellidos,empresa,cargo,area,regimen,fecha_ingreso,tipo_doc,nro_doc,banco,cuenta,correo,celular,direccion,avatar)
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                               ON CONFLICT(usuario) DO UPDATE SET nombres=excluded.nombres,apellidos=excluded.apellidos,cargo=excluded.cargo,area=excluded.area,regimen=excluded.regimen,fecha_ingreso=excluded.fecha_ingreso,tipo_doc=excluded.tipo_doc,nro_doc=excluded.nro_doc,banco=excluded.banco,cuenta=excluded.cuenta,correo=excluded.correo,celular=excluded.celular,direccion=excluded.direccion''', vals)
+                guardados+=1
+                if len(preview)<10: preview.append({'dni':d,'nombres':nombres,'cargo':vals[5],'area':vals[6]})
+            c.commit(); c.close()
+            extra = ('<br>'.join(errores[:6]) if errores else '')
+            mensaje=f'<div class="mass-ok">✓ Importación finalizada: {guardados} trabajador(es) guardado(s). Clave inicial: 123456.</div>' + (f'<div class="mass-bad">{extra}</div>' if extra else '')
+    preview_html=''
+    if preview:
+        preview_html='<div class="mass-preview"><table><tr><th>DNI</th><th>Nombres</th><th>Cargo</th><th>Área</th></tr>' + ''.join([f'<tr><td>{esc(r["dni"])}</td><td>{esc(r["nombres"])}</td><td>{esc(r["cargo"])}</td><td>{esc(r["area"])}</td></tr>' for r in preview]) + '</table></div>'
+    ejemplo='DNI;NOMBRES;APELLIDOS;CARGO;AREA;REGIMEN;FECHA_INGRESO;TIPO_DOC;NRO_DOC;BANCO;CUENTA;CORREO;CELULAR;DIRECCION\n11223344;NISEDM01;;TRABAJADOR;OPERACIONES;RÉGIMEN GENERAL;2026-06-22;DNI;11223344;BCP;001-000000000;trabajador@pa.com;999999999;TRUJILLO'
+    body=head("IMPORTAR TRABAJADORES","profile","/config")+f'''<form class="form-card" method="post" enctype="multipart/form-data">{mensaje}<div class="form-title">Carga masiva de trabajadores</div><div class="mini-help">Sube un archivo CSV o pega la información usando la plantilla. Se actualizarán DNI existentes y se crearán nuevos usuarios con clave inicial <b>123456</b>.</div><div class="field"><label>Archivo CSV</label><input type="file" name="archivo" accept=".csv,text/csv"></div><div class="field"><label>Pegar CSV</label><textarea name="csv_text" style="width:100%;height:150px;border:1px solid #dde3e9;border-radius:9px;padding:9px;font-size:11px;font-weight:700">{esc(ejemplo)}</textarea></div><button class="btn-green">⇧ Importar trabajadores</button><br><br><a class="cfg-btn" style="display:grid;place-items:center" href="/config/plantilla-trabajadores">Descargar plantilla</a>{preview_html}</form>{bottom('perfil')}'''
+    return shell(body,"Importar trabajadores")
 
 @app.route("/config/trabajador", methods=["GET","POST"])
 @login_required
