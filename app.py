@@ -115,28 +115,28 @@ CSS = f"""
 @media(min-width:800px){{.phone{{margin:10px 0;min-height:780px;border-radius:20px}}}}
 
 /* ===== V3 OMAR: compacto estilo referencia, sin tareo, botones no quedan pintados ===== */
-.phone{max-width:390px!important;min-height:100dvh!important;box-shadow:0 0 0 1px rgba(0,0,0,.05)!important}
-@media(min-width:800px){body{background:#fff!important}.phone{margin:8px auto!important;border-radius:0!important;min-height:100dvh!important;box-shadow:0 0 0 1px #e1e5e8!important}}
-.top-green{height:214px!important;border-radius:0 0 28px 28px!important;padding:8px 14px!important}
-.pill-row{margin-top:5px!important}.pill{font-size:12px!important;padding:7px 11px!important;border-radius:20px!important}
-.avatar{width:68px!important;height:68px!important;margin:16px auto 8px!important;font-size:43px!important}.user-name{font-size:16px!important}
-.welcome-card{left:20px!important;right:20px!important;bottom:-32px!important;border-radius:16px!important;padding:12px!important}
-.content{padding:49px 18px 76px!important}.tile-grid{gap:14px!important}.tile{height:96px!important;border-radius:13px!important;font-size:12px!important;gap:8px!important}.tile .ico{font-size:27px!important}
-.leaves{width:112px!important;height:112px!important;margin:20px auto!important}
-.sync-card{bottom:8px!important;border-radius:13px!important;padding:8px 10px!important;grid-template-columns:34px 1fr 32px!important}.sync-btn{width:32px!important;height:32px!important;font-size:20px!important}.sync-title{font-size:12px!important}.sync-sub{font-size:9px!important}.exit{font-size:26px!important}
-.hero-att{height:184px!important;padding:17px 22px 0!important}.hero-att .cal{font-size:25px!important;margin-bottom:5px!important}.hero-att h1{font-size:23px!important}.hero-att p{font-size:13px!important;margin-top:10px!important}
-.att-card{margin:-33px 15px 0!important;border-radius:20px!important;padding:17px 15px 14px!important}.big-clock{font-size:39px!important}.date-line{font-size:12px!important;margin-bottom:13px!important}
-.mark-btn{height:48px!important;border-radius:9px!important;background:#f0f2f4!important;color:#405064!important;transition:.15s!important}
-.mark-btn:hover,.mark-btn.active{background:#21b45d!important;color:#fff!important;outline:none!important;transform:translateY(-1px)!important}
-.mark-btn.done{background:#f0f2f4!important;color:#405064!important}
-.btn-main{background:#f0f2f4!important;color:#405064!important}.btn-main:hover,.btn-main.active{background:#21b45d!important;color:#fff!important}
-.btn-row{gap:11px!important;margin:11px 0!important}.selected-time{height:44px!important;margin-top:11px!important}
-.map-title{margin-top:18px!important}.map{height:137px!important}.loc-foot{font-size:11px!important;align-items:flex-start}.loc-foot a{font-size:13px!important;font-weight:1000}
-.page-head{height:122px!important;border-radius:0 0 27px 27px!important}.page-head h1{font-size:20px!important;margin-top:43px!important}.back{font-size:29px!important;top:15px!important}
-.doc-list{padding:22px 17px 76px!important}.doc-row{height:70px!important;border-radius:13px!important;margin-bottom:12px!important}.doc-title{font-size:15px!important}.doc-sub{font-size:11px!important}
-.config-card,.form-card,.profile-card{margin:15px!important;border-radius:14px!important}.cfg-btn{min-height:45px!important;font-size:15px!important;margin-bottom:9px!important}
-.login-wrap{padding:28px 24px 20px!important}.login-logo{height:106px!important}.brand-title{font-size:36px!important}
-.sign-box{height:180px!important}.bottom-nav{height:56px!important}
+.phone{{max-width:390px!important;min-height:100dvh!important;box-shadow:0 0 0 1px rgba(0,0,0,.05)!important}}
+@media(min-width:800px){{body{{background:#fff!important}}.phone{{margin:8px auto!important;border-radius:0!important;min-height:100dvh!important;box-shadow:0 0 0 1px #e1e5e8!important}}}}
+.top-green{{height:214px!important;border-radius:0 0 28px 28px!important;padding:8px 14px!important}}
+.pill-row{{margin-top:5px!important}}.pill{{font-size:12px!important;padding:7px 11px!important;border-radius:20px!important}}
+.avatar{{width:68px!important;height:68px!important;margin:16px auto 8px!important;font-size:43px!important}}.user-name{{font-size:16px!important}}
+.welcome-card{{left:20px!important;right:20px!important;bottom:-32px!important;border-radius:16px!important;padding:12px!important}}
+.content{{padding:49px 18px 76px!important}}.tile-grid{{gap:14px!important}}.tile{{height:96px!important;border-radius:13px!important;font-size:12px!important;gap:8px!important}}.tile .ico{{font-size:27px!important}}
+.leaves{{width:112px!important;height:112px!important;margin:20px auto!important}}
+.sync-card{{bottom:8px!important;border-radius:13px!important;padding:8px 10px!important;grid-template-columns:34px 1fr 32px!important}}.sync-btn{{width:32px!important;height:32px!important;font-size:20px!important}}.sync-title{{font-size:12px!important}}.sync-sub{{font-size:9px!important}}.exit{{font-size:26px!important}}
+.hero-att{{height:184px!important;padding:17px 22px 0!important}}.hero-att .cal{{font-size:25px!important;margin-bottom:5px!important}}.hero-att h1{{font-size:23px!important}}.hero-att p{{font-size:13px!important;margin-top:10px!important}}
+.att-card{{margin:-33px 15px 0!important;border-radius:20px!important;padding:17px 15px 14px!important}}.big-clock{{font-size:39px!important}}.date-line{{font-size:12px!important;margin-bottom:13px!important}}
+.mark-btn{{height:48px!important;border-radius:9px!important;background:#f0f2f4!important;color:#405064!important;transition:.15s!important}}
+.mark-btn:hover,.mark-btn.active{{background:#21b45d!important;color:#fff!important;outline:none!important;transform:translateY(-1px)!important}}
+.mark-btn.done{{background:#f0f2f4!important;color:#405064!important}}
+.btn-main{{background:#f0f2f4!important;color:#405064!important}}.btn-main:hover,.btn-main.active{{background:#21b45d!important;color:#fff!important}}
+.btn-row{{gap:11px!important;margin:11px 0!important}}.selected-time{{height:44px!important;margin-top:11px!important}}
+.map-title{{margin-top:18px!important}}.map{{height:137px!important}}.loc-foot{{font-size:11px!important;align-items:flex-start}}.loc-foot a{{font-size:13px!important;font-weight:1000}}
+.page-head{{height:122px!important;border-radius:0 0 27px 27px!important}}.page-head h1{{font-size:20px!important;margin-top:43px!important}}.back{{font-size:29px!important;top:15px!important}}
+.doc-list{{padding:22px 17px 76px!important}}.doc-row{{height:70px!important;border-radius:13px!important;margin-bottom:12px!important}}.doc-title{{font-size:15px!important}}.doc-sub{{font-size:11px!important}}
+.config-card,.form-card,.profile-card{{margin:15px!important;border-radius:14px!important}}.cfg-btn{{min-height:45px!important;font-size:15px!important;margin-bottom:9px!important}}
+.login-wrap{{padding:28px 24px 20px!important}}.login-logo{{height:106px!important}}.brand-title{{font-size:36px!important}}
+.sign-box{{height:180px!important}}.bottom-nav{{height:56px!important}}
 
 """
 
