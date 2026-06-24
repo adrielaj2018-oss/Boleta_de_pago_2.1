@@ -3695,6 +3695,22 @@ app.view_functions['transporte_vehiculos'] = tf_transporte_vehiculos_275
 app.view_functions['transporte_rutas'] = tf_transporte_rutas_275
 app.view_functions['transporte_mapa_general'] = tf_transporte_mapa_general_275
 
+# PATCH URGENTE 276: registrar rutas faltantes para evitar Internal Server Error en /transporte.
+# El home usa url_for('transporte_mobile_home'), pero antes solo se reemplazaba
+# view_functions y no existía una regla URL asociada a ese endpoint.
+try:
+    if 'transporte_mobile_home' not in {r.endpoint for r in app.url_map.iter_rules()}:
+        app.add_url_rule('/transporte/movil-conductor', endpoint='transporte_mobile_home', view_func=tf_transporte_mobile_home_275, methods=['GET'])
+except Exception as e:
+    print('No se pudo registrar /transporte/movil-conductor:', e)
+
+# Alias amigable solicitado: buses debe abrir la misma base de vehículos.
+try:
+    if 'transporte_buses_alias' not in {r.endpoint for r in app.url_map.iter_rules()}:
+        app.add_url_rule('/transporte/buses', endpoint='transporte_buses_alias', view_func=tf_transporte_vehiculos_275, methods=['GET','POST'])
+except Exception as e:
+    print('No se pudo registrar /transporte/buses:', e)
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
