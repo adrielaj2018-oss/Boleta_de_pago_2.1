@@ -3754,6 +3754,133 @@ app.view_functions['transporte_conductores'] = tf_transporte_conductores_277
 app.view_functions['transporte_vehiculos'] = tf_transporte_vehiculos_277
 app.view_functions['transporte_rutas'] = tf_transporte_rutas_277
 
+# ========================= PATCH 279 OMAR: PORTADA TRANSPORTE EXACTA / DELGADA =========================
+def _transporte_ui_279_css():
+    return """
+    <style>
+      /* SOLO /transporte: vista móvil delgada, limpia y en cuadros */
+      html,body{background:#fff!important;max-width:100%!important;overflow-x:hidden!important;}
+      .shell{width:100%!important;max-width:470px!important;margin:0 auto!important;padding:0 8px 26px!important;background:#fff!important;}
+      .tr279-phone{width:100%!important;max-width:430px!important;margin:8px auto 26px!important;}
+      .tr279-app{width:100%!important;background:#fff;border:1px solid #e5e7eb;border-radius:18px;overflow:hidden;box-shadow:0 12px 28px rgba(0,0,0,.10);}
+      .tr279-hero{height:128px;background:linear-gradient(135deg,#075d2a 0%,#0b7837 100%);color:#fff;position:relative;text-align:center;padding-top:13px;}
+      .tr279-back{position:absolute;left:16px;top:35px;color:#fff!important;text-decoration:none;font-size:44px;line-height:1;font-weight:300;display:grid;place-items:center;width:44px;height:44px;}
+      .tr279-config{position:absolute;right:14px;top:23px;color:#fff!important;text-decoration:none;border:1px solid rgba(255,255,255,.70);border-radius:13px;padding:8px 11px;font-weight:950;font-size:15px;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);}
+      .tr279-config i{font-size:18px;}
+      .tr279-bus{font-size:52px;line-height:1;color:#fff;text-shadow:0 2px 5px rgba(0,0,0,.12);}
+      .tr279-title{margin-top:5px;font-size:18px;font-weight:950;letter-spacing:.35px;text-transform:uppercase;color:#fff;}
+      .tr279-body{background:#fff;border-radius:16px 16px 0 0;margin-top:-1px;padding:29px 20px 28px;min-height:515px;}
+      .tr279-section{font-size:21px;line-height:1;color:#08713b;font-weight:950;text-transform:uppercase;letter-spacing:.35px;margin:0 0 18px;}
+      .tr279-section.op{margin-top:30px;margin-bottom:17px;}
+      .tr279-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;}
+      .tr279-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;}
+      .tr279-tile{min-height:118px;background:linear-gradient(135deg,#07632d,#0b7837);border-radius:13px;color:#fff!important;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 10px 18px rgba(0,0,0,.15);padding:10px 7px;transition:transform .12s ease, filter .12s ease;}
+      .tr279-tile:active{transform:scale(.98);filter:brightness(.95);}
+      .tr279-tile i{font-size:42px;line-height:1;color:#fff!important;margin-bottom:14px;}
+      .tr279-tile .lbl{font-size:17px;font-weight:950;line-height:1.08;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.14);}
+      .tr279-tile .sub{font-size:12px;font-weight:900;line-height:1.1;color:#fff;margin-top:6px;opacity:.98;}
+      .tr279-grid2 .tr279-tile{min-height:128px;}
+      .tr279-grid2 .tr279-tile i{font-size:43px;margin-bottom:16px;}
+      .tr279-grid2 .tr279-tile .lbl{font-size:19px;}
+      .tr279-info{margin-top:25px;border:1px solid #b8d7ff;background:#eef6ff;border-radius:12px;color:#073b8e;font-size:15px;font-weight:850;line-height:1.55;padding:17px 16px;display:grid;grid-template-columns:30px 1fr;gap:10px;align-items:start;}
+      .tr279-info i{font-size:24px;color:#0b46a0;margin-top:2px;}
+
+      /* Submenú móvil conductor en cuadros, no lista */
+      .tr279-subhead{height:88px;background:linear-gradient(135deg,#075d2a,#0b7837);color:#fff;display:flex;align-items:center;position:relative;padding:0 16px;}
+      .tr279-subhead a{color:#fff!important;text-decoration:none;font-size:34px;width:44px;}
+      .tr279-subhead .ttl{flex:1;text-align:center;font-size:18px;font-weight:950;margin-right:44px;}
+      .tr279-subbody{background:#fff;padding:22px 18px 26px;}
+      .tr279-subgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;}
+      .tr279-subgrid .wide{grid-column:1/-1;min-height:108px;}
+      .tr279-note{margin-top:18px;border:1px solid #b8d7ff;background:#eef6ff;color:#073b8e;border-radius:12px;padding:13px 14px;font-size:13px;line-height:1.45;font-weight:850;}
+
+      @media(max-width:390px){
+        .shell{max-width:395px!important;padding:0 6px 20px!important;}
+        .tr279-phone{max-width:372px!important;margin-top:5px!important;}
+        .tr279-app{border-radius:16px;}
+        .tr279-hero{height:122px;padding-top:12px;}
+        .tr279-back{left:11px;top:34px;font-size:39px;width:39px;height:39px;}
+        .tr279-config{right:9px;top:22px;font-size:13px;padding:7px 9px;border-radius:12px;}
+        .tr279-bus{font-size:47px;}
+        .tr279-title{font-size:16px;margin-top:5px;}
+        .tr279-body{padding:25px 14px 24px;min-height:500px;}
+        .tr279-section{font-size:18px;margin-bottom:14px;}
+        .tr279-section.op{margin-top:26px;margin-bottom:13px;}
+        .tr279-grid3{gap:10px;}
+        .tr279-grid2{gap:14px;}
+        .tr279-tile{min-height:102px;border-radius:11px;padding:8px 5px;}
+        .tr279-tile i{font-size:34px;margin-bottom:10px;}
+        .tr279-tile .lbl{font-size:14px;}
+        .tr279-tile .sub{font-size:10.5px;margin-top:4px;}
+        .tr279-grid2 .tr279-tile{min-height:111px;}
+        .tr279-grid2 .tr279-tile i{font-size:37px;margin-bottom:12px;}
+        .tr279-grid2 .tr279-tile .lbl{font-size:16px;}
+        .tr279-info{font-size:12.8px;padding:13px 12px;grid-template-columns:24px 1fr;gap:8px;}
+        .tr279-info i{font-size:20px;}
+      }
+    </style>
+    """
+
+@login_required
+def tf_transporte_home_279():
+    body = _transporte_ui_279_css() + r'''
+    <div class="tr279-phone">
+      <div class="tr279-app">
+        <div class="tr279-hero">
+          <a class="tr279-back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a>
+          <a class="tr279-config" href="{{url_for('transporte_config')}}"><i class="bi bi-gear"></i> Config.</a>
+          <div class="tr279-bus"><i class="bi bi-bus-front-fill"></i></div>
+          <div class="tr279-title">Módulo Transporte</div>
+        </div>
+        <div class="tr279-body">
+          <div class="tr279-section">Módulos</div>
+          <div class="tr279-grid3">
+            <a class="tr279-tile" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i><span class="lbl">Conductores</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i><span class="lbl">Buses</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_rutas')}}"><i class="bi bi-geo-alt"></i><span class="lbl">Rutas</span></a>
+          </div>
+
+          <div class="tr279-section op">Operación</div>
+          <div class="tr279-grid2">
+            <a class="tr279-tile" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-pin-map"></i><span class="lbl">GPS / Seguimiento</span><span class="sub">Ver ubicación</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_mobile_home')}}"><i class="bi bi-phone"></i><span class="lbl">Móvil conductor</span><span class="sub">Abordaje y GPS</span></a>
+          </div>
+
+          <div class="tr279-info"><i class="bi bi-info-circle-fill"></i><div>Así queda conectado: primero cargas conductores y buses, luego creas/cargas rutas asignando bus + conductor. El conductor entra a Móvil conductor, registra abordajes y envía GPS.</div></div>
+        </div>
+      </div>
+    </div>
+    '''
+    return render_page(body)
+
+@login_required
+def tf_transporte_mobile_home_279():
+    """Submenú de Móvil conductor en cuadros verdes, no en lista."""
+    body = _transporte_ui_279_css() + r'''
+    <div class="tr279-phone">
+      <div class="tr279-app">
+        <div class="tr279-subhead">
+          <a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a>
+          <div class="ttl">Móvil conductor</div>
+        </div>
+        <div class="tr279-subbody">
+          <div class="tr279-section">Operación conductor</div>
+          <div class="tr279-subgrid">
+            <a class="tr279-tile wide" href="{{url_for('transporte_abordaje_home')}}"><i class="bi bi-people"></i><span class="lbl">Abordaje trabajadores</span><span class="sub">QR / código / DNI</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-pin-map"></i><span class="lbl">GPS</span><span class="sub">Enviar ubicación</span></a>
+            <a class="tr279-tile" href="{{url_for('conductor_movil_login')}}"><i class="bi bi-phone"></i><span class="lbl">PIN conductor</span><span class="sub">Ingreso real</span></a>
+          </div>
+          <div class="tr279-note">El conductor ingresa desde su celular, registra abordajes y envía GPS. El administrador revisa seguimiento y bases desde Transporte.</div>
+        </div>
+      </div>
+    </div>
+    '''
+    return render_page(body)
+
+# Reemplazo final: solo afecta endpoints de Transporte aprobados.
+app.view_functions['transporte'] = tf_transporte_home_279
+app.view_functions['transporte_mobile_home'] = tf_transporte_mobile_home_279
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
