@@ -3533,6 +3533,168 @@ app.view_functions['transporte_rutas'] = tf_transporte_rutas_omar
 app.view_functions['transporte_abordaje_home'] = tf_transporte_abordaje_home_omar
 app.view_functions['transporte_ruta_detalle'] = tf_transporte_ruta_detalle_omar
 
+# ========================= PATCH TRANSPORTE OMAR 275 =========================
+def _tpl_xlsx(headers, example, filename, sheet='PLANTILLA'):
+    return excel_response(headers, [dict(zip([h.lower() for h in headers], example))], filename, sheet)
+
+@app.route('/transporte/conductores/plantilla')
+@login_required
+def transporte_plantilla_conductores():
+    headers=['DNI','NOMBRE','TELEFONO','LICENCIA','CATEGORIA','VENC LICENCIA','CERT MEDICO','SCTR','ESTADO','PIN','OBSERVACION']
+    example=['74324033','JOSE GARCIA','999999999','A-IIIc','BUS / TRANSPORTE DE PERSONAS','2026-12-31','2026-12-31','2026-12-31','ACTIVO','AUTO','']
+    return _tpl_xlsx(headers, example, 'plantilla_conductores.xlsx', 'CONDUCTORES')
+
+@app.route('/transporte/buses/plantilla')
+@login_required
+def transporte_plantilla_vehiculos():
+    headers=['PLACA','TIPO','CAPACIDAD','EMPRESA','SOAT','REV TECNICA','GPS','ESTADO','OBSERVACION']
+    example=['ABC-123','BUS','50','TRANSPORTISTA SAC','2026-12-31','2026-12-31','GPS-001','ACTIVO','']
+    return _tpl_xlsx(headers, example, 'plantilla_buses.xlsx', 'BUSES')
+
+@app.route('/transporte/rutas/plantilla')
+@login_required
+def transporte_plantilla_rutas():
+    headers=['FECHA','RUTA','ORIGEN','DESTINO','SEDE','SALIDA','RETORNO','PLACA','DNI CONDUCTOR','ESTADO']
+    example=[today_str(),'RUTA NORTE','PARADERO 1','FUNDO','SEDE','06:00','15:00','ABC-123','74324033','PROGRAMADA']
+    return _tpl_xlsx(headers, example, 'plantilla_rutas.xlsx', 'RUTAS')
+
+@app.route('/transporte/conductores/<int:item_id>/toggle')
+@login_required
+def transporte_toggle_conductor(item_id):
+    r=row_to_dict(execute('SELECT estado FROM transporte_conductores WHERE id=?',(item_id,), fetchone=True))
+    if r:
+        nuevo='INACTIVO' if (r.get('estado') or '').upper() in ('ACTIVO','APTO','') else 'ACTIVO'
+        execute('UPDATE transporte_conductores SET estado=?, movil_estado=? WHERE id=?',(nuevo,nuevo,item_id), commit=True)
+        flash('Conductor '+('desactivado.' if nuevo=='INACTIVO' else 'activado.'),'success')
+    return redirect(url_for('transporte_conductores'))
+
+@app.route('/transporte/buses/<int:item_id>/toggle')
+@login_required
+def transporte_toggle_vehiculo(item_id):
+    r=row_to_dict(execute('SELECT estado FROM transporte_vehiculos WHERE id=?',(item_id,), fetchone=True))
+    if r:
+        nuevo='INACTIVO' if (r.get('estado') or '').upper()=='ACTIVO' else 'ACTIVO'
+        execute('UPDATE transporte_vehiculos SET estado=? WHERE id=?',(nuevo,item_id), commit=True)
+        flash('Bus '+('desactivado.' if nuevo=='INACTIVO' else 'activado.'),'success')
+    return redirect(url_for('transporte_vehiculos'))
+
+@app.route('/transporte/rutas/<int:item_id>/toggle')
+@login_required
+def transporte_toggle_ruta(item_id):
+    r=row_to_dict(execute('SELECT estado FROM transporte_rutas WHERE id=?',(item_id,), fetchone=True))
+    if r:
+        nuevo='INACTIVA' if (r.get('estado') or '').upper() not in ('INACTIVA','CERRADA','FINALIZADA') else 'PROGRAMADA'
+        execute('UPDATE transporte_rutas SET estado=? WHERE id=?',(nuevo,item_id), commit=True)
+        flash('Ruta '+('desactivada.' if nuevo=='INACTIVA' else 'activada.'),'success')
+    return redirect(url_for('transporte_rutas'))
+
+def _tf_switch(active, url):
+    checked='checked' if active else ''
+    return f"<a class='tf-switch {checked}' href='{url}' title='Activar / desactivar'><span></span></a>"
+
+def _tf_transport_css_275():
+    return _tf_extra_transport_css()+'''
+    <style>
+    .tf-mass{border:1.5px dashed #14a34a!important;background:#ecfdf3!important;border-radius:12px!important;padding:11px!important;margin:10px 0 14px!important}
+    .tf-mass label{font-size:12px!important;color:#086b32!important;font-weight:900!important;margin-bottom:6px!important;display:block}.tf-mass .form-control{height:38px!important;background:white!important}.tf-help-mini{font-size:11px!important;color:#08713b!important;font-weight:900!important;margin:7px 0!important;line-height:1.25!important}.tf-template-btn{display:flex;align-items:center;justify-content:center;gap:6px;background:#f0fff4!important;border:1px solid #b7e4c7!important;color:#08713b!important;border-radius:9px!important;font-weight:900!important;text-decoration:none!important;padding:10px 8px!important;margin-top:8px!important}.tf-searchrow{display:grid!important;grid-template-columns:1fr auto!important;gap:8px!important;align-items:center!important}.tf-kpi-green{grid-template-columns:repeat(3,1fr)!important}.tf-kpi-green .tf-kpi{text-align:center!important;border-radius:8px!important;padding:10px 6px!important;background:#12964f!important}.tf-kpi-green .tf-kpi strong{font-size:26px!important;line-height:1!important}.tf-kpi-green .tf-kpi label{font-size:11px!important;line-height:1.1!important;display:block;margin-bottom:5px}.tf-switch{width:42px;height:23px;border-radius:999px;background:#cbd5e1;display:inline-flex;align-items:center;padding:2px;text-decoration:none}.tf-switch span{width:19px;height:19px;border-radius:999px;background:white;display:block;box-shadow:0 1px 4px rgba(0,0,0,.25)}.tf-switch.checked{background:#07823f}.tf-switch.checked span{margin-left:19px}.tf-base-title{font-size:11px;color:#08713b;font-weight:900;margin:8px 0 5px;text-transform:uppercase}.tf-gps-card{background:#fff;border:1px solid #dfe7df;border-radius:14px;padding:12px;margin:10px 0;box-shadow:0 5px 16px rgba(0,0,0,.06)}.tf-gps-driver{display:flex;gap:10px;align-items:center;border-bottom:1px solid #edf2ed;padding-bottom:10px;margin-bottom:10px}.tf-gps-avatar{width:48px;height:48px;border-radius:999px;background:#dff6df;color:#08713b;display:grid;place-items:center;font-size:25px}.tf-gps-driver b{font-size:14px;color:#102a43}.tf-gps-meta{font-size:11px;color:#475569;font-weight:800}.tf-gps-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}.tf-gps-box{background:#f8fff9;border:1px solid #dbeadb;border-radius:10px;padding:8px}.tf-gps-box small{display:block;color:#64748b;font-size:10px;font-weight:900}.tf-gps-box strong{font-size:12px;color:#065f2a}.tf-table td,.tf-table th{white-space:nowrap}.tf-home-note{background:#eff6ff;border:1px solid #bfdbfe;color:#0b2e83;border-radius:10px;padding:10px;font-size:12px;font-weight:800;margin-top:10px}.tf-mobile-sub{border:1px solid #d8eadc;background:#f7fff8;border-radius:12px;padding:10px;margin:9px 0}.tf-mobile-sub .tf-item{margin-bottom:7px}
+    </style>
+    '''
+
+@login_required
+def tf_transporte_conductores_275():
+    if request.method=='POST':
+        return tf_transporte_conductores_omar()
+    rows=rows_to_dict(execute('SELECT * FROM transporte_conductores ORDER BY id DESC LIMIT 300', fetchall=True))
+    hoy=today_str(); total=len(rows); activos=sum(1 for r in rows if (r.get('estado') or '').upper() in ('ACTIVO','APTO',''))
+    venc=sum(1 for r in rows if any(r.get(c) and str(r.get(c))<hoy for c in ('venc_licencia','venc_cert_medico','venc_sctr')))
+    body=_tf_css()+_tf_transport_css_275()+_tf_top('Conductores')+'''
+      <form method="post" enctype="multipart/form-data" action="{{url_for('transporte_upload_conductores')}}" class="tf-mass">
+        <label><i class="bi bi-cloud-arrow-up"></i> Carga masiva conductores Excel</label>
+        <input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required>
+        <div class="tf-help-mini">Columnas sugeridas: DNI, NOMBRE, TELEFONO, LICENCIA, CATEGORIA, VENC LICENCIA, ESTADO, PIN.</div>
+        <button class="tf-btn w100" type="submit"><i class="bi bi-upload"></i> Cargar conductores</button>
+        <a class="tf-template-btn" href="{{url_for('transporte_plantilla_conductores')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla</a>
+      </form>
+      <div class="tf-searchrow"><input id="qcond" class="tf-search" placeholder="Buscar DNI o conductor..."><a class="tf-template-btn" style="margin:0;padding:9px 11px" href="{{url_for('transporte_plantilla_conductores')}}"><i class="bi bi-file-earmark-excel"></i> Plantilla</a></div>
+      <div class="tf-kpi-green"><div class="tf-kpi"><label>Total conductores</label><strong>{{total}}</strong></div><div class="tf-kpi"><label>Activos</label><strong>{{activos}}</strong></div><div class="tf-kpi"><label>Vencidos</label><strong>{{venc}}</strong></div></div>
+      <div class="tf-base-title">Base de conductores</div>
+      <div class="tf-tablewrap"><table id="tblcond" class="tf-table"><thead><tr><th>DNI</th><th>Nombre</th><th>Licencia</th><th>Categoría</th><th>Estado</th><th>Activo</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{{r.licencia or '-'}}</td><td>{{r.categoria or '-'}}</td><td>{{badge(r.estado)|safe}}</td><td>{{switch((r.estado or '').upper() in ['ACTIVO','APTO',''], url_for('transporte_toggle_conductor', item_id=r.id))|safe}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin conductores.</td></tr>{% endfor %}</tbody></table></div>
+      <form method="post" class="tf-form mt-2"><div class="row g-2"><div class="col-5"><label>DNI</label><input name="dni" class="form-control" maxlength="8" inputmode="numeric" required></div><div class="col-7"><label>Nombre</label><input name="nombres" class="form-control" required></div><div class="col-6"><label>Teléfono</label><input name="telefono" class="form-control"></div><div class="col-6"><label>Licencia</label><select name="licencia" class="form-select">{{lic_opts|safe}}</select></div><div class="col-6"><label>Categoría</label><select name="categoria" class="form-select">{{cat_opts|safe}}</select></div><div class="col-6"><label>PIN móvil</label><input name="movil_pin" class="form-control" placeholder="AUTO"></div><div class="col-6"><label>Venc. licencia</label><input name="venc_licencia" type="date" class="form-control"></div><div class="col-6"><label>Estado</label><select name="estado" class="form-select"><option>ACTIVO</option><option>APTO</option><option>POR VENCER</option><option>VENCIDA</option><option>INACTIVO</option></select></div></div><button class="tf-btn w100 mt-2">+ Guardar conductor</button></form>
+    '''+_tf_end()+_tf_filter_script('qcond','tblcond')
+    return render_page(body, rows=rows,total=total,activos=activos,venc=venc,badge=_tf_badge,switch=_tf_switch,lic_opts=_option_list(LICENCIAS_PERU,'A-IIIc'),cat_opts=_option_list(CATEGORIAS_CONDUCTOR_PERU,'BUS / TRANSPORTE DE PERSONAS'))
+
+@login_required
+def tf_transporte_vehiculos_275():
+    if request.method=='POST': return tf_transporte_vehiculos_omar()
+    rows=rows_to_dict(execute('SELECT * FROM transporte_vehiculos ORDER BY id DESC LIMIT 300', fetchall=True)); hoy=today_str(); total=len(rows); activos=sum(1 for r in rows if (r.get('estado') or '').upper()=='ACTIVO')
+    venc=sum(1 for r in rows if any(r.get(c) and str(r.get(c))<hoy for c in ('soat_venc','revision_tecnica_venc')))
+    body=_tf_css()+_tf_transport_css_275()+_tf_top('Buses')+'''
+      <form method="post" enctype="multipart/form-data" action="{{url_for('transporte_upload_vehiculos')}}" class="tf-mass"><label><i class="bi bi-cloud-arrow-up"></i> Carga masiva buses Excel</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="tf-help-mini">Columnas sugeridas: PLACA, TIPO, CAPACIDAD, EMPRESA, SOAT, REV TECNICA, GPS, ESTADO.</div><button class="tf-btn w100" type="submit"><i class="bi bi-upload"></i> Cargar buses</button><a class="tf-template-btn" href="{{url_for('transporte_plantilla_vehiculos')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla</a></form>
+      <div class="tf-searchrow"><input id="qveh" class="tf-search" placeholder="Buscar placa o bus..."><a class="tf-template-btn" style="margin:0;padding:9px 11px" href="{{url_for('transporte_plantilla_vehiculos')}}"><i class="bi bi-file-earmark-excel"></i> Plantilla</a></div>
+      <div class="tf-kpi-green"><div class="tf-kpi"><label>Total buses</label><strong>{{total}}</strong></div><div class="tf-kpi"><label>Activos</label><strong>{{activos}}</strong></div><div class="tf-kpi"><label>Vencidos</label><strong>{{venc}}</strong></div></div>
+      <div class="tf-base-title">Base de buses</div><div class="tf-tablewrap"><table id="tblveh" class="tf-table"><thead><tr><th>Placa</th><th>Tipo</th><th>Capacidad</th><th>GPS</th><th>Estado</th><th>Activo</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.placa}}</td><td>{{r.tipo}}</td><td>{{r.capacidad}}</td><td>{{r.gps_codigo or '-'}}</td><td>{{badge(r.estado)|safe}}</td><td>{{switch((r.estado or '').upper()=='ACTIVO', url_for('transporte_toggle_vehiculo', item_id=r.id))|safe}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin buses.</td></tr>{% endfor %}</tbody></table></div>
+      <form method="post" class="tf-form mt-2"><div class="row g-2"><div class="col-5"><label>Placa</label><input name="placa" class="form-control" required></div><div class="col-7"><label>Tipo</label><select name="tipo" class="form-select"><option>BUS</option><option>MINIBUS</option><option>VAN</option><option>CAMIONETA</option></select></div><div class="col-6"><label>Capacidad</label><input name="capacidad" type="number" class="form-control"></div><div class="col-6"><label>Empresa</label><input name="empresa_transportista" class="form-control"></div><div class="col-6"><label>SOAT venc.</label><input name="soat_venc" type="date" class="form-control"></div><div class="col-6"><label>Rev. técnica</label><input name="revision_tecnica_venc" type="date" class="form-control"></div><div class="col-12"><label>Código GPS</label><input name="gps_codigo" class="form-control"></div></div><button class="tf-btn w100 mt-2">+ Guardar bus</button></form>
+    '''+_tf_end()+_tf_filter_script('qveh','tblveh')
+    return render_page(body, rows=rows,total=total,activos=activos,venc=venc,badge=_tf_badge,switch=_tf_switch)
+
+@login_required
+def tf_transporte_rutas_275():
+    if request.method=='POST': return tf_transporte_rutas_omar()
+    hoy=today_str(); rutas=rows_to_dict(execute('SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id LEFT JOIN transporte_conductores c ON c.id=r.conductor_id ORDER BY r.fecha DESC, r.id DESC LIMIT 250', fetchall=True))
+    vehiculos=rows_to_dict(execute("SELECT id, placa, tipo, capacidad FROM transporte_vehiculos WHERE COALESCE(estado,'ACTIVO')='ACTIVO' ORDER BY placa", fetchall=True)); conductores=rows_to_dict(execute("SELECT id, dni, nombres FROM transporte_conductores WHERE COALESCE(estado,'ACTIVO') IN ('ACTIVO','APTO') ORDER BY nombres", fetchall=True))
+    total=len(rutas); activas=sum(1 for r in rutas if (r.get('estado') or '').upper() in ('PROGRAMADA','EN RUTA','ACTIVA')); cerradas=sum(1 for r in rutas if (r.get('estado') or '').upper() in ('CERRADA','FINALIZADA','INACTIVA'))
+    body=_tf_css()+_tf_transport_css_275()+_tf_top('Rutas')+'''
+      <form method="post" enctype="multipart/form-data" action="{{url_for('transporte_upload_rutas')}}" class="tf-mass"><label><i class="bi bi-cloud-arrow-up"></i> Carga masiva rutas Excel</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="tf-help-mini">Columnas sugeridas: FECHA, RUTA, ORIGEN, DESTINO, SALIDA, PLACA, DNI CONDUCTOR, ESTADO.</div><button class="tf-btn w100" type="submit"><i class="bi bi-upload"></i> Cargar rutas</button><a class="tf-template-btn" href="{{url_for('transporte_plantilla_rutas')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla</a></form>
+      <div class="tf-searchrow"><input id="qruta" class="tf-search" placeholder="Buscar ruta..."><a class="tf-template-btn" style="margin:0;padding:9px 11px" href="{{url_for('transporte_plantilla_rutas')}}"><i class="bi bi-file-earmark-excel"></i> Plantilla</a></div>
+      <div class="tf-kpi-green"><div class="tf-kpi"><label>Total rutas</label><strong>{{total}}</strong></div><div class="tf-kpi"><label>Activas</label><strong>{{activas}}</strong></div><div class="tf-kpi"><label>Cerradas / inactivas</label><strong>{{cerradas}}</strong></div></div>
+      <div class="tf-base-title">Base de rutas</div><div class="tf-tablewrap"><table id="tblruta" class="tf-table"><thead><tr><th>Código</th><th>Ruta</th><th>Bus</th><th>Conductor</th><th>Estado</th><th>Activo</th><th></th></tr></thead><tbody>{% for r in rutas %}<tr><td>R-{{'%03d'%r.id}}</td><td>{{r.nombre}}<br><small>{{r.origen}} → {{r.destino}}</small></td><td>{{r.placa or '-'}}</td><td>{{r.conductor or '-'}}</td><td>{{badge(r.estado)|safe}}</td><td>{{switch((r.estado or '').upper() not in ['INACTIVA','CERRADA','FINALIZADA'], url_for('transporte_toggle_ruta', item_id=r.id))|safe}}</td><td><a class="tf-btn" style="padding:4px 7px" href="{{url_for('transporte_ruta_detalle', ruta_id=r.id)}}">›</a></td></tr>{% else %}<tr><td colspan="7" class="text-center text-muted">Sin rutas.</td></tr>{% endfor %}</tbody></table></div>
+      <form method="post" class="tf-form mt-2"><div class="row g-2"><div class="col-6"><label>Fecha</label><input name="fecha" type="date" value="{{hoy}}" class="form-control"></div><div class="col-6"><label>Ruta</label><input name="nombre" class="form-control" placeholder="R-001"></div><div class="col-6"><label>Origen</label><input name="origen" class="form-control"></div><div class="col-6"><label>Destino</label><input name="destino" class="form-control"></div><div class="col-6"><label>Salida</label><input name="hora_salida" type="time" class="form-control"></div><div class="col-6"><label>Estado</label><select name="estado" class="form-select"><option>PROGRAMADA</option><option>EN RUTA</option><option>CERRADA</option></select></div><div class="col-6"><label>Bus</label><select name="vehiculo_id" class="form-select"><option value="">-</option>{% for v in vehiculos %}<option value="{{v.id}}">{{v.placa}}</option>{% endfor %}</select></div><div class="col-6"><label>Conductor</label><select name="conductor_id" class="form-select"><option value="">-</option>{% for c in conductores %}<option value="{{c.id}}">{{c.nombres}}</option>{% endfor %}</select></div></div><button class="tf-btn w100 mt-2">+ Nueva ruta</button></form>
+    '''+_tf_end()+_tf_filter_script('qruta','tblruta')
+    return render_page(body,rutas=rutas,vehiculos=vehiculos,conductores=conductores,hoy=hoy,total=total,activas=activas,cerradas=cerradas,badge=_tf_badge,switch=_tf_switch)
+
+@login_required
+def tf_transporte_mobile_home_275():
+    body=_tf_css()+_tf_transport_css_275()+_tf_top('Móvil conductor')+'''
+      <div class="tf-info"><b>Este módulo es del conductor.</b><br>Desde aquí debe ver su ruta, registrar abordaje de trabajadores, enviar GPS y revisar su estado.</div>
+      <div class="tf-mobile-sub"><a class="tf-item" href="{{url_for('transporte_abordaje_home')}}"><i class="bi bi-people"></i><span><b>Abordaje trabajadores</b><br><small>Escanear QR / código de barras / digitar DNI</small></span><i class="bi bi-chevron-right chev"></i></a><a class="tf-item" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-geo-alt"></i><span><b>GPS / Seguimiento</b><br><small>Enviar o revisar ubicación</small></span><i class="bi bi-chevron-right chev"></i></a><a class="tf-item" href="{{url_for('conductor_movil_login')}}"><i class="bi bi-phone"></i><span><b>Ingreso con PIN conductor</b><br><small>Acceso real desde celular</small></span><i class="bi bi-chevron-right chev"></i></a></div>
+      <div class="tf-home-note">Recomendación: el administrador solo debe ver bases y seguimiento. El conductor debe usar <b>Móvil conductor</b> para abordaje y GPS desde su celular.</div>
+    '''+_tf_end()
+    return render_page(body)
+
+@login_required
+def tf_transporte_home_275():
+    body=_tf_css()+_tf_transport_css_275()+'''
+    <div class="tf-wrap"><div class="tf-head"><a class="tf-back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="tf-title">Módulo Transporte</div></div><div class="tf-card">
+      <div class="tf-section">Bases maestras</div>
+      <div class="tf-list"><a class="tf-item" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i><span><b>Conductores</b><br><small>Base, plantilla, carga masiva y activo/inactivo</small></span><i class="bi bi-chevron-right chev"></i></a><a class="tf-item" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i><span><b>Buses</b><br><small>Base, plantilla, carga masiva y activo/inactivo</small></span><i class="bi bi-chevron-right chev"></i></a><a class="tf-item" href="{{url_for('transporte_rutas')}}"><i class="bi bi-geo-alt"></i><span><b>Rutas</b><br><small>Programación, bus, conductor y estado</small></span><i class="bi bi-chevron-right chev"></i></a></div>
+      <div class="tf-section">Operación</div><div class="tf-list"><a class="tf-item" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-pin-map"></i><span><b>GPS / Seguimiento</b><br><small>Ver conductor, ruta, bus y última ubicación</small></span><i class="bi bi-chevron-right chev"></i></a><a class="tf-item" href="{{url_for('transporte_mobile_home')}}"><i class="bi bi-phone"></i><span><b>Móvil conductor</b><br><small>Abordaje trabajadores y envío GPS</small></span><i class="bi bi-chevron-right chev"></i></a></div>
+      <div class="tf-home-note">Así queda conectado: primero cargas <b>conductores</b> y <b>buses</b>, luego creas/cargas <b>rutas</b> asignando bus + conductor. El conductor entra a <b>Móvil conductor</b>, registra abordajes y envía GPS.</div>
+    </div></div>'''
+    return render_page(body)
+
+@login_required
+def tf_transporte_mapa_general_275():
+    sql = """SELECT r.*, v.placa, v.tipo, c.dni AS conductor_dni, c.nombres AS conductor, c.estado AS conductor_estado, c.ultima_latitud, c.ultima_longitud, c.ultimo_gps
+             FROM transporte_rutas r
+             LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+             LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+             ORDER BY COALESCE(r.ultima_ubicacion,r.creado_en) DESC, r.id DESC LIMIT 40"""
+    rutas=rows_to_dict(execute(sql, fetchall=True))
+    total=len(rutas); con_gps=sum(1 for r in rutas if r.get('latitud') or r.get('ultima_latitud')); sin_bus=sum(1 for r in rutas if not r.get('placa'))
+    body=_tf_css()+_tf_transport_css_275()+_tf_top('GPS / Seguimiento')+'''
+      <div class="tf-info"><b>¿Cómo funciona?</b><br>1) Crea conductor y PIN. 2) Asigna conductor y bus a una ruta. 3) El conductor entra a Móvil conductor desde su celular. 4) Permite ubicación/GPS y toca Enviar GPS.</div>
+      <div class="tf-kpi-green"><div class="tf-kpi"><label>Rutas</label><strong>{{total}}</strong></div><div class="tf-kpi"><label>Con GPS</label><strong>{{con_gps}}</strong></div><div class="tf-kpi"><label>Sin bus</label><strong>{{sin_bus}}</strong></div></div>
+      {% for r in rutas %}<div class="tf-gps-card"><div class="tf-gps-driver"><div class="tf-gps-avatar"><i class="bi bi-person-fill"></i></div><div><b>{{r.conductor or 'SIN CONDUCTOR'}}</b><div class="tf-gps-meta">DNI: {{r.conductor_dni or '-'}} · {{badge(r.conductor_estado or 'SIN ASIGNAR')|safe}}</div></div></div><div class="tf-gps-row"><div class="tf-gps-box"><small>Ruta</small><strong>{{r.nombre}}</strong></div><div class="tf-gps-box"><small>Bus</small><strong>{{r.placa or 'SIN BUS'}}</strong></div><div class="tf-gps-box"><small>Última actualización</small><strong>{{r.ultima_ubicacion or r.ultimo_gps or r.creado_en or '-'}}</strong></div><div class="tf-gps-box"><small>Coordenadas</small><strong>Lat: {{r.latitud or r.ultima_latitud or '-'}}<br>Lon: {{r.longitud or r.ultima_longitud or '-'}}</strong></div></div>{% if r.latitud or r.ultima_latitud %}<a class="tf-btn" href="https://www.google.com/maps?q={{r.latitud or r.ultima_latitud}},{{r.longitud or r.ultima_longitud}}" target="_blank"><i class="bi bi-map"></i> Ver en mapa</a>{% endif %}</div>{% else %}<div class="tf-card text-center text-muted">Sin rutas para seguimiento.</div>{% endfor %}
+    '''+_tf_end()
+    return render_page(body,rutas=rutas,total=total,con_gps=con_gps,sin_bus=sin_bus,badge=_tf_badge)
+
+app.view_functions['transporte'] = tf_transporte_home_275
+app.view_functions['transporte_mobile_home'] = tf_transporte_mobile_home_275
+app.view_functions['transporte_conductores'] = tf_transporte_conductores_275
+app.view_functions['transporte_vehiculos'] = tf_transporte_vehiculos_275
+app.view_functions['transporte_rutas'] = tf_transporte_rutas_275
+app.view_functions['transporte_mapa_general'] = tf_transporte_mapa_general_275
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
