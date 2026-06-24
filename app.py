@@ -3881,6 +3881,185 @@ def tf_transporte_mobile_home_279():
 app.view_functions['transporte'] = tf_transporte_home_279
 app.view_functions['transporte_mobile_home'] = tf_transporte_mobile_home_279
 
+
+# ========================= PATCH 280 OMAR: TRANSPORTE MÁS DELGADO + GPS CORREGIDO =========================
+def _transporte_ui_280_css():
+    return _transporte_ui_279_css() + r"""
+    <style>
+      html,body{background:#ffffff!important;overflow-x:hidden!important}
+      .shell{max-width:392px!important;padding:0 2px 18px!important;background:#ffffff!important}
+      .tr279-phone{max-width:352px!important;margin:8px auto 14px!important}
+      .tr279-app{border-radius:18px!important;overflow:hidden!important;box-shadow:0 10px 26px rgba(0,0,0,.10)!important;border:1px solid #e7eee7!important;background:#fff!important}
+      .tr279-hero{height:132px!important;padding-top:14px!important}
+      .tr279-back{left:12px!important;top:34px!important;font-size:40px!important;width:40px!important;height:40px!important}
+      .tr279-config{right:10px!important;top:24px!important;font-size:13px!important;padding:7px 9px!important;border-radius:12px!important}
+      .tr279-config i{font-size:15px!important}
+      .tr279-bus{font-size:46px!important}
+      .tr279-title{font-size:16px!important;margin-top:4px!important}
+      .tr279-body{padding:24px 14px 22px!important;min-height:auto!important;border-radius:16px 16px 0 0!important}
+      .tr279-section{font-size:17px!important;margin:0 0 14px!important}
+      .tr279-section.op{margin-top:24px!important;margin-bottom:13px!important}
+      .tr279-grid3{gap:10px!important}
+      .tr279-grid2{gap:12px!important}
+      .tr279-tile{min-height:96px!important;border-radius:12px!important;padding:8px 5px!important;box-shadow:0 8px 16px rgba(0,0,0,.12)!important}
+      .tr279-grid2 .tr279-tile{min-height:104px!important}
+      .tr279-tile i{font-size:33px!important;margin-bottom:10px!important}
+      .tr279-grid2 .tr279-tile i{font-size:35px!important;margin-bottom:11px!important}
+      .tr279-tile .lbl{font-size:14px!important;line-height:1.08!important}
+      .tr279-grid2 .tr279-tile .lbl{font-size:15px!important}
+      .tr279-tile .sub{font-size:10px!important;margin-top:4px!important}
+      .tr279-info{margin-top:18px!important;padding:12px 11px!important;font-size:12.5px!important;line-height:1.45!important;grid-template-columns:22px 1fr!important;gap:8px!important;border-radius:12px!important}
+      .tr279-info i{font-size:18px!important}
+
+      .tr279-subhead{height:78px!important;padding:0 12px!important}
+      .tr279-subhead a{font-size:32px!important;width:38px!important}
+      .tr279-subhead .ttl{font-size:16px!important;margin-right:38px!important}
+      .tr279-subbody{padding:18px 14px 20px!important}
+      .tr279-subgrid{gap:12px!important}
+      .tr279-subgrid .wide{min-height:88px!important}
+      .tr279-note{margin-top:14px!important;padding:11px 12px!important;font-size:12px!important;line-height:1.4!important}
+
+      .tr280-gps-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:12px 0 14px}
+      .tr280-gps-kpi{background:linear-gradient(135deg,#109349,#0b7a38);border-radius:10px;color:#fff;text-align:center;padding:9px 4px;box-shadow:0 8px 16px rgba(0,0,0,.10)}
+      .tr280-gps-kpi label{display:block;font-size:10px;font-weight:900;line-height:1.1;margin-bottom:5px;color:#f3fff6}
+      .tr280-gps-kpi strong{display:block;font-size:25px;line-height:1;font-weight:950;color:#fff}
+      .tr280-gps-card{border:1px solid #dfe9df;background:#fff;border-radius:13px;padding:11px 11px 12px;margin-bottom:10px;box-shadow:0 5px 14px rgba(0,0,0,.05)}
+      .tr280-gps-driver{display:flex;align-items:center;gap:9px;padding-bottom:9px;margin-bottom:9px;border-bottom:1px solid #edf2ed}
+      .tr280-gps-avatar{width:38px;height:38px;border-radius:999px;background:#eaf9ee;color:#08713b;display:grid;place-items:center;font-size:20px;flex:0 0 38px}
+      .tr280-gps-driver b{display:block;font-size:13px;color:#102a43;line-height:1.15}
+      .tr280-gps-meta{font-size:10px;color:#64748b;font-weight:800;line-height:1.25;margin-top:2px}
+      .tr280-gps-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .tr280-gps-box{background:#f8fff9;border:1px solid #ddeadd;border-radius:10px;padding:8px}
+      .tr280-gps-box small{display:block;font-size:9px;color:#64748b;font-weight:900;line-height:1.1;margin-bottom:3px}
+      .tr280-gps-box strong{display:block;font-size:11px;color:#065f2a;line-height:1.28;font-weight:900}
+      .tr280-map-btn{margin-top:9px;width:100%}
+      .tr280-empty{border:1px solid #dbe7db;background:#ffffff;border-radius:14px;padding:18px 12px;text-align:center;color:#5f6b74;font-weight:800;box-shadow:0 5px 14px rgba(0,0,0,.04)}
+      .tr280-empty .big{font-size:14px;color:#334155;margin-bottom:4px}
+      .tr280-empty small{display:block;font-size:11px;line-height:1.35;color:#64748b;font-weight:800}
+    </style>
+    """
+
+@login_required
+def tf_transporte_home_280():
+    body = _transporte_ui_280_css() + r"""
+    <div class="tr279-phone">
+      <div class="tr279-app">
+        <div class="tr279-hero">
+          <a class="tr279-back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a>
+          <a class="tr279-config" href="{{url_for('transporte_config')}}"><i class="bi bi-gear"></i> Config.</a>
+          <div class="tr279-bus"><i class="bi bi-bus-front-fill"></i></div>
+          <div class="tr279-title">Módulo Transporte</div>
+        </div>
+        <div class="tr279-body">
+          <div class="tr279-section">Módulos</div>
+          <div class="tr279-grid3">
+            <a class="tr279-tile" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i><span class="lbl">Conductores</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i><span class="lbl">Buses</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_rutas')}}"><i class="bi bi-geo-alt"></i><span class="lbl">Rutas</span></a>
+          </div>
+
+          <div class="tr279-section op">Operación</div>
+          <div class="tr279-grid2">
+            <a class="tr279-tile" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-pin-map"></i><span class="lbl">GPS / Seguimiento</span><span class="sub">Ver ubicación</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_mobile_home')}}"><i class="bi bi-phone"></i><span class="lbl">Móvil conductor</span><span class="sub">Abordaje y GPS</span></a>
+          </div>
+
+          <div class="tr279-info"><i class="bi bi-info-circle-fill"></i><div>Así queda conectado: primero cargas conductores y buses, luego creas/cargas rutas asignando bus + conductor. El conductor entra a Móvil conductor, registra abordajes y envía GPS.</div></div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(body)
+
+@login_required
+def tf_transporte_mobile_home_280():
+    body = _transporte_ui_280_css() + r"""
+    <div class="tr279-phone">
+      <div class="tr279-app">
+        <div class="tr279-subhead">
+          <a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a>
+          <div class="ttl">Móvil conductor</div>
+        </div>
+        <div class="tr279-subbody">
+          <div class="tr279-section">Operación conductor</div>
+          <div class="tr279-subgrid">
+            <a class="tr279-tile wide" href="{{url_for('transporte_abordaje_home')}}"><i class="bi bi-people"></i><span class="lbl">Abordaje trabajadores</span><span class="sub">QR / código / DNI</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-pin-map"></i><span class="lbl">GPS</span><span class="sub">Enviar ubicación</span></a>
+            <a class="tr279-tile" href="{{url_for('conductor_movil_login')}}"><i class="bi bi-phone"></i><span class="lbl">PIN conductor</span><span class="sub">Ingreso real</span></a>
+          </div>
+          <div class="tr279-note">El conductor ingresa desde su celular, registra abordajes y envía GPS. El administrador revisa seguimiento y bases desde Transporte.</div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(body)
+
+@login_required
+def tf_transporte_mapa_general_280():
+    sql = """SELECT r.*, v.placa, v.tipo, c.dni AS conductor_dni, c.nombres AS conductor, c.estado AS conductor_estado,
+                    c.ultima_latitud, c.ultima_longitud, c.ultimo_gps
+             FROM transporte_rutas r
+             LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+             LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+             ORDER BY COALESCE(r.ultima_ubicacion, r.creado_en) DESC, r.id DESC LIMIT 40"""
+    rutas = rows_to_dict(execute(sql, fetchall=True))
+    total = len(rutas)
+    con_gps = sum(1 for r in rutas if (r.get('latitud') or r.get('ultima_latitud')) and (r.get('longitud') or r.get('ultima_longitud')))
+    sin_bus = sum(1 for r in rutas if not r.get('placa'))
+    body = _transporte_ui_280_css() + r"""
+    <div class="tr279-phone">
+      <div class="tr279-app">
+        <div class="tr279-subhead">
+          <a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a>
+          <div class="ttl">GPS / Seguimiento</div>
+        </div>
+        <div class="tr279-subbody">
+          <div class="tr279-info"><i class="bi bi-info-circle-fill"></i><div><b>¿Cómo funciona?</b><br>1) Crea conductor y PIN. 2) Asigna conductor y bus a una ruta. 3) El conductor entra a Móvil conductor desde su celular. 4) Permite ubicación/GPS y toca Enviar GPS.</div></div>
+          <div class="tr280-gps-kpis">
+            <div class="tr280-gps-kpi"><label>Rutas</label><strong>{{total}}</strong></div>
+            <div class="tr280-gps-kpi"><label>Con GPS</label><strong>{{con_gps}}</strong></div>
+            <div class="tr280-gps-kpi"><label>Sin bus</label><strong>{{sin_bus}}</strong></div>
+          </div>
+          {% if rutas %}
+            {% for r in rutas %}
+              <div class="tr280-gps-card">
+                <div class="tr280-gps-driver">
+                  <div class="tr280-gps-avatar"><i class="bi bi-person-fill"></i></div>
+                  <div>
+                    <b>{{r.conductor or 'SIN CONDUCTOR'}}</b>
+                    <div class="tr280-gps-meta">DNI: {{r.conductor_dni or '-'}} · Ruta: {{r.nombre or 'SIN RUTA'}} · Estado: {{r.estado or 'SIN ESTADO'}}</div>
+                  </div>
+                </div>
+                <div class="tr280-gps-grid">
+                  <div class="tr280-gps-box"><small>Bus</small><strong>{{r.placa or 'SIN BUS'}}</strong></div>
+                  <div class="tr280-gps-box"><small>Última actualización</small><strong>{{r.ultima_ubicacion or r.ultimo_gps or r.creado_en or '-'}}</strong></div>
+                  <div class="tr280-gps-box"><small>Latitud</small><strong>{{r.latitud or r.ultima_latitud or '-'}}</strong></div>
+                  <div class="tr280-gps-box"><small>Longitud</small><strong>{{r.longitud or r.ultima_longitud or '-'}}</strong></div>
+                </div>
+                {% set lat = r.latitud or r.ultima_latitud %}
+                {% set lon = r.longitud or r.ultima_longitud %}
+                {% if lat and lon %}
+                  <a class="tf-btn tr280-map-btn" href="https://www.google.com/maps?q={{lat}},{{lon}}" target="_blank"><i class="bi bi-map"></i> Ver en mapa</a>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="tr280-empty">
+              <div class="big">Sin rutas para seguimiento.</div>
+              <small>Primero crea rutas y luego envía GPS desde Móvil conductor.</small>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(body, rutas=rutas, total=total, con_gps=con_gps, sin_bus=sin_bus)
+
+# Reemplazo final solicitado por Omar: home y móvil más delgados, y GPS corregido.
+app.view_functions['transporte'] = tf_transporte_home_280
+app.view_functions['transporte_mobile_home'] = tf_transporte_mobile_home_280
+app.view_functions['transporte_mapa_general'] = tf_transporte_mapa_general_280
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
