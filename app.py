@@ -3284,6 +3284,255 @@ app.view_functions['transporte_reporte_abordajes'] = tf_transporte_reporte_abord
 app.view_functions['transporte_requisitos'] = tf_transporte_requisitos
 app.view_functions['transporte_abordaje_home'] = tf_transporte_abordaje_home
 
+
+# ========================= PATCH TRANSPORTE OMAR 274 =========================
+# Mejoras: carga masiva por módulo, KPIs verdes en 3 columnas, listas legales de licencia/categoría,
+# y abordaje con QR / código de barras / digitación manual.
+LICENCIAS_PERU = [
+    'A-I','A-IIa','A-IIb','A-IIIa','A-IIIb','A-IIIc','B-I','B-IIa','B-IIb','B-IIc'
+]
+CATEGORIAS_CONDUCTOR_PERU = [
+    'PARTICULAR / AUTO', 'TAXI / COLECTIVO', 'BUS / TRANSPORTE DE PERSONAS',
+    'MINIBUS / VAN', 'CAMIÓN', 'REMOLQUE / SEMIRREMOLQUE', 'MOTO / MOTOTAXI'
+]
+
+def _option_list(items, selected=''):
+    selected = (selected or '').upper()
+    return ''.join([f"<option value='{x}' {'selected' if x.upper()==selected else ''}>{x}</option>" for x in items])
+
+def _tf_extra_transport_css():
+    return """
+    <style>
+    .tf-kpi-green{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 12px}
+    .tf-kpi-green .tf-kpi{background:linear-gradient(135deg,#08713b,#19a35b)!important;color:#fff!important;border:0!important;box-shadow:0 6px 14px rgba(8,113,59,.23)}
+    .tf-kpi-green .tf-kpi label{color:#eaffef!important;font-size:10px!important;font-weight:900!important}.tf-kpi-green .tf-kpi strong{font-size:22px!important;color:#fff!important}
+    .tf-mass{border:1px dashed #21a15a;background:#f0fff4;border-radius:10px;padding:9px;margin:8px 0 10px}.tf-mass label{font-size:10px;color:#08713b;font-weight:900}.tf-mass input{font-size:11px}.tf-help-mini{font-size:10px;color:#166534;font-weight:800;margin-top:4px;line-height:1.25}.tf-searchrow .tf-btn{white-space:nowrap}.tf-scanner.live{height:auto;min-height:120px;padding:8px;display:block}.tf-manual{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}.tf-camera-btn{min-width:44px}.tf-mini-note{background:#ecfdf5;border:1px solid #bbf7d0;color:#166534;border-radius:9px;padding:8px;font-size:11px;font-weight:800;margin-bottom:8px}.tf-tablewrap{scrollbar-color:#08713b #e5e7eb}.tf-tablewrap::-webkit-scrollbar{height:9px}.tf-tablewrap::-webkit-scrollbar-thumb{background:#08713b;border-radius:999px}.tf-tablewrap::-webkit-scrollbar-track{background:#e5e7eb}
+    </style>
+    """
+
+def _excel_date(v):
+    if v is None: return ''
+    if isinstance(v, (datetime, date)): return v.strftime('%Y-%m-%d')
+    txt=str(v).strip()
+    if not txt: return ''
+    for fmt in ('%Y-%m-%d','%d/%m/%Y','%d-%m-%Y'):
+        try: return datetime.strptime(txt[:10], fmt).strftime('%Y-%m-%d')
+        except Exception: pass
+    return txt[:10]
+
+def _find_id_by_text(table, id_col, fields, value):
+    value=limpiar_texto(value)
+    if not value: return None
+    for f in fields:
+        r=row_to_dict(execute(f"SELECT {id_col} FROM {table} WHERE UPPER(COALESCE({f},''))=? LIMIT 1", (value,), fetchone=True))
+        if r: return r.get(id_col)
+    return None
+
+def _importar_conductores_excel(file_storage):
+    ok=upd=bad=0
+    for row in _iter_excel_upload(file_storage):
+        dni=limpiar_dni(_valor(row,['DNI','DOCUMENTO','DOC','NRO DOCUMENTO']))
+        nombres=limpiar_texto(_valor(row,['NOMBRE','NOMBRES','CONDUCTOR','APELLIDOS Y NOMBRES','TRABAJADOR']))
+        if len(dni)!=8 or not nombres:
+            bad+=1; continue
+        licencia=limpiar_texto(_valor(row,['LICENCIA','CLASE','TIPO LICENCIA'])) or 'A-IIIc'
+        categoria=limpiar_texto(_valor(row,['CATEGORIA','CATEGORÍA','CAT'])) or 'BUS / TRANSPORTE DE PERSONAS'
+        pin=limpiar_texto(_valor(row,['PIN','PIN MOVIL','PIN MÓVIL']), upper=False) or _pin_conductor(dni)
+        vals=(dni,nombres,_valor(row,['TELEFONO','TELÉFONO','CELULAR']),licencia,categoria,_excel_date(_valor(row,['VENC LICENCIA','VENC. LICENCIA','VENCIMIENTO LICENCIA'])),_excel_date(_valor(row,['CERT MEDICO','CERT. MEDICO','CERTIFICADO MEDICO'])),_excel_date(_valor(row,['SCTR','VENC SCTR'])),limpiar_texto(_valor(row,['ESTADO']) or 'ACTIVO'),_valor(row,['OBSERVACION','OBSERVACIÓN']),dni,pin,'ACTIVO',now_str())
+        try:
+            execute('INSERT INTO transporte_conductores(dni,nombres,telefono,licencia,categoria,venc_licencia,venc_cert_medico,venc_sctr,estado,observacion,movil_usuario,movil_pin,movil_estado,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', vals, commit=True); ok+=1
+        except Exception:
+            execute('UPDATE transporte_conductores SET nombres=?,telefono=?,licencia=?,categoria=?,venc_licencia=?,venc_cert_medico=?,venc_sctr=?,estado=?,observacion=?,movil_usuario=?,movil_pin=?,movil_estado=? WHERE dni=?', (vals[1],vals[2],vals[3],vals[4],vals[5],vals[6],vals[7],vals[8],vals[9],dni,pin,'ACTIVO',dni), commit=True); upd+=1
+    return ok,upd,bad
+
+def _importar_vehiculos_excel(file_storage):
+    ok=upd=bad=0
+    for row in _iter_excel_upload(file_storage):
+        placa=limpiar_texto(_valor(row,['PLACA','BUS','VEHICULO','VEHÍCULO']))
+        if not placa: bad+=1; continue
+        try: capacidad=int(float(_valor(row,['CAPACIDAD','ASIENTOS']) or 0))
+        except Exception: capacidad=0
+        vals=(placa,limpiar_texto(_valor(row,['TIPO','TIPO VEHICULO','TIPO VEHÍCULO']) or 'BUS'),capacidad,limpiar_texto(_valor(row,['EMPRESA','TRANSPORTISTA','EMPRESA TRANSPORTISTA'])),_excel_date(_valor(row,['SOAT','SOAT VENCE','VENC SOAT'])),_excel_date(_valor(row,['REV TECNICA','REV. TECNICA','REVISIÓN TÉCNICA','REVISION TECNICA'])),limpiar_texto(_valor(row,['GPS','CODIGO GPS','CÓDIGO GPS'])),limpiar_texto(_valor(row,['ESTADO']) or 'ACTIVO'),_valor(row,['OBSERVACION','OBSERVACIÓN']),now_str())
+        try:
+            execute('INSERT INTO transporte_vehiculos(placa,tipo,capacidad,empresa_transportista,soat_venc,revision_tecnica_venc,gps_codigo,estado,observacion,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?)', vals, commit=True); ok+=1
+        except Exception:
+            execute('UPDATE transporte_vehiculos SET tipo=?,capacidad=?,empresa_transportista=?,soat_venc=?,revision_tecnica_venc=?,gps_codigo=?,estado=?,observacion=? WHERE placa=?', (vals[1],vals[2],vals[3],vals[4],vals[5],vals[6],vals[7],vals[8],placa), commit=True); upd+=1
+    return ok,upd,bad
+
+def _importar_rutas_excel(file_storage):
+    ok=bad=0
+    for row in _iter_excel_upload(file_storage):
+        fecha=_excel_date(_valor(row,['FECHA','FECHA RUTA'])) or today_str()
+        nombre=limpiar_texto(_valor(row,['RUTA','NOMBRE','NOMBRE RUTA']) or 'RUTA')
+        if not nombre: bad+=1; continue
+        placa=_valor(row,['PLACA','BUS','VEHICULO','VEHÍCULO'])
+        dni_cond=limpiar_dni(_valor(row,['DNI CONDUCTOR','DOCUMENTO CONDUCTOR']))
+        conductor_txt=_valor(row,['CONDUCTOR','NOMBRE CONDUCTOR'])
+        vehiculo_id=_find_id_by_text('transporte_vehiculos','id',['placa'],placa)
+        conductor_id=None
+        if dni_cond:
+            r=row_to_dict(execute('SELECT id FROM transporte_conductores WHERE dni=? LIMIT 1',(dni_cond,), fetchone=True)); conductor_id=r.get('id') if r else None
+        if not conductor_id and conductor_txt:
+            conductor_id=_find_id_by_text('transporte_conductores','id',['nombres'],conductor_txt)
+        execute('INSERT INTO transporte_rutas(fecha,nombre,origen,destino,sede,hora_salida,hora_retorno,vehiculo_id,conductor_id,estado,creado_por,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', (fecha,nombre,limpiar_texto(_valor(row,['ORIGEN','PARADERO ORIGEN'])),limpiar_texto(_valor(row,['DESTINO','PARADERO DESTINO'])),limpiar_texto(_valor(row,['SEDE','FUNDO'])),str(_valor(row,['SALIDA','HORA SALIDA']))[:5],str(_valor(row,['RETORNO','HORA RETORNO']))[:5],vehiculo_id,conductor_id,limpiar_texto(_valor(row,['ESTADO']) or 'PROGRAMADA'),session.get('usuario'),now_str()), commit=True); ok+=1
+    return ok,0,bad
+
+@login_required
+def transporte_upload_conductores():
+    f=request.files.get('archivo')
+    if not f:
+        flash('Seleccione un Excel para carga masiva de conductores.', 'danger'); return redirect(url_for('transporte_conductores'))
+    ok,upd,bad=_importar_conductores_excel(f)
+    flash(f'Carga masiva conductores: nuevos {ok}, actualizados {upd}, omitidos {bad}.', 'success' if ok or upd else 'warning')
+    return redirect(url_for('transporte_conductores'))
+
+@login_required
+def transporte_upload_vehiculos():
+    f=request.files.get('archivo')
+    if not f:
+        flash('Seleccione un Excel para carga masiva de buses/vehículos.', 'danger'); return redirect(url_for('transporte_vehiculos'))
+    ok,upd,bad=_importar_vehiculos_excel(f)
+    flash(f'Carga masiva buses: nuevos {ok}, actualizados {upd}, omitidos {bad}.', 'success' if ok or upd else 'warning')
+    return redirect(url_for('transporte_vehiculos'))
+
+@login_required
+def transporte_upload_rutas():
+    f=request.files.get('archivo')
+    if not f:
+        flash('Seleccione un Excel para carga masiva de rutas.', 'danger'); return redirect(url_for('transporte_rutas'))
+    ok,upd,bad=_importar_rutas_excel(f)
+    flash(f'Carga masiva rutas: creadas {ok}, omitidas {bad}.', 'success' if ok else 'warning')
+    return redirect(url_for('transporte_rutas'))
+
+# Registrar endpoints de carga masiva si no existen.
+try:
+    app.add_url_rule('/transporte/conductores/carga-masiva', 'transporte_upload_conductores', transporte_upload_conductores, methods=['POST'])
+    app.add_url_rule('/transporte/vehiculos/carga-masiva', 'transporte_upload_vehiculos', transporte_upload_vehiculos, methods=['POST'])
+    app.add_url_rule('/transporte/rutas/carga-masiva', 'transporte_upload_rutas', transporte_upload_rutas, methods=['POST'])
+except Exception:
+    pass
+
+@login_required
+def tf_transporte_conductores_omar():
+    if request.method=='POST':
+        dni=limpiar_dni(request.form.get('dni')); nombres=limpiar_texto(request.form.get('nombres'))
+        if len(dni)!=8 or not nombres:
+            flash('Ingrese DNI de 8 dígitos y nombres del conductor.','danger'); return redirect(url_for('transporte_conductores'))
+        pin=(request.form.get('movil_pin') or _pin_conductor(dni)).strip()
+        vals=(dni,nombres,request.form.get('telefono',''),limpiar_texto(request.form.get('licencia') or 'A-IIIc'),limpiar_texto(request.form.get('categoria') or 'BUS / TRANSPORTE DE PERSONAS'),request.form.get('venc_licencia',''),request.form.get('venc_cert_medico',''),request.form.get('venc_sctr',''),limpiar_texto(request.form.get('estado') or 'ACTIVO'),limpiar_texto(request.form.get('observacion'), upper=False),dni,pin,'ACTIVO',now_str())
+        try:
+            execute('INSERT INTO transporte_conductores(dni,nombres,telefono,licencia,categoria,venc_licencia,venc_cert_medico,venc_sctr,estado,observacion,movil_usuario,movil_pin,movil_estado,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', vals, commit=True); flash('Conductor registrado correctamente.','success')
+        except Exception:
+            execute('UPDATE transporte_conductores SET nombres=?,telefono=?,licencia=?,categoria=?,venc_licencia=?,venc_cert_medico=?,venc_sctr=?,estado=?,observacion=?,movil_usuario=?,movil_pin=?,movil_estado=? WHERE dni=?', (vals[1],vals[2],vals[3],vals[4],vals[5],vals[6],vals[7],vals[8],vals[9],dni,pin,'ACTIVO',dni), commit=True); flash('Conductor actualizado correctamente.','success')
+        return redirect(url_for('transporte_conductores'))
+    rows=rows_to_dict(execute('SELECT * FROM transporte_conductores ORDER BY id DESC LIMIT 300', fetchall=True))
+    hoy=today_str(); total=len(rows); activos=sum(1 for r in rows if (r.get('estado') or '').upper() in ('ACTIVO','APTO',''))
+    venc=sum(1 for r in rows if any(r.get(c) and str(r.get(c))<hoy for c in ('venc_licencia','venc_cert_medico','venc_sctr')))
+    body=_tf_css()+_tf_extra_transport_css()+_tf_top('Conductores')+"""
+      <form method="post" class="tf-form"><div class="row g-2">
+        <div class="col-5"><label>DNI</label><input name="dni" class="form-control" maxlength="8" inputmode="numeric" required></div><div class="col-7"><label>Nombre</label><input name="nombres" class="form-control" required></div>
+        <div class="col-6"><label>Teléfono</label><input name="telefono" class="form-control"></div><div class="col-6"><label>Licencia</label><select name="licencia" class="form-select">{{lic_opts|safe}}</select></div>
+        <div class="col-6"><label>Categoría</label><select name="categoria" class="form-select">{{cat_opts|safe}}</select></div><div class="col-6"><label>PIN móvil</label><input name="movil_pin" class="form-control" placeholder="AUTO"></div>
+        <div class="col-6"><label>Venc. licencia</label><input name="venc_licencia" type="date" class="form-control"></div><div class="col-6"><label>Estado</label><select name="estado" class="form-select"><option>ACTIVO</option><option>APTO</option><option>POR VENCER</option><option>VENCIDA</option><option>INACTIVO</option></select></div>
+      </div><button class="tf-btn w100 mt-2">+ Guardar conductor</button></form>
+      <form method="post" action="{{url_for('transporte_upload_conductores')}}" enctype="multipart/form-data" class="tf-mass"><label><i class="bi bi-cloud-arrow-up"></i> Carga masiva conductores Excel</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control mt-1" required><div class="tf-help-mini">Columnas sugeridas: DNI, NOMBRE, TELEFONO, LICENCIA, CATEGORIA, VENC LICENCIA, ESTADO, PIN.</div><button class="tf-btn w100 mt-2" type="submit"><i class="bi bi-upload"></i> Cargar conductores</button></form>
+      <div class="tf-searchrow"><input id="qcond" class="tf-search" placeholder="Buscar DNI o conductor..."><button type="button" onclick="document.querySelector('.tf-mass input').click()" class="tf-btn"><i class="bi bi-upload"></i> Carga masiva</button></div>
+      <div class="tf-tablewrap"><table id="tblcond" class="tf-table"><thead><tr><th>DNI</th><th>Nombre</th><th>Licencia</th><th>Estado</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{{r.licencia or '-'}}<br><small>{{r.categoria or ''}}</small></td><td>{{badge(r.estado)|safe}}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Sin conductores.</td></tr>{% endfor %}</tbody></table></div>
+      <div class="tf-kpi-green"><div class="tf-kpi"><label>Total conductores</label><strong>{{total}}</strong></div><div class="tf-kpi"><label>Activos</label><strong>{{activos}}</strong></div><div class="tf-kpi"><label>Vencidos</label><strong>{{venc}}</strong></div></div>
+    """+_tf_end()+_tf_filter_script('qcond','tblcond')
+    return render_page(body, rows=rows,total=total,activos=activos,venc=venc,badge=_tf_badge,lic_opts=_option_list(LICENCIAS_PERU,'A-IIIc'),cat_opts=_option_list(CATEGORIAS_CONDUCTOR_PERU,'BUS / TRANSPORTE DE PERSONAS'))
+
+@login_required
+def tf_transporte_vehiculos_omar():
+    if request.method=='POST':
+        placa=limpiar_texto(request.form.get('placa'))
+        if not placa:
+            flash('Ingrese placa del vehículo.','danger'); return redirect(url_for('transporte_vehiculos'))
+        try: cap=int(request.form.get('capacidad') or 0)
+        except Exception: cap=0
+        vals=(placa,limpiar_texto(request.form.get('tipo') or 'BUS'),cap,limpiar_texto(request.form.get('empresa_transportista')),request.form.get('soat_venc',''),request.form.get('revision_tecnica_venc',''),limpiar_texto(request.form.get('gps_codigo')),limpiar_texto(request.form.get('estado') or 'ACTIVO'),limpiar_texto(request.form.get('observacion'),upper=False),now_str())
+        try: execute('INSERT INTO transporte_vehiculos(placa,tipo,capacidad,empresa_transportista,soat_venc,revision_tecnica_venc,gps_codigo,estado,observacion,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?)', vals, commit=True); flash('Bus/vehículo registrado.','success')
+        except Exception: execute('UPDATE transporte_vehiculos SET tipo=?,capacidad=?,empresa_transportista=?,soat_venc=?,revision_tecnica_venc=?,gps_codigo=?,estado=?,observacion=? WHERE placa=?', (vals[1],vals[2],vals[3],vals[4],vals[5],vals[6],vals[7],vals[8],placa), commit=True); flash('Bus/vehículo actualizado.','success')
+        return redirect(url_for('transporte_vehiculos'))
+    rows=rows_to_dict(execute('SELECT * FROM transporte_vehiculos ORDER BY id DESC LIMIT 300', fetchall=True)); hoy=today_str(); total=len(rows); activos=sum(1 for r in rows if (r.get('estado') or '').upper() in ('ACTIVO',''))
+    venc=sum(1 for r in rows if any(r.get(c) and str(r.get(c))<hoy for c in ('soat_venc','revision_tecnica_venc')))
+    body=_tf_css()+_tf_extra_transport_css()+_tf_top('Buses / Vehículos')+"""
+      <form method="post" class="tf-form"><div class="row g-2"><div class="col-5"><label>Placa</label><input name="placa" class="form-control" required></div><div class="col-7"><label>Tipo</label><select name="tipo" class="form-select"><option>BUS</option><option>MINIBUS</option><option>VAN</option><option>CAMIONETA</option></select></div><div class="col-6"><label>Capacidad</label><input name="capacidad" type="number" class="form-control"></div><div class="col-6"><label>Empresa</label><input name="empresa_transportista" class="form-control"></div><div class="col-6"><label>SOAT venc.</label><input name="soat_venc" type="date" class="form-control"></div><div class="col-6"><label>Rev. técnica</label><input name="revision_tecnica_venc" type="date" class="form-control"></div><div class="col-12"><label>Código GPS / placa GPS</label><input name="gps_codigo" class="form-control"></div></div><button class="tf-btn w100 mt-2">+ Guardar bus</button></form>
+      <form method="post" action="{{url_for('transporte_upload_vehiculos')}}" enctype="multipart/form-data" class="tf-mass"><label><i class="bi bi-cloud-arrow-up"></i> Carga masiva buses/vehículos Excel</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control mt-1" required><div class="tf-help-mini">Columnas sugeridas: PLACA, TIPO, CAPACIDAD, EMPRESA, SOAT, REV TECNICA, GPS, ESTADO.</div><button class="tf-btn w100 mt-2" type="submit"><i class="bi bi-upload"></i> Cargar buses</button></form>
+      <div class="tf-searchrow"><input id="qveh" class="tf-search" placeholder="Buscar placa o bus..."><button type="button" onclick="document.querySelector('.tf-mass input').click()" class="tf-btn"><i class="bi bi-upload"></i> Carga masiva</button></div><div class="tf-tablewrap"><table id="tblveh" class="tf-table"><thead><tr><th>Placa</th><th>Tipo</th><th>Capacidad</th><th>Estado</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.placa}}</td><td>{{r.tipo}}</td><td>{{r.capacidad}}</td><td>{{badge(r.estado)|safe}}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Sin buses.</td></tr>{% endfor %}</tbody></table></div>
+      <div class="tf-kpi-green"><div class="tf-kpi"><label>Total buses</label><strong>{{total}}</strong></div><div class="tf-kpi"><label>Activos</label><strong>{{activos}}</strong></div><div class="tf-kpi"><label>Vencidos</label><strong>{{venc}}</strong></div></div>
+    """+_tf_end()+_tf_filter_script('qveh','tblveh')
+    return render_page(body, rows=rows,total=total,activos=activos,venc=venc,badge=_tf_badge)
+
+@login_required
+def tf_transporte_rutas_omar():
+    if request.method=='POST':
+        fecha=request.form.get('fecha') or today_str(); nombre=limpiar_texto(request.form.get('nombre') or 'RUTA')
+        execute('INSERT INTO transporte_rutas(fecha,nombre,origen,destino,sede,hora_salida,hora_retorno,vehiculo_id,conductor_id,estado,creado_por,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', (fecha,nombre,limpiar_texto(request.form.get('origen')),limpiar_texto(request.form.get('destino')),limpiar_texto(request.form.get('sede')),request.form.get('hora_salida',''),request.form.get('hora_retorno',''),request.form.get('vehiculo_id') or None,request.form.get('conductor_id') or None,limpiar_texto(request.form.get('estado') or 'PROGRAMADA'),session.get('usuario'),now_str()), commit=True)
+        flash('Ruta programada.','success'); return redirect(url_for('transporte_rutas'))
+    hoy=today_str(); solo_hoy=request.args.get('hoy')=='1'; where='WHERE r.fecha=?' if solo_hoy else ''; params=(hoy,) if solo_hoy else ()
+    rutas=rows_to_dict(execute(f'SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id LEFT JOIN transporte_conductores c ON c.id=r.conductor_id {where} ORDER BY r.fecha DESC, r.id DESC LIMIT 200', params, fetchall=True))
+    vehiculos=rows_to_dict(execute('SELECT id, placa, tipo, capacidad FROM transporte_vehiculos ORDER BY placa', fetchall=True)); conductores=rows_to_dict(execute('SELECT id, dni, nombres FROM transporte_conductores ORDER BY nombres', fetchall=True))
+    prog=len(rutas); en=sum(1 for r in rutas if (r.get('estado') or '').upper()=='EN RUTA'); pend=sum(1 for r in rutas if (r.get('estado') or '').upper() in ('PROGRAMADA','PENDIENTE')); fin=sum(1 for r in rutas if (r.get('estado') or '').upper() in ('FINALIZADA','CERRADA'))
+    body=_tf_css()+_tf_extra_transport_css()+_tf_top('Rutas de hoy' if solo_hoy else 'Rutas')+"""
+      <form method="post" class="tf-form"><div class="row g-2"><div class="col-6"><label>Fecha</label><input name="fecha" type="date" value="{{hoy}}" class="form-control"></div><div class="col-6"><label>Ruta</label><input name="nombre" class="form-control" placeholder="R-001"></div><div class="col-6"><label>Origen</label><input name="origen" class="form-control"></div><div class="col-6"><label>Destino</label><input name="destino" class="form-control"></div><div class="col-6"><label>Salida</label><input name="hora_salida" type="time" class="form-control"></div><div class="col-6"><label>Estado</label><select name="estado" class="form-select"><option>PROGRAMADA</option><option>EN RUTA</option><option>CERRADA</option></select></div><div class="col-6"><label>Bus</label><select name="vehiculo_id" class="form-select"><option value="">-</option>{% for v in vehiculos %}<option value="{{v.id}}">{{v.placa}}</option>{% endfor %}</select></div><div class="col-6"><label>Conductor</label><select name="conductor_id" class="form-select"><option value="">-</option>{% for c in conductores %}<option value="{{c.id}}">{{c.nombres}}</option>{% endfor %}</select></div></div><button class="tf-btn w100 mt-2">+ Nueva ruta</button></form>
+      <form method="post" action="{{url_for('transporte_upload_rutas')}}" enctype="multipart/form-data" class="tf-mass"><label><i class="bi bi-cloud-arrow-up"></i> Carga masiva rutas Excel</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control mt-1" required><div class="tf-help-mini">Columnas sugeridas: FECHA, RUTA, ORIGEN, DESTINO, SALIDA, PLACA, DNI CONDUCTOR, ESTADO.</div><button class="tf-btn w100 mt-2" type="submit"><i class="bi bi-upload"></i> Cargar rutas</button></form>
+      <div class="tf-searchrow"><input id="qruta" class="tf-search" placeholder="Buscar ruta..."><button type="button" onclick="document.querySelector('.tf-mass input').click()" class="tf-btn"><i class="bi bi-upload"></i> Carga masiva</button></div><div class="tf-tablewrap"><table id="tblruta" class="tf-table"><thead><tr><th>Código</th><th>Ruta</th><th>Salida</th><th>Estado</th><th></th></tr></thead><tbody>{% for r in rutas %}<tr><td>R-{{'%03d'%r.id}}</td><td>{{r.nombre}}<br><small>{{r.origen}} → {{r.destino}}</small></td><td>{{r.hora_salida or '-'}}</td><td>{{badge(r.estado)|safe}}</td><td><a class="tf-btn" style="padding:4px 7px" href="{{url_for('transporte_ruta_detalle', ruta_id=r.id)}}">›</a></td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Sin rutas.</td></tr>{% endfor %}</tbody></table></div>
+      <div class="tf-kpi-green"><div class="tf-kpi"><label>Programadas</label><strong>{{prog}}</strong></div><div class="tf-kpi"><label>En ruta</label><strong>{{en}}</strong></div><div class="tf-kpi"><label>Finalizadas</label><strong>{{fin}}</strong></div></div>
+    """+_tf_end()+_tf_filter_script('qruta','tblruta')
+    return render_page(body,rutas=rutas,vehiculos=vehiculos,conductores=conductores,hoy=hoy,prog=prog,en=en,pend=pend,fin=fin,badge=_tf_badge)
+
+@login_required
+def tf_transporte_abordaje_home_omar():
+    hoy=today_str()
+    rutas=rows_to_dict(execute("SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id LEFT JOIN transporte_conductores c ON c.id=r.conductor_id WHERE r.fecha=? OR UPPER(COALESCE(r.estado,'')) IN ('PROGRAMADA','EN RUTA') ORDER BY CASE WHEN r.fecha=? THEN 0 ELSE 1 END, r.fecha DESC, r.hora_salida LIMIT 40",(hoy,hoy), fetchall=True))
+    total=scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE fecha=?',(hoy,)); rutas_cnt=len(rutas)
+    body=_tf_css()+_tf_extra_transport_css()+_tf_top('Abordaje trabajadores')+"""
+      <div class="tf-info">Seleccione una ruta y luego escanee QR / código de barras o digite DNI manualmente.</div>
+      <div class="tf-mini-note"><i class="bi bi-check-circle"></i> Lectura habilitada: QR, código de barras y DNI manual. La cámara se abre dentro de cada ruta.</div>
+      <div class="tf-section">Rutas disponibles</div><div class="tf-list">{% for r in rutas %}<a class="tf-item" href="{{url_for('transporte_ruta_detalle', ruta_id=r.id)}}"><i class="bi bi-bus-front"></i><span>{{r.nombre}}<br><small>{{r.placa or 'SIN BUS'}} · {{r.hora_salida or '-'}} · {{r.conductor or '-'}}</small></span><i class="bi bi-chevron-right chev"></i></a>{% else %}<div class="tf-item text-muted">No hay rutas programadas.</div>{% endfor %}</div>
+      <div class="tf-kpi-green"><div class="tf-kpi"><label>Rutas visibles</label><strong>{{rutas_cnt}}</strong></div><div class="tf-kpi"><label>Abordados hoy</label><strong>{{total}}</strong></div><div class="tf-kpi"><label>Pendientes</label><strong>{{rutas_cnt}}</strong></div></div>
+    """+_tf_end()
+    return render_page(body,rutas=rutas,total=total,rutas_cnt=rutas_cnt)
+
+@login_required
+def tf_transporte_ruta_detalle_omar(ruta_id):
+    ruta=row_to_dict(execute('SELECT r.*, v.placa, v.tipo, v.capacidad, c.nombres AS conductor FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id LEFT JOIN transporte_conductores c ON c.id=r.conductor_id WHERE r.id=?',(ruta_id,), fetchone=True))
+    if not ruta:
+        flash('Ruta no encontrada.','danger'); return redirect(url_for('transporte_abordaje_home'))
+    pasajeros=rows_to_dict(execute('SELECT * FROM transporte_pasajeros WHERE ruta_id=? ORDER BY fecha_hora DESC',(ruta_id,), fetchall=True)); ocupados=len(pasajeros); capacidad=int(ruta.get('capacidad') or 0); libres=max(0,capacidad-ocupados) if capacidad else 0
+    body=_tf_css()+_tf_extra_transport_css()+_tf_top('Abordaje ruta','transporte_abordaje_home')+"""
+      <div class="tf-info"><b>{{ruta.nombre}}</b><br>{{ruta.origen or '-'}} → {{ruta.destino or '-'}}<br>Bus: {{ruta.placa or 'SIN BUS'}} | Conductor: {{ruta.conductor or '-'}} | Capacidad: {{capacidad or 'SIN DEFINIR'}} | Ocupados: {{ocupados}}</div>
+      <form method="post" action="{{url_for('transporte_abordar', ruta_id=ruta.id)}}" id="frmAbordarTF" class="tf-form">
+        <label>DNI / QR / Código de barras</label><div class="tf-manual"><input name="dni" id="dniTransporteTF" class="form-control" maxlength="20" placeholder="ESCANEAR O DIGITAR DNI" required autofocus><button type="button" class="tf-btn tf-camera-btn" onclick="abrirScanner('readerTransporteTF','dniTransporteTF')"><i class="bi bi-camera"></i></button></div>
+        <div id="readerTransporteTF" class="scan-box mt-2 live" style="display:none"></div><div id="statusTransporteTF" class="field-help mt-2">Digita 8 dígitos o usa la cámara.</div>
+        <select name="metodo" id="metodoTransporteTF" class="form-select mt-2"><option>DNI DIGITADO</option><option>QR</option><option>CODIGO DE BARRAS</option></select><input type="hidden" name="latitud" id="latitudTransTF"><input type="hidden" name="longitud" id="longitudTransTF"><button class="tf-btn w100 mt-2"><i class="bi bi-person-check"></i> Registrar subida</button>
+      </form>
+      <button class="tf-btn w100 mb-2" onclick="tfEnviarGps({{ruta.id}})"><i class="bi bi-geo-alt"></i> Enviar GPS de esta ruta</button>
+      <div class="tf-kpi-green"><div class="tf-kpi"><label>Abordados</label><strong>{{ocupados}}</strong></div><div class="tf-kpi"><label>Libres</label><strong>{{libres}}</strong></div><div class="tf-kpi"><label>Capacidad</label><strong>{{capacidad or 0}}</strong></div></div>
+      <div class="tf-tablewrap"><table class="tf-table"><thead><tr><th>Hora</th><th>DNI</th><th>Trabajador</th><th>Método</th></tr></thead><tbody>{% for p in pasajeros %}<tr><td>{{p.hora}}</td><td>{{p.dni}}</td><td>{{p.trabajador}}</td><td>{{p.metodo}}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Sin abordajes.</td></tr>{% endfor %}</tbody></table></div>
+    """+_tf_end()+"""
+    <script>
+    (function(){
+      const input=document.getElementById('dniTransporteTF'), st=document.getElementById('statusTransporteTF'), metodo=document.getElementById('metodoTransporteTF'), lat=document.getElementById('latitudTransTF'), lon=document.getElementById('longitudTransTF');
+      const dni=v=>{const m=String(v||'').match(/(?:^|\D)(\d{8})(?:\D|$)/); return m?m[1]:String(v||'').replace(/\D/g,'').slice(-8)};
+      async function validar(){const d=dni(input.value); if(d.length<8){st.className='field-help mt-2';st.innerHTML='Esperando 8 dígitos...';return;} input.value=d; try{let r=await fetch('/api/trabajador/'+d,{cache:'no-store'});let j=await r.json(); if(j.ok){st.className='scan-ok mt-2';st.innerHTML='✓ '+(j.trabajador.trabajador||'TRABAJADOR')+' encontrado. Puede registrar.'; if(typeof beep==='function')beep();} else {st.className='scan-bad mt-2';st.innerHTML='✕ '+(j.msg||'DNI no encontrado');}}catch(e){st.className='scan-bad mt-2';st.innerHTML='Error validando DNI';}}
+      input.addEventListener('input',()=>{metodo.value='DNI DIGITADO'; validar();}); input.addEventListener('paste',()=>setTimeout(validar,80)); input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('frmAbordarTF').requestSubmit();}});
+      const old=window.abrirScanner; window.abrirScanner=function(readerId,inputId){metodo.value='QR'; return old(readerId,inputId)};
+      if(navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{lat.value=p.coords.latitude;lon.value=p.coords.longitude;},()=>{});}
+    })();
+    async function tfEnviarGps(rid){if(!navigator.geolocation){alert('GPS no disponible en este navegador');return;} navigator.geolocation.getCurrentPosition(async p=>{let fd=new FormData();fd.append('latitud',p.coords.latitude);fd.append('longitud',p.coords.longitude);let r=await fetch('/transporte/ruta/'+rid+'/gps',{method:'POST',body:fd});let j=await r.json();alert(j.msg||'GPS actualizado');location.reload();},()=>alert('Permite ubicación/GPS en el navegador. Debe estar en HTTPS.'));}
+    </script>
+    """
+    return render_page(body,ruta=ruta,pasajeros=pasajeros,ocupados=ocupados,capacidad=capacidad,libres=libres)
+
+# Reasignación final del patch 274.
+app.view_functions['transporte_conductores'] = tf_transporte_conductores_omar
+app.view_functions['transporte_vehiculos'] = tf_transporte_vehiculos_omar
+app.view_functions['transporte_rutas'] = tf_transporte_rutas_omar
+app.view_functions['transporte_abordaje_home'] = tf_transporte_abordaje_home_omar
+app.view_functions['transporte_ruta_detalle'] = tf_transporte_ruta_detalle_omar
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
