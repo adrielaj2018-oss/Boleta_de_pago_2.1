@@ -5719,6 +5719,241 @@ app.view_functions['transporte_reportes'] = transporte_reportes_288
 # ======================= FIN PATCH TRANSPORTE OMAR 288 =======================
 
 
+# ========================= PATCH TRANSPORTE OMAR 289 =========================
+# Reportes transporte miniatura + reportes reales de Abordajes, Buses, Rutas y Conductores.
+# Configuraciones depuradas: se eliminan opciones repetidas/no funcionales que enviaban a Transporte.
+
+def _reporte_transporte_289_css():
+    return r"""
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}
+      .shell{max-width:390px!important;width:100%!important;margin:0 auto!important;padding:4px 7px 22px!important;background:#fff!important}
+      .rp289-phone{max-width:355px;margin:0 auto}
+      .rp289-card{border:1px solid #e4e8e4;border-radius:13px;overflow:hidden;background:#fff;box-shadow:0 8px 18px rgba(0,0,0,.065)}
+      .rp289-head{height:58px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}
+      .rp289-head a{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:28px;line-height:1}
+      .rp289-head .ttl{font-size:15px;font-weight:950;color:#fff;letter-spacing:.15px}
+      .rp289-body{padding:10px;background:#fff}
+      .rp289-filter{background:#fff;border:1px solid #e5ece5;border-radius:12px;padding:10px;box-shadow:0 6px 14px rgba(0,0,0,.045);margin-bottom:10px}
+      .rp289-dategrid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:8px}
+      .rp289-datebox{border:1px solid #dce5dc;border-radius:9px;background:#fff;height:39px;display:flex;align-items:center;justify-content:space-between;padding:5px 7px;color:#142033;min-width:0}
+      .rp289-datebox span{display:block;font-size:8px;color:#5e6b72;font-weight:850;line-height:1}.rp289-datebox input{border:0;outline:0;width:100%;font-size:10px;font-weight:950;color:#142033;background:transparent;padding:0;margin-top:2px}.rp289-datebox i{font-size:13px;color:#142033;margin-left:3px}
+      .rp289-searchrow{display:grid;grid-template-columns:1fr 43px;gap:7px;margin-bottom:8px}.rp289-searchrow input{height:38px;border:1px solid #dce5dc;border-radius:9px;padding:7px 10px;font-size:10.5px;font-weight:850;color:#142033}.rp289-searchrow button{height:38px;border:0;border-radius:9px;background:#08713b;color:#fff;font-size:19px;display:grid;place-items:center}
+      .rp289-export{height:38px;border:1px solid #08713b;background:#fff;color:#08713b;border-radius:9px;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:7px;font-size:11.5px;font-weight:900;margin-bottom:7px}.rp289-export i{font-size:17px}
+      .rp289-help{display:flex;align-items:flex-start;gap:7px;color:#4a5565;font-size:9.8px;font-weight:800;line-height:1.28}.rp289-help i{color:#08713b;font-size:15px;flex:0 0 auto;margin-top:1px}
+      .rp289-kpibox{background:#fff;border:1px solid #e5ece5;border-radius:12px;padding:9px;box-shadow:0 6px 14px rgba(0,0,0,.045);margin-bottom:12px}.rp289-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.rp289-kpi{background:#fff;border:1px solid #dfe7df;border-radius:10px;min-height:68px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:5px 2px}.rp289-kpi i{font-size:19px;color:#08713b;margin-bottom:4px;line-height:1}.rp289-kpi small{display:block;font-size:8.9px;color:#1f2937;font-weight:850;line-height:1.05}.rp289-kpi b{display:block;color:#08713b;font-size:18px;font-weight:950;line-height:1;margin-top:4px}
+      .rp289-section{display:flex;align-items:center;gap:7px;margin:2px 0 9px;color:#1f2937;font-size:16px;font-weight:950}.rp289-section:before{content:'';width:4px;height:22px;background:#10a05b;border-radius:999px;display:block}
+      .rp289-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.rp289-tile{height:76px;background:#08713b;color:#fff!important;border-radius:10px;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 6px 12px rgba(0,0,0,.13);padding:6px}.rp289-tile i{font-size:25px;margin-bottom:4px;color:#fff;line-height:1}.rp289-tile b{font-size:12px;line-height:1.06;color:#fff;font-weight:950}.rp289-tile small{font-size:8.8px;color:#eaffee;font-weight:850;line-height:1.05;margin-top:2px}
+      .rp289-results{margin-top:10px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;overflow:auto;max-height:160px}.rp289-results table{width:100%;min-width:480px;border-collapse:collapse}.rp289-results th{background:#f8fafc;color:#12223b;font-size:10px;font-weight:950;padding:7px;border-bottom:1px solid #e5e7eb}.rp289-results td{font-size:9.5px;color:#334155;padding:7px;border-bottom:1px solid #f1f5f9;font-weight:750}
+      .rp289-mini-title{font-size:12px;font-weight:950;color:#08713b;text-transform:uppercase;margin:8px 0 7px}
+    </style>
+    """
+
+def _rp289_sql_filter(alias_cols, q):
+    if not q:
+        return "", []
+    like = f"%{q.upper()}%"
+    parts = [f"UPPER(COALESCE({c},'')) LIKE ?" for c in alias_cols]
+    return " AND (" + " OR ".join(parts) + ")", [like] * len(parts)
+
+def _rp289_main_metrics(desde, hasta, q):
+    clause, params_q = _rp288_like_clause(q)
+    abordajes = int(scalar(f"""SELECT COUNT(*) AS c FROM transporte_pasajeros p
+                              LEFT JOIN transporte_rutas r ON r.id=p.ruta_id
+                              LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                              LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                              WHERE p.fecha BETWEEN ? AND ? {clause}""", tuple([desde, hasta] + params_q)) or 0)
+    rutas = int(scalar("SELECT COUNT(*) AS c FROM transporte_rutas WHERE fecha BETWEEN ? AND ?", (desde, hasta)) or 0)
+    gps_total = int(scalar("SELECT COUNT(*) AS c FROM transporte_gps WHERE substr(fecha_hora,1,10) BETWEEN ? AND ?", (desde, hasta)) or 0)
+    conductores = int(scalar('SELECT COUNT(*) AS c FROM transporte_conductores') or 0)
+    buses = int(scalar('SELECT COUNT(*) AS c FROM transporte_vehiculos') or 0)
+    cap = float(scalar("""SELECT COALESCE(SUM(COALESCE(v.capacidad,0)),0) AS c
+                         FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                         WHERE r.fecha BETWEEN ? AND ?""", (desde, hasta)) or 0)
+    ocupacion = int(round((abordajes / cap) * 100, 0)) if cap else 0
+    gps_pct = int(round((gps_total / rutas) * 100, 0)) if rutas else 0
+    return rutas, abordajes, gps_pct, conductores, buses, ocupacion
+
+def transporte_reportes_289():
+    if not session.get('usuario'):
+        flash('Inicie sesión para ver reportes.', 'danger')
+        return redirect(url_for('login'))
+    desde, hasta, q = _rp288_params()
+    rutas, abordajes, gps_pct, conductores, buses, ocupacion = _rp289_main_metrics(desde, hasta, q)
+    rows = _rp288_rows(desde, hasta, q, limit=35)
+    body = _reporte_transporte_289_css() + r"""
+    <div class="rp289-phone"><div class="rp289-card">
+      <div class="rp289-head"><a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Reportes transporte</div></div>
+      <div class="rp289-body">
+        <form class="rp289-filter" method="get" action="{{url_for('transporte_reportes')}}">
+          <div class="rp289-dategrid">
+            <label class="rp289-datebox"><div><span>Desde</span><input type="date" name="desde" value="{{desde}}"></div><i class="bi bi-calendar3"></i></label>
+            <label class="rp289-datebox"><div><span>Hasta</span><input type="date" name="hasta" value="{{hasta}}"></div><i class="bi bi-calendar3"></i></label>
+          </div>
+          <div class="rp289-searchrow"><input name="q" value="{{q}}" placeholder="DNI / trabajador / ruta / bus"><button type="submit"><i class="bi bi-search"></i></button></div>
+          <a class="rp289-export" href="{{url_for('exportar_transporte_reportes_288', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-file-earmark-excel"></i> EXPORTAR EXCEL</a>
+          <div class="rp289-help"><i class="bi bi-info-circle"></i><span>Selecciona un rango de fechas para ver indicadores y reportes filtrados.</span></div>
+        </form>
+        <div class="rp289-kpibox"><div class="rp289-kpis">
+          <div class="rp289-kpi"><i class="bi bi-signpost-split"></i><small>Rutas</small><b>{{rutas}}</b></div>
+          <div class="rp289-kpi"><i class="bi bi-people"></i><small>Abordajes</small><b>{{abordajes}}</b></div>
+          <div class="rp289-kpi"><i class="bi bi-geo-alt"></i><small>GPS</small><b>{{gps_pct}}%</b></div>
+          <div class="rp289-kpi"><i class="bi bi-person-badge"></i><small>Conductores</small><b>{{conductores}}</b></div>
+          <div class="rp289-kpi"><i class="bi bi-bus-front"></i><small>Buses</small><b>{{buses}}</b></div>
+          <div class="rp289-kpi"><i class="bi bi-pie-chart"></i><small>Ocupación</small><b>{{ocupacion}}%</b></div>
+        </div></div>
+        <div class="rp289-section">Reportes</div>
+        <div class="rp289-grid">
+          <a class="rp289-tile" href="{{url_for('reporte_abordajes_transporte_289', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-people"></i><b>Abordajes</b><small>Resumen / Excel</small></a>
+          <a class="rp289-tile" href="{{url_for('reporte_buses_transporte_289', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-bus-front"></i><b>Buses</b><small>Flota / estado</small></a>
+          <a class="rp289-tile" href="{{url_for('reporte_rutas_transporte_289', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-signpost-split"></i><b>Rutas</b><small>Base / viajes</small></a>
+          <a class="rp289-tile" href="{{url_for('reporte_conductores_transporte_289', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-person-badge"></i><b>Conductores</b><small>Lista / estado</small></a>
+        </div>
+        <div class="rp289-results"><table><thead><tr><th>Fecha</th><th>DNI</th><th>Trabajador</th><th>Ruta</th><th>Bus</th><th>Método</th></tr></thead><tbody>
+          {% for r in rows %}<tr><td>{{r.fecha}} {{r.hora}}</td><td>{{r.dni}}</td><td>{{r.trabajador}}</td><td>{{r.ruta or '-'}}<br><small>{{r.origen or ''}} → {{r.destino or ''}}</small></td><td>{{r.placa or '-'}}</td><td>{{r.metodo or '-'}}</td></tr>
+          {% else %}<tr><td colspan="6" class="text-center text-muted">Sin datos para el rango seleccionado.</td></tr>{% endfor %}
+        </tbody></table></div>
+      </div>
+    </div></div>
+    """
+    return render_page(body, desde=desde, hasta=hasta, q=q, rutas=rutas, abordajes=abordajes, gps_pct=gps_pct, conductores=conductores, buses=buses, ocupacion=ocupacion, rows=rows, title='Reportes transporte')
+
+def _rp289_filter_form(title, endpoint, desde, hasta, q, export_endpoint=None):
+    export_link = ''
+    if export_endpoint:
+        export_link = """<a class=\"rp289-export\" href=\"{{url_for('""" + export_endpoint + """', desde=desde, hasta=hasta, q=q)}}\"><i class=\"bi bi-file-earmark-excel\"></i> EXPORTAR EXCEL</a>"""
+    return r"""
+      <div class="rp289-head"><a href="{{url_for('transporte_reportes', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">""" + title + r"""</div></div>
+      <div class="rp289-body">
+      <form class="rp289-filter" method="get" action="{{url_for('""" + endpoint + r"""')}}">
+        <div class="rp289-dategrid">
+          <label class="rp289-datebox"><div><span>Desde</span><input type="date" name="desde" value="{{desde}}"></div><i class="bi bi-calendar3"></i></label>
+          <label class="rp289-datebox"><div><span>Hasta</span><input type="date" name="hasta" value="{{hasta}}"></div><i class="bi bi-calendar3"></i></label>
+        </div>
+        <div class="rp289-searchrow"><input name="q" value="{{q}}" placeholder="Buscar..."><button type="submit"><i class="bi bi-search"></i></button></div>
+        """ + export_link + r"""
+      </form>
+    """
+
+def reporte_abordajes_transporte_289():
+    desde, hasta, q = _rp288_params()
+    rows = _rp288_rows(desde, hasta, q, limit=200)
+    body = _reporte_transporte_289_css() + r"""<div class="rp289-phone"><div class="rp289-card">""" + _rp289_filter_form('Reporte abordajes','reporte_abordajes_transporte_289',desde,hasta,q,'exportar_transporte_reportes_288') + r"""
+      <div class="rp289-mini-title">Abordajes filtrados</div>
+      <div class="rp289-results" style="max-height:430px"><table><thead><tr><th>Fecha</th><th>DNI</th><th>Trabajador</th><th>Ruta</th><th>Bus</th><th>Conductor</th></tr></thead><tbody>
+      {% for r in rows %}<tr><td>{{r.fecha}} {{r.hora}}</td><td>{{r.dni}}</td><td>{{r.trabajador}}</td><td>{{r.ruta or '-'}}</td><td>{{r.placa or '-'}}</td><td>{{r.conductor or '-'}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin abordajes.</td></tr>{% endfor %}
+      </tbody></table></div></div></div></div>"""
+    return render_page(body, desde=desde, hasta=hasta, q=q, rows=rows, title='Reporte abordajes')
+
+def reporte_buses_transporte_289():
+    desde, hasta, q = _rp288_params()
+    clause, params = _rp289_sql_filter(['v.placa','v.tipo','v.empresa_transportista','v.estado'], q)
+    rows = rows_to_dict(execute(f"""SELECT v.placa, v.tipo, v.capacidad, v.empresa_transportista, v.estado,
+                                      COUNT(DISTINCT r.id) AS rutas,
+                                      COUNT(p.id) AS abordajes,
+                                      MAX(r.ultima_ubicacion) AS ultimo_gps
+                               FROM transporte_vehiculos v
+                               LEFT JOIN transporte_rutas r ON r.vehiculo_id=v.id AND r.fecha BETWEEN ? AND ?
+                               LEFT JOIN transporte_pasajeros p ON p.ruta_id=r.id
+                               WHERE 1=1 {clause}
+                               GROUP BY v.id, v.placa, v.tipo, v.capacidad, v.empresa_transportista, v.estado
+                               ORDER BY v.placa LIMIT 200""", tuple([desde,hasta]+params), fetchall=True))
+    body = _reporte_transporte_289_css() + r"""<div class="rp289-phone"><div class="rp289-card">""" + _rp289_filter_form('Reporte buses','reporte_buses_transporte_289',desde,hasta,q,None) + r"""
+      <div class="rp289-mini-title">Buses / flota / estado</div>
+      <div class="rp289-results" style="max-height:430px"><table><thead><tr><th>Bus</th><th>Tipo</th><th>Cap.</th><th>Estado</th><th>Rutas</th><th>Abordajes</th></tr></thead><tbody>
+      {% for r in rows %}<tr><td>{{r.placa}}</td><td>{{r.tipo or '-'}}</td><td>{{r.capacidad or 0}}</td><td>{{r.estado or '-'}}</td><td>{{r.rutas or 0}}</td><td>{{r.abordajes or 0}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin buses.</td></tr>{% endfor %}
+      </tbody></table></div></div></div></div>"""
+    return render_page(body, desde=desde, hasta=hasta, q=q, rows=rows, title='Reporte buses')
+
+def reporte_rutas_transporte_289():
+    desde, hasta, q = _rp288_params()
+    clause, params = _rp289_sql_filter(['r.nombre','r.origen','r.destino','r.sede','v.placa','c.nombres','r.estado'], q)
+    rows = rows_to_dict(execute(f"""SELECT r.fecha, r.nombre, r.origen, r.destino, r.estado, v.placa, c.nombres AS conductor,
+                                      COUNT(p.id) AS abordajes,
+                                      COUNT(g.id) AS gps
+                               FROM transporte_rutas r
+                               LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                               LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                               LEFT JOIN transporte_pasajeros p ON p.ruta_id=r.id
+                               LEFT JOIN transporte_gps g ON g.ruta_id=r.id
+                               WHERE r.fecha BETWEEN ? AND ? {clause}
+                               GROUP BY r.id, r.fecha, r.nombre, r.origen, r.destino, r.estado, v.placa, c.nombres
+                               ORDER BY r.fecha DESC, r.id DESC LIMIT 200""", tuple([desde,hasta]+params), fetchall=True))
+    body = _reporte_transporte_289_css() + r"""<div class="rp289-phone"><div class="rp289-card">""" + _rp289_filter_form('Reporte rutas','reporte_rutas_transporte_289',desde,hasta,q,None) + r"""
+      <div class="rp289-mini-title">Rutas base / viajes</div>
+      <div class="rp289-results" style="max-height:430px"><table><thead><tr><th>Fecha</th><th>Ruta</th><th>Origen → Destino</th><th>Bus</th><th>Conductor</th><th>Abord.</th></tr></thead><tbody>
+      {% for r in rows %}<tr><td>{{r.fecha}}</td><td>{{r.nombre or '-'}}</td><td>{{r.origen or '-'}} → {{r.destino or '-'}}</td><td>{{r.placa or '-'}}</td><td>{{r.conductor or '-'}}</td><td>{{r.abordajes or 0}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin rutas.</td></tr>{% endfor %}
+      </tbody></table></div></div></div></div>"""
+    return render_page(body, desde=desde, hasta=hasta, q=q, rows=rows, title='Reporte rutas')
+
+def reporte_conductores_transporte_289():
+    desde, hasta, q = _rp288_params()
+    clause, params = _rp289_sql_filter(['c.dni','c.nombres','c.estado','c.licencia','c.movil_estado'], q)
+    rows = rows_to_dict(execute(f"""SELECT c.dni, c.nombres, c.licencia, c.estado, c.movil_estado,
+                                      COUNT(DISTINCT r.id) AS rutas,
+                                      COUNT(p.id) AS abordajes,
+                                      MAX(c.ultimo_gps) AS ultimo_gps
+                               FROM transporte_conductores c
+                               LEFT JOIN transporte_rutas r ON r.conductor_id=c.id AND r.fecha BETWEEN ? AND ?
+                               LEFT JOIN transporte_pasajeros p ON p.ruta_id=r.id
+                               WHERE 1=1 {clause}
+                               GROUP BY c.id, c.dni, c.nombres, c.licencia, c.estado, c.movil_estado
+                               ORDER BY c.nombres LIMIT 200""", tuple([desde,hasta]+params), fetchall=True))
+    body = _reporte_transporte_289_css() + r"""<div class="rp289-phone"><div class="rp289-card">""" + _rp289_filter_form('Reporte conductores','reporte_conductores_transporte_289',desde,hasta,q,None) + r"""
+      <div class="rp289-mini-title">Conductores / estado</div>
+      <div class="rp289-results" style="max-height:430px"><table><thead><tr><th>DNI</th><th>Conductor</th><th>Licencia</th><th>Estado</th><th>Rutas</th><th>Abord.</th></tr></thead><tbody>
+      {% for r in rows %}<tr><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{{r.licencia or '-'}}</td><td>{{r.estado or '-'}} / {{r.movil_estado or 'ACTIVO'}}</td><td>{{r.rutas or 0}}</td><td>{{r.abordajes or 0}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin conductores.</td></tr>{% endfor %}
+      </tbody></table></div></div></div></div>"""
+    return render_page(body, desde=desde, hasta=hasta, q=q, rows=rows, title='Reporte conductores')
+
+def transporte_config_289():
+    if not session.get('usuario'):
+        flash('Inicie sesión para configurar transporte.', 'danger')
+        return redirect(url_for('login'))
+    css = r"""
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}.shell{max-width:390px!important;width:100%!important;margin:0 auto!important;padding:4px 7px 22px!important}.cfg289-phone{max-width:355px;margin:0 auto}.cfg289-card{border:1px solid #e4e8e4;border-radius:13px;overflow:hidden;background:#fff;box-shadow:0 8px 18px rgba(0,0,0,.065)}.cfg289-head{height:58px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}.cfg289-head a{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:28px;line-height:1}.cfg289-head .ttl{font-size:15px;font-weight:950;color:#fff}.cfg289-list{padding:12px;background:#fff}.cfg289-item{display:grid;grid-template-columns:30px 1fr 16px;align-items:center;gap:8px;text-decoration:none;color:#102a43;border:1px solid #e4ece4;border-radius:11px;padding:10px 10px;margin-bottom:8px;background:#fff;box-shadow:0 4px 10px rgba(0,0,0,.035)}.cfg289-item i{font-size:20px;color:#08713b;text-align:center}.cfg289-item .chev{font-size:18px;color:#111}.cfg289-item b{display:block;font-size:12px;color:#102a43;line-height:1.1}.cfg289-item small{display:block;font-size:9.5px;color:#557064;font-weight:800;line-height:1.15;margin-top:2px}.cfg289-note{border:1px solid #b8d7ff;background:#eef6ff;color:#0b2e83;border-radius:11px;padding:9px 10px;font-size:10.5px;font-weight:850;line-height:1.35;margin:2px 0 10px}
+    </style>
+    """
+    body = css + r"""
+    <div class="cfg289-phone"><div class="cfg289-card">
+      <div class="cfg289-head"><a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Configuraciones</div></div>
+      <div class="cfg289-list">
+        <div class="cfg289-note"><b>Configuración depurada:</b> solo quedan accesos útiles. Se retiraron opciones repetidas o sin pantalla propia.</div>
+        <a class="cfg289-item" href="{{url_for('transporte_pin_conductor')}}"><i class="bi bi-phone"></i><span><b>Acceso móvil conductor</b><small>PIN, estado y relación conductor - móvil</small></span><i class="bi bi-chevron-right chev"></i></a>
+        <a class="cfg289-item" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i><span><b>Conductores</b><small>Base, licencias y credenciales</small></span><i class="bi bi-chevron-right chev"></i></a>
+        <a class="cfg289-item" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i><span><b>Buses / vehículos</b><small>Flota, capacidad y requisitos</small></span><i class="bi bi-chevron-right chev"></i></a>
+        <a class="cfg289-item" href="{{url_for('transporte_rutas')}}"><i class="bi bi-signpost-split"></i><span><b>Rutas base</b><small>Origen, destino y sede</small></span><i class="bi bi-chevron-right chev"></i></a>
+        <a class="cfg289-item" href="{{url_for('transporte_carga_masiva')}}"><i class="bi bi-cloud-arrow-up"></i><span><b>Carga masiva / plantillas</b><small>Excel de conductores, buses y rutas</small></span><i class="bi bi-chevron-right chev"></i></a>
+        <a class="cfg289-item" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-geo-alt"></i><span><b>GPS / seguimiento</b><small>Última ubicación de rutas</small></span><i class="bi bi-chevron-right chev"></i></a>
+        <a class="cfg289-item" href="{{url_for('transporte_reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i><span><b>Reportes transporte</b><small>Abordajes, buses, rutas y conductores</small></span><i class="bi bi-chevron-right chev"></i></a>
+      </div>
+    </div></div>
+    """
+    return render_page(body, title='Configuraciones transporte')
+
+try:
+    app.add_url_rule('/transporte/reportes/abordajes', 'reporte_abordajes_transporte_289', reporte_abordajes_transporte_289, methods=['GET'])
+except Exception:
+    app.view_functions['reporte_abordajes_transporte_289'] = reporte_abordajes_transporte_289
+try:
+    app.add_url_rule('/transporte/reportes/buses', 'reporte_buses_transporte_289', reporte_buses_transporte_289, methods=['GET'])
+except Exception:
+    app.view_functions['reporte_buses_transporte_289'] = reporte_buses_transporte_289
+try:
+    app.add_url_rule('/transporte/reportes/rutas', 'reporte_rutas_transporte_289', reporte_rutas_transporte_289, methods=['GET'])
+except Exception:
+    app.view_functions['reporte_rutas_transporte_289'] = reporte_rutas_transporte_289
+try:
+    app.add_url_rule('/transporte/reportes/conductores', 'reporte_conductores_transporte_289', reporte_conductores_transporte_289, methods=['GET'])
+except Exception:
+    app.view_functions['reporte_conductores_transporte_289'] = reporte_conductores_transporte_289
+
+app.view_functions['transporte_reportes'] = transporte_reportes_289
+app.view_functions['transporte_config'] = transporte_config_289
+# ======================= FIN PATCH TRANSPORTE OMAR 289 =======================
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
