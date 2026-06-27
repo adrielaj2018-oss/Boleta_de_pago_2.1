@@ -4060,6 +4060,341 @@ app.view_functions['transporte'] = tf_transporte_home_280
 app.view_functions['transporte_mobile_home'] = tf_transporte_mobile_home_280
 app.view_functions['transporte_mapa_general'] = tf_transporte_mapa_general_280
 
+# ========================= PATCH TRANSPORTE OMAR 281 =========================
+# Enlace real: Móvil conductor => login DNI + PIN; credenciales desde Conductores;
+# abordaje/GPS funcionan con sesión móvil conductor, sin usar ADMIN.
+
+def _trans_user_281():
+    return session.get('usuario') or session.get('conductor_nombre') or 'CONDUCTOR MOVIL'
+
+def _trans_is_allowed_281(ruta_id=None):
+    if session.get('usuario'):
+        return True
+    cid = session.get('conductor_id')
+    if not cid:
+        return False
+    if ruta_id is None:
+        return True
+    r = row_to_dict(execute('SELECT conductor_id FROM transporte_rutas WHERE id=?', (ruta_id,), fetchone=True))
+    return bool(r and str(r.get('conductor_id') or '') == str(cid))
+
+def _trans_redirect_281(ruta_id):
+    if session.get('conductor_id') and not session.get('usuario'):
+        return redirect(url_for('conductor_movil_ruta', ruta_id=ruta_id))
+    return redirect(url_for('transporte_ruta_detalle', ruta_id=ruta_id))
+
+def api_trabajador_281(dni):
+    if not session.get('usuario') and not session.get('conductor_id'):
+        return jsonify(ok=False, msg='Sesión no válida. Inicie sesión nuevamente.'), 401
+    dni = limpiar_dni(dni)
+    if len(dni) != 8:
+        return jsonify(ok=False, msg='DNI inválido.')
+    t = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if not t:
+        return jsonify(ok=False, msg='DNI no encontrado en la base de trabajadores.')
+    return jsonify(ok=True, trabajador=t, sugerido='TRANSPORTE')
+
+def api_transporte_conductor_lookup_281(dni):
+    if not session.get('usuario'):
+        return jsonify(ok=False, msg='Sesión ADMIN requerida.'), 401
+    dni = limpiar_dni(dni)
+    if len(dni) != 8:
+        return jsonify(ok=False, msg='DNI inválido.')
+    trabajador = row_to_dict(execute('SELECT dni, trabajador, empresa, area, cargo, actividad FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    conductor = row_to_dict(execute('SELECT * FROM transporte_conductores WHERE dni=?', (dni,), fetchone=True))
+    if not trabajador and not conductor:
+        return jsonify(ok=False, msg='DNI no existe en Trabajadores ni en Conductores.')
+    return jsonify(ok=True, trabajador=trabajador, conductor=conductor, pin_sugerido=_pin_conductor(dni))
+
+try:
+    app.add_url_rule('/api/transporte/conductor-lookup/<dni>', 'api_transporte_conductor_lookup_281', api_transporte_conductor_lookup_281, methods=['GET'])
+except Exception:
+    app.view_functions['api_transporte_conductor_lookup_281'] = api_transporte_conductor_lookup_281
+
+def _conductores_html_281():
+    return _tf_css() + _tf_transport_css_275() + _tf_top('Conductores / usuarios') + r"""
+      <div class="tf-info">Busque el DNI en la base de trabajadores. Si existe, se llenan los datos y se crea el acceso móvil del conductor: <b>usuario = DNI</b> y <b>clave/PIN móvil</b>.</div>
+      <div class="tf-mini-note">Flujo conectado: <b>Conductores → Buses → Rutas → Móvil conductor → Abordaje/GPS</b>.</div>
+      <form method="post" class="tf-form" id="frmCond281">
+        <div class="row g-2">
+          <div class="col-12"><label>DNI conductor</label><div class="input-group"><input name="dni" id="dniConductor281" class="form-control" maxlength="8" inputmode="numeric" required placeholder="12345678" autofocus><button class="tf-btn" type="button" onclick="buscarConductorDni281()"><i class="bi bi-search"></i> Buscar</button></div></div>
+          <div class="col-12"><label>Nombre conductor</label><input name="nombres" id="nombreConductor281" class="form-control" required placeholder="Se llena desde Trabajadores"></div>
+          <div class="col-6"><label>Teléfono</label><input name="telefono" id="telCond281" class="form-control"></div>
+          <div class="col-6"><label>Licencia</label><select name="licencia" class="form-select">{{lic_opts|safe}}</select></div>
+          <div class="col-6"><label>Categoría</label><select name="categoria" class="form-select">{{cat_opts|safe}}</select></div>
+          <div class="col-6"><label>Clave/PIN móvil</label><input name="movil_pin" id="pinCond281" class="form-control" placeholder="AUTO últimos 4 DNI"></div>
+          <div class="col-4"><label>Venc. lic.</label><input name="venc_licencia" type="date" class="form-control"></div>
+          <div class="col-4"><label>Cert. méd.</label><input name="venc_cert_medico" type="date" class="form-control"></div>
+          <div class="col-4"><label>SCTR</label><input name="venc_sctr" type="date" class="form-control"></div>
+          <div class="col-6"><label>Estado</label><select name="estado" class="form-select"><option>ACTIVO</option><option>APTO</option><option>OBSERVADO</option><option>INACTIVO</option></select></div>
+          <div class="col-6"><label>Acceso móvil</label><select name="movil_estado" class="form-select"><option>ACTIVO</option><option>BLOQUEADO</option></select></div>
+          <div class="col-12"><label>Observación</label><input name="observacion" class="form-control"></div>
+        </div>
+        <div id="statusCond281" class="field-help mt-2">Ingrese DNI de 8 dígitos y pulse buscar.</div>
+        <button class="tf-btn w100 mt-2"><i class="bi bi-key"></i> Crear / actualizar usuario móvil</button>
+      </form>
+      <form method="post" enctype="multipart/form-data" action="{{url_for('transporte_upload_conductores')}}" class="tf-mass">
+        <label><i class="bi bi-cloud-arrow-up"></i> Carga masiva conductores Excel</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required>
+        <div class="tf-help-mini">Columnas sugeridas: DNI, NOMBRE, TELEFONO, LICENCIA, CATEGORIA, VENC LICENCIA, CERT MEDICO, SCTR, ESTADO, PIN.</div>
+        <button class="tf-btn w100" type="submit"><i class="bi bi-upload"></i> Cargar conductores</button><a class="tf-template-btn" href="{{url_for('transporte_plantilla_conductores')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla</a>
+      </form>
+      <div class="tf-searchrow"><input id="qcond" class="tf-search" placeholder="Buscar DNI o conductor..."><a class="tf-template-btn" style="margin:0;padding:9px 11px" href="{{url_for('transporte_plantilla_conductores')}}"><i class="bi bi-file-earmark-excel"></i> Plantilla</a></div>
+      <div class="tf-kpi-green"><div class="tf-kpi"><label>Total</label><strong>{{total}}</strong></div><div class="tf-kpi"><label>Activos</label><strong>{{activos}}</strong></div><div class="tf-kpi"><label>Bloq.</label><strong>{{bloqueados}}</strong></div></div>
+      <div class="tf-base-title">Base de conductores y accesos móviles</div>
+      <div class="tf-tablewrap"><table id="tblcond" class="tf-table"><thead><tr><th>DNI</th><th>Conductor</th><th>Licencia</th><th>Usuario</th><th>PIN</th><th>Móvil</th><th>Activo</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{{r.licencia or '-' }}<br><small>{{r.categoria or ''}}</small></td><td>{{r.movil_usuario or r.dni}}</td><td>{{r.movil_pin or '-'}}</td><td>{{badge(r.movil_estado or 'ACTIVO')|safe}}</td><td>{{switch((r.estado or '').upper() in ['ACTIVO','APTO',''], url_for('transporte_toggle_conductor', item_id=r.id))|safe}}</td></tr>{% else %}<tr><td colspan="7" class="text-center text-muted">Sin conductores.</td></tr>{% endfor %}</tbody></table></div>
+      <a class="tf-btn w100 mt-2" href="{{url_for('conductor_movil_login')}}"><i class="bi bi-phone"></i> Probar ingreso móvil conductor</a>
+      <script>
+      async function buscarConductorDni281(){const dniInput=document.getElementById('dniConductor281'), st=document.getElementById('statusCond281'); const d=String(dniInput.value||'').replace(/\D/g,'').slice(-8); dniInput.value=d; if(d.length!==8){st.className='scan-bad mt-2';st.innerHTML='DNI inválido. Debe tener 8 dígitos.';return;} st.className='scan-ok mt-2'; st.innerHTML='Buscando DNI '+d+'...'; try{const r=await fetch('/api/transporte/conductor-lookup/'+d,{cache:'no-store'}); const j=await r.json(); if(!j.ok){st.className='scan-bad mt-2';st.innerHTML='✕ '+(j.msg||'No encontrado');return;} const t=j.trabajador||{}, c=j.conductor||{}; document.getElementById('nombreConductor281').value=c.nombres||t.trabajador||''; document.getElementById('telCond281').value=c.telefono||''; document.getElementById('pinCond281').value=c.movil_pin||j.pin_sugerido||d.slice(-4); st.className='scan-ok mt-2'; st.innerHTML='✓ Datos encontrados. Usuario móvil: <b>'+d+'</b>. Revise/guarde la clave PIN.'; if(typeof beep==='function')beep();}catch(e){st.className='scan-bad mt-2';st.innerHTML='Error consultando DNI.';}}
+      (function(){const i=document.getElementById('dniConductor281'); if(i){i.addEventListener('input',()=>{const d=i.value.replace(/\D/g,'').slice(-8); i.value=d; if(d.length===8)buscarConductorDni281();});}})();
+      </script>
+    """ + _tf_end() + _tf_filter_script('qcond','tblcond')
+
+@login_required
+def transporte_conductores_281():
+    if request.method == 'POST':
+        dni = limpiar_dni(request.form.get('dni'))
+        base = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True)) if len(dni) == 8 else None
+        nombres = limpiar_texto(request.form.get('nombres') or (base or {}).get('trabajador'))
+        if len(dni) != 8 or not nombres:
+            flash('Ingrese un DNI válido. Si el conductor está en Trabajadores, pulse BUSCAR DNI para traer sus datos.', 'danger'); return redirect(url_for('transporte_conductores'))
+        pin = (request.form.get('movil_pin') or _pin_conductor(dni)).strip()
+        if len(pin) < 4:
+            flash('La clave/PIN móvil debe tener mínimo 4 caracteres.', 'danger'); return redirect(url_for('transporte_conductores'))
+        estado = limpiar_texto(request.form.get('estado') or 'ACTIVO')
+        movil_estado = limpiar_texto(request.form.get('movil_estado') or ('BLOQUEADO' if estado in ('INACTIVO','BLOQUEADO') else 'ACTIVO'))
+        vals = (dni, nombres, request.form.get('telefono',''), limpiar_texto(request.form.get('licencia') or 'A-IIIc'), limpiar_texto(request.form.get('categoria') or 'BUS / TRANSPORTE DE PERSONAS'), request.form.get('venc_licencia',''), request.form.get('venc_cert_medico',''), request.form.get('venc_sctr',''), estado, limpiar_texto(request.form.get('observacion'), upper=False), dni, pin, movil_estado, now_str())
+        try:
+            execute("""INSERT INTO transporte_conductores(dni,nombres,telefono,licencia,categoria,venc_licencia,venc_cert_medico,venc_sctr,estado,observacion,movil_usuario,movil_pin,movil_estado,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", vals, commit=True)
+            flash(f'Conductor creado. Usuario móvil: {dni} | Clave/PIN: {pin}', 'success')
+        except Exception:
+            execute("""UPDATE transporte_conductores SET nombres=?,telefono=?,licencia=?,categoria=?,venc_licencia=?,venc_cert_medico=?,venc_sctr=?,estado=?,observacion=?,movil_usuario=?,movil_pin=?,movil_estado=? WHERE dni=?""", (vals[1],vals[2],vals[3],vals[4],vals[5],vals[6],vals[7],vals[8],vals[9],dni,pin,movil_estado,dni), commit=True)
+            flash(f'Conductor actualizado. Usuario móvil: {dni} | Clave/PIN: {pin}', 'success')
+        return redirect(url_for('transporte_conductores'))
+    rows = rows_to_dict(execute('SELECT * FROM transporte_conductores ORDER BY id DESC LIMIT 300', fetchall=True))
+    hoy = today_str(); total = len(rows)
+    activos = sum(1 for r in rows if (r.get('estado') or '').upper() in ('ACTIVO','APTO',''))
+    bloqueados = sum(1 for r in rows if (r.get('movil_estado') or '').upper() == 'BLOQUEADO')
+    venc = sum(1 for r in rows if any(r.get(c) and str(r.get(c)) < hoy for c in ('venc_licencia','venc_cert_medico','venc_sctr')))
+    return render_page(_conductores_html_281(), rows=rows, total=total, activos=activos, bloqueados=bloqueados, venc=venc, badge=_tf_badge, switch=_tf_switch, lic_opts=_option_list(LICENCIAS_PERU,'A-IIIc'), cat_opts=_option_list(CATEGORIAS_CONDUCTOR_PERU,'BUS / TRANSPORTE DE PERSONAS'))
+
+@login_required
+def tf_transporte_home_281():
+    body = _transporte_ui_280_css() + r"""
+    <div class="tr279-phone">
+      <div class="tr279-app">
+        <div class="tr279-hero">
+          <a class="tr279-back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a>
+          <a class="tr279-config" href="{{url_for('transporte_config')}}"><i class="bi bi-gear"></i> Config.</a>
+          <div class="tr279-bus"><i class="bi bi-bus-front-fill"></i></div>
+          <div class="tr279-title">Módulo Transporte</div>
+        </div>
+        <div class="tr279-body">
+          <div class="tr279-section">Módulos</div>
+          <div class="tr279-grid3">
+            <a class="tr279-tile" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i><span class="lbl">Conductores</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i><span class="lbl">Buses</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_rutas')}}"><i class="bi bi-geo-alt"></i><span class="lbl">Rutas</span></a>
+          </div>
+
+          <div class="tr279-section op">Operación</div>
+          <div class="tr279-grid2">
+            <a class="tr279-tile" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-pin-map"></i><span class="lbl">GPS / Seguimiento</span><span class="sub">Ver ubicación</span></a>
+            <a class="tr279-tile" href="{{url_for('conductor_movil_login')}}"><i class="bi bi-phone"></i><span class="lbl">Móvil conductor</span><span class="sub">Abordaje y GPS</span></a>
+          </div>
+
+          <div class="tr279-info"><i class="bi bi-info-circle-fill"></i><div><b>Flujo correcto:</b> primero crea el usuario/PIN en Conductores, luego asigna conductor + bus a la ruta. Al tocar Móvil conductor se abre directamente el login DNI + PIN, no ADMIN.</div></div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(body)
+
+def conductor_movil_login_281():
+    if request.method == 'POST':
+        dni = limpiar_dni(request.form.get('dni'))
+        pin = (request.form.get('pin') or '').strip()
+        if len(dni) != 8 or dni.upper() == 'ADMIN':
+            flash('Solo conductores: ingrese DNI de 8 dígitos. No usar ADMIN.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        if not pin:
+            flash('Ingrese su PIN móvil.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        c = row_to_dict(execute("""SELECT * FROM transporte_conductores
+                                 WHERE dni=? AND COALESCE(movil_pin,'')=?
+                                 AND COALESCE(movil_estado,'ACTIVO')='ACTIVO'
+                                 AND COALESCE(estado,'ACTIVO') NOT IN ('INACTIVO','BLOQUEADO')""", (dni, pin), fetchone=True))
+        if not c:
+            flash('DNI o PIN incorrecto, bloqueado o no creado en Transporte > Conductores.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        for k in ('usuario','rol','nombres'):
+            session.pop(k, None)
+        session['conductor_id'] = c.get('id')
+        session['conductor_dni'] = c.get('dni')
+        session['conductor_nombre'] = c.get('nombres') or c.get('dni')
+        flash('Bienvenido conductor. Ya puede registrar abordaje y GPS.', 'success')
+        return redirect(url_for('conductor_movil_panel'))
+    body = r"""
+    <div class="phone-wrap">
+      <div class="page-card" style="border-radius:14px;overflow:hidden;margin-top:16px">
+        <div class="green-hero" style="min-height:128px;border-radius:0;padding:18px 16px 38px">
+          <a href="{{url_for('transporte')}}" style="position:absolute;left:18px;top:23px;color:white;font-size:38px;text-decoration:none"><i class="bi bi-chevron-left"></i></a>
+          <div style="font-size:34px"><i class="bi bi-phone"></i></div>
+          <div style="font-family:Georgia,serif;font-weight:900;font-size:13px;margin-top:4px">ACCESO MÓVIL CONDUCTOR</div>
+        </div>
+        <div class="floating-card" style="margin:-30px 12px 14px;border-radius:12px;padding:16px">
+          <div class="alert alert-light" style="border:1px solid #dbe3db;color:#24405f;line-height:1.45"><b>Solo conductores:</b> ingrese DNI del conductor + PIN móvil creado en Transporte &gt; Conductores. No usar ADMIN.</div>
+          <form method="post" id="frmMovilCond281">
+            <label class="form-label">DNI conductor</label>
+            <input name="dni" id="dniMovCond281" class="form-control mb-3" inputmode="numeric" maxlength="8" pattern="\d{8}" placeholder="Ingrese DNI" required autocomplete="username" autofocus>
+            <label class="form-label">PIN móvil</label>
+            <input name="pin" class="form-control mb-3" type="password" placeholder="PIN" required autocomplete="current-password">
+            <button class="btn btn-green w-100" style="font-size:19px;height:47px">INGRESAR</button>
+          </form>
+          {% if session.get('usuario') %}
+          <a class="btn btn-outline-success w-100 mt-2" href="{{url_for('transporte_conductores')}}">Crear / resetear PIN</a>
+          {% endif %}
+          <a class="btn btn-outline-secondary w-100 mt-2" href="{{url_for('transporte')}}">Volver</a>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function(){const i=document.getElementById('dniMovCond281'); if(i){i.addEventListener('input',()=>{i.value=String(i.value||'').replace(/\D/g,'').slice(-8);});}})();
+    </script>
+    """
+    return render_page(body, title='Acceso móvil conductor')
+
+def conductor_movil_panel_281():
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+    cid = session.get('conductor_id')
+    rutas = rows_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor
+                                  FROM transporte_rutas r
+                                  LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                  LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                                  WHERE r.conductor_id=? AND r.fecha>=?
+                                  ORDER BY r.fecha ASC, r.hora_salida ASC, r.id DESC LIMIT 50""", (cid, today_str()), fetchall=True))
+    body = r"""
+    <div class="phone-wrap"><div class="page-card" style="border-radius:14px;overflow:hidden;margin-top:12px">
+      <div class="green-hero" style="border-radius:0;min-height:118px;padding:18px 14px 32px">
+        <a href="{{url_for('conductor_movil_logout')}}" style="position:absolute;left:15px;top:24px;color:white;font-size:30px"><i class="bi bi-box-arrow-left"></i></a>
+        <div style="font-size:34px"><i class="bi bi-person-badge"></i></div><div style="font-weight:900;font-size:13px">{{session.get('conductor_nombre')}}</div><div style="font-size:11px;font-weight:800">{{session.get('conductor_dni')}}</div>
+      </div>
+      <div class="floating-card" style="margin:-24px 12px 14px;border-radius:12px;padding:13px"><b>Mis rutas asignadas</b><br><small>Seleccione ruta para abordar trabajadores y enviar GPS.</small></div>
+      {% for r in rutas %}
+        <a class="worker-card" style="display:block;text-decoration:none;color:inherit" href="{{url_for('conductor_movil_ruta', ruta_id=r.id)}}">
+          <div class="worker-title"><div>{{r.fecha}} {{r.hora_salida or ''}}<br><b>{{r.nombre}}</b></div><div class="text-end">{{r.placa or 'SIN BUS'}}<br><b>{{r.estado}}</b></div></div>
+          <div class="worker-grid"><div><label>ORIGEN</label><div class="small-value">{{r.origen or '-'}}</div></div><div><label>DESTINO</label><div class="small-value">{{r.destino or '-'}}</div></div><div><label>CAP.</label><div class="small-value">{{r.capacidad or '-'}}</div></div></div>
+        </a>
+      {% else %}
+        <div class="worker-card text-center text-muted">No tiene rutas asignadas desde hoy. El administrador debe crear una ruta y asignarle su conductor.</div>
+      {% endfor %}
+    </div></div>
+    """
+    return render_page(body, rutas=rutas, title='Panel conductor')
+
+def conductor_movil_ruta_281(ruta_id):
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+    if not _trans_is_allowed_281(ruta_id):
+        flash('Esta ruta no está asignada a su usuario conductor.', 'danger')
+        return redirect(url_for('conductor_movil_panel'))
+    ruta = row_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor
+                                FROM transporte_rutas r
+                                LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                                WHERE r.id=?""", (ruta_id,), fetchone=True))
+    pasajeros = rows_to_dict(execute('SELECT * FROM transporte_pasajeros WHERE ruta_id=? ORDER BY fecha_hora DESC', (ruta_id,), fetchall=True))
+    ocupados = len(pasajeros); capacidad = int((ruta or {}).get('capacidad') or 0); libres = max(0, capacidad-ocupados) if capacidad else '-'
+    body = r"""
+    <div class="phone-wrap"><div class="page-card" style="border-radius:14px;overflow:hidden;margin-top:10px">
+      <div class="green-hero" style="border-radius:0;min-height:126px;padding:17px 14px 32px">
+        <a href="{{url_for('conductor_movil_panel')}}" style="position:absolute;left:15px;top:24px;color:white;font-size:32px"><i class="bi bi-chevron-left"></i></a>
+        <div style="font-size:34px"><i class="bi bi-bus-front-fill"></i></div><div style="font-weight:900;font-size:13px">{{ruta.nombre}}</div><div style="font-size:11px;font-weight:800">{{ruta.origen}} → {{ruta.destino}}</div>
+      </div>
+      <div class="floating-card" style="margin:-24px 12px 10px;border-radius:12px;padding:12px">
+        <div class="row text-center g-2"><div class="col-4"><b>{{ocupados}}</b><br><small>Abordados</small></div><div class="col-4"><b>{{libres}}</b><br><small>Libres</small></div><div class="col-4"><b>{{ruta.placa or '-'}}</b><br><small>Bus</small></div></div>
+      </div>
+      <form method="post" action="{{url_for('transporte_abordar', ruta_id=ruta.id)}}" class="worker-card" id="frmAbordar281">
+        <label class="form-label">DNI trabajador</label>
+        <div class="input-group mb-2"><input name="dni" id="dniTransporte281" class="form-control" inputmode="numeric" maxlength="8" required placeholder="Escanear o digitar DNI"><button class="btn btn-outline-success" type="button" onclick="abrirScanner&&abrirScanner('readerTrans281','dniTransporte281')"><i class="bi bi-qr-code-scan"></i></button></div>
+        <div id="readerTrans281" style="display:none" class="scan-box mb-2"></div>
+        <div id="transpStatus281" class="field-help mb-2">Al completar 8 dígitos se validará en Trabajadores.</div>
+        <input type="hidden" name="metodo" value="QR/DNI MOVIL"><input type="hidden" name="latitud" id="latitudTrans281"><input type="hidden" name="longitud" id="longitudTrans281">
+        <button class="btn btn-green w-100"><i class="bi bi-person-check"></i> REGISTRAR SUBIDA</button>
+      </form>
+      <div class="mx-2 mb-2 d-grid gap-2">
+        <button class="btn btn-outline-success" onclick="enviarGpsTransporte281({{ruta.id}}, false)"><i class="bi bi-geo-alt"></i> Enviar GPS ahora</button>
+        <button class="btn btn-outline-success" onclick="enviarGpsTransporte281({{ruta.id}}, true)"><i class="bi bi-broadcast-pin"></i> Iniciar GPS en vivo</button>
+      </div>
+      {% for p in pasajeros %}<div class="worker-card"><div class="worker-title"><div>{{p.hora}}<br><b>{{p.trabajador}}</b></div><div class="text-end">{{p.dni}}<br><b>{{p.metodo}}</b></div></div></div>{% else %}<div class="worker-card text-center text-muted">Aún no hay trabajadores abordados.</div>{% endfor %}
+    </div></div>
+    <script>
+    (function(){const dni=v=>String(v||'').replace(/\D/g,'').slice(-8), i=document.getElementById('dniTransporte281'), st=document.getElementById('transpStatus281'); async function val(){const d=dni(i.value); i.value=d; if(d.length<8){st.className='field-help mb-2'; st.innerHTML='Esperando 8 dígitos...'; return;} st.className='scan-ok mb-2'; st.innerHTML='Validando DNI '+d+'...'; try{const r=await fetch('/api/trabajador/'+d,{cache:'no-store'}); const j=await r.json(); if(j.ok){st.className='scan-ok mb-2'; st.innerHTML='✓ '+(j.trabajador.trabajador||'TRABAJADOR')+' encontrado'; if(typeof beep==='function')beep();}else{st.className='scan-bad mb-2'; st.innerHTML='✕ '+j.msg;}}catch(e){st.className='scan-bad mb-2'; st.innerHTML='Error validando DNI';}} if(i){i.addEventListener('input',val); i.addEventListener('paste',()=>setTimeout(val,80));} if(navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{document.getElementById('latitudTrans281').value=p.coords.latitude;document.getElementById('longitudTrans281').value=p.coords.longitude;},()=>{});}})();
+    let gpsWatch281=null; async function enviarGpsTransporte281(rid, live){function post(p){let fd=new FormData();fd.append('latitud',p.coords.latitude);fd.append('longitud',p.coords.longitude);document.getElementById('latitudTrans281').value=p.coords.latitude;document.getElementById('longitudTrans281').value=p.coords.longitude;return fetch('/transporte/ruta/'+rid+'/gps',{method:'POST',body:fd}).then(r=>r.json());} if(!navigator.geolocation){alert('GPS no disponible');return;} if(live){if(gpsWatch281){navigator.geolocation.clearWatch(gpsWatch281);gpsWatch281=null;alert('GPS en vivo detenido');return;} gpsWatch281=navigator.geolocation.watchPosition(p=>post(p).catch(()=>{}),()=>alert('Permite ubicación/GPS'),{enableHighAccuracy:true,maximumAge:10000,timeout:15000}); alert('GPS en vivo iniciado. Mantenga esta pantalla abierta.'); return;} navigator.geolocation.getCurrentPosition(async p=>{let j=await post(p);alert(j.msg||'GPS actualizado');},()=>alert('Permite ubicación/GPS en el navegador'),{enableHighAccuracy:true,maximumAge:10000,timeout:15000});}
+    </script>
+    """
+    return render_page(body, ruta=ruta, pasajeros=pasajeros, ocupados=ocupados, capacidad=capacidad, libres=libres, title='Ruta conductor')
+
+def transporte_abordar_281(ruta_id):
+    if not _trans_is_allowed_281(ruta_id):
+        flash('Sesión no válida o ruta no asignada al conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+    ruta=row_to_dict(execute('SELECT r.*, v.capacidad FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id WHERE r.id=?', (ruta_id,), fetchone=True))
+    if not ruta:
+        flash('Ruta no encontrada.', 'danger'); return redirect(url_for('transporte') if session.get('usuario') else url_for('conductor_movil_panel'))
+    dni=limpiar_dni(request.form.get('dni'))
+    if len(dni)!=8:
+        flash('DNI inválido. No se registró subida.', 'danger'); return _trans_redirect_281(ruta_id)
+    t=row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if not t:
+        flash('DNI no existe en base trabajadores. No se registró subida.', 'danger'); return _trans_redirect_281(ruta_id)
+    dup=scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE ruta_id=? AND dni=?', (ruta_id,dni))
+    if dup:
+        flash('Este trabajador ya fue registrado en esta ruta.', 'danger'); return _trans_redirect_281(ruta_id)
+    capacidad=int(ruta.get('capacidad') or 0); ocupados=scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE ruta_id=?', (ruta_id,))
+    if capacidad and ocupados >= capacidad:
+        flash('Capacidad completa del vehículo. No se registró subida.', 'danger'); return _trans_redirect_281(ruta_id)
+    ahora=datetime.now(); fecha=ahora.strftime('%Y-%m-%d'); hora=ahora.strftime('%H:%M:%S')
+    execute("""INSERT INTO transporte_pasajeros(ruta_id,dni,trabajador,empresa,area,cargo,fecha,hora,fecha_hora,metodo,latitud,longitud,registrado_por,observacion) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (ruta_id,dni,t.get('trabajador'),t.get('empresa'),t.get('area'),t.get('cargo'),fecha,hora,ahora.strftime('%Y-%m-%d %H:%M:%S'),limpiar_texto(request.form.get('metodo') or 'QR/DNI MOVIL'),request.form.get('latitud',''),request.form.get('longitud',''),_trans_user_281(),limpiar_texto(request.form.get('observacion'), upper=False)), commit=True)
+    flash(f'Subida registrada: {dni} - {t.get("trabajador")}', 'success')
+    return _trans_redirect_281(ruta_id)
+
+def transporte_gps_actualizar_281(ruta_id):
+    if not _trans_is_allowed_281(ruta_id):
+        return jsonify(ok=False, msg='Sesión no válida o ruta no asignada al conductor.'), 401
+    lat=(request.form.get('latitud') or '').strip(); lon=(request.form.get('longitud') or '').strip(); fh=now_str()
+    if not lat or not lon:
+        return jsonify(ok=False, msg='No llegó coordenada GPS. Permita ubicación en el navegador.'), 400
+    ruta = row_to_dict(execute('SELECT r.*, v.placa FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id WHERE r.id=?', (ruta_id,), fetchone=True)) or {}
+    conductor_id = ruta.get('conductor_id') or session.get('conductor_id')
+    execute('INSERT INTO transporte_gps(ruta_id,latitud,longitud,fecha_hora,registrado_por,conductor_id,placa,ruta_nombre) VALUES(?,?,?,?,?,?,?,?)', (ruta_id,lat,lon,fh,_trans_user_281(),conductor_id,ruta.get('placa'),ruta.get('nombre')), commit=True)
+    execute('UPDATE transporte_rutas SET latitud=?, longitud=?, ultima_ubicacion=?, estado=? WHERE id=?', (lat,lon,fh,'EN RUTA',ruta_id), commit=True)
+    if conductor_id:
+        execute('UPDATE transporte_conductores SET ultima_latitud=?, ultima_longitud=?, ultimo_gps=? WHERE id=?', (lat,lon,fh,conductor_id), commit=True)
+    return jsonify(ok=True, msg='GPS actualizado correctamente')
+
+def conductor_movil_logout_281():
+    for k in ('conductor_id','conductor_dni','conductor_nombre'):
+        session.pop(k, None)
+    flash('Sesión móvil cerrada.', 'success')
+    return redirect(url_for('conductor_movil_login'))
+
+# Activar overrides finales del módulo transporte
+app.view_functions['api_trabajador'] = api_trabajador_281
+app.view_functions['transporte'] = tf_transporte_home_281
+app.view_functions['transporte_mobile_home'] = conductor_movil_login_281
+app.view_functions['transporte_conductores'] = transporte_conductores_281
+app.view_functions['conductor_movil_login'] = conductor_movil_login_281
+app.view_functions['conductor_movil_panel'] = conductor_movil_panel_281
+app.view_functions['conductor_movil_ruta'] = conductor_movil_ruta_281
+app.view_functions['conductor_movil_logout'] = conductor_movil_logout_281
+app.view_functions['transporte_abordar'] = transporte_abordar_281
+app.view_functions['transporte_gps_actualizar'] = transporte_gps_actualizar_281
+# ======================= FIN PATCH TRANSPORTE OMAR 281 =======================
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
