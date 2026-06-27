@@ -5189,6 +5189,368 @@ app.view_functions['conductor_movil_ruta'] = conductor_movil_ruta_285
 # ======================= FIN PATCH TRANSPORTE OMAR 285 =======================
 
 
+# ========================= PATCH TRANSPORTE OMAR 286 =========================
+# Ajustes solicitados:
+# 1) En Rutas solo se registra base de rutas: sin bus, sin conductor, sin hora salida.
+# 2) Antes de Inicio ruta conductor siempre va login DNI conductor / PIN.
+# 3) Portada Transporte compacta tipo menú clásico, con recuadros verdes pequeños.
+# 4) Se agrega submódulo Reportes al módulo Transporte.
+
+def _transport_286_css():
+    return r"""
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}
+      .shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:6px 8px 26px!important;background:#fff!important}
+      .tr286-phone{max-width:390px;margin:0 auto}
+      .tr286-app{background:#fff;border:1px solid #e4e8e4;border-radius:13px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+      .tr286-hero{height:122px;background:#08713b;color:#fff;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center}
+      .tr286-back{position:absolute;left:14px;top:26px;color:#fff!important;font-size:31px;text-decoration:none;line-height:1}
+      .tr286-config{position:absolute;right:11px;top:18px;border:1px solid rgba(255,255,255,.75);color:#fff!important;text-decoration:none;border-radius:12px;padding:6px 9px;font-size:11px;font-weight:950}
+      .tr286-bus{font-size:38px;line-height:1;margin-bottom:5px;color:#fff}
+      .tr286-title{font-size:16px;font-weight:950;letter-spacing:.25px;text-transform:uppercase;color:#fff}
+      .tr286-body{padding:18px 14px 18px}
+      .tr286-section{font-size:15px;font-weight:950;color:#08713b;text-transform:uppercase;margin:4px 0 10px;letter-spacing:.3px}
+      .tr286-section.op{margin-top:17px}
+      .tr286-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+      .tr286-grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+      .tr286-tile{height:78px;background:#08713b;border-radius:10px;color:#fff!important;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 7px 13px rgba(0,0,0,.12);padding:5px}
+      .tr286-tile i{font-size:25px;color:#fff;margin-bottom:5px;line-height:1}
+      .tr286-tile .lbl{font-size:11.5px;font-weight:950;line-height:1.05;color:#fff}
+      .tr286-tile .sub{font-size:8.5px;font-weight:900;color:#eaffee;margin-top:3px;line-height:1}
+      .tr286-grid2 .tr286-tile{height:82px}
+      .tr286-info{display:grid;grid-template-columns:20px 1fr;gap:8px;border:1px solid #b8d7ff;background:#eef6ff;border-radius:12px;padding:11px;margin-top:16px;color:#0b2e83;font-size:11.2px;font-weight:900;line-height:1.38}
+      .tr286-info i{font-size:17px;color:#0b5ed7;margin-top:1px}
+      .tr286-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:12px}
+      .tr286-kpi{background:#10964e;color:#fff;border-radius:9px;text-align:center;padding:7px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}
+      .tr286-kpi small{display:block;font-size:9.2px;font-weight:950;line-height:1.05;color:#effff3}
+      .tr286-kpi b{display:block;font-size:20px;line-height:1.05;font-weight:950;color:#fff;margin-top:4px}
+      .tr286-note{margin-top:12px;border:1px solid #cfe4d6;background:#f7fff8;border-radius:12px;padding:10px 11px;color:#1f3b2a;box-shadow:0 5px 12px rgba(0,0,0,.04)}
+      .tr286-note .ttl{font-size:12px;font-weight:950;color:#08713b;margin-bottom:5px;text-transform:uppercase}
+      .tr286-note .line{font-size:10.7px;font-weight:850;line-height:1.35}
+
+      .rt286-head{height:66px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}
+      .rt286-head a{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:31px;line-height:1}
+      .rt286-head .ttl{font-size:17px;font-weight:950;color:#fff}
+      .rt286-body{padding:14px 14px 17px;background:#fff}
+      .rt286-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:13px}
+      .rt286-kpi{background:#10964e;color:#fff;border-radius:9px;text-align:center;padding:8px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}
+      .rt286-kpi small{display:block;font-size:10px;font-weight:950}.rt286-kpi b{display:block;font-size:22px;font-weight:950;line-height:1;margin-top:4px}
+      .rt286-search{display:grid;grid-template-columns:1fr 112px;gap:8px;margin-bottom:11px}
+      .rt286-search input{height:42px;border:1px solid #dfe7df;border-radius:10px;padding:8px 11px;font-size:12px;font-weight:850}
+      .rt286-btnline{height:42px;border:1px solid #bbf7d0;background:#ecfdf5;color:#08713b;border-radius:10px;text-decoration:none;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:950;gap:5px}
+      .rt286-title{font-size:13px;font-weight:950;color:#08713b;text-transform:uppercase;margin:10px 0 8px}
+      .rt286-tablewrap{border:1px solid #e5e7eb;border-radius:10px;overflow:auto;background:#fff;scrollbar-color:#08713b #e5e7eb;margin-bottom:12px}
+      .rt286-tablewrap::-webkit-scrollbar{height:8px}.rt286-tablewrap::-webkit-scrollbar-thumb{background:#08713b;border-radius:999px}.rt286-tablewrap::-webkit-scrollbar-track{background:#e5e7eb}
+      .rt286-table{width:100%;min-width:470px;border-collapse:collapse}
+      .rt286-table th{background:#f8fafc;color:#12223b;font-size:11px;font-weight:950;padding:8px;border-bottom:1px solid #e5e7eb}
+      .rt286-table td{font-size:11px;color:#334155;padding:8px;border-bottom:1px solid #f1f5f9;font-weight:750}
+      .rt286-form,.rt286-upload{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:12px;margin-top:12px}
+      .rt286-form label,.rt286-upload label{font-size:11px;font-weight:950;color:#176a35;margin-bottom:4px}
+      .rt286-form .form-control,.rt286-form .form-select,.rt286-upload .form-control{height:38px!important;border-radius:9px!important;font-size:12px!important;font-weight:850}
+      .rt286-form .row{--bs-gutter-x:.55rem;--bs-gutter-y:.55rem}
+      .rt286-btn{height:41px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff;font-weight:950;font-size:13px;width:100%}
+      .rt286-help{font-size:10.5px;color:#08713b;font-weight:850;line-height:1.35;margin:7px 0}
+      .rt286-muted{font-size:10.5px;color:#4a644f;font-weight:850;line-height:1.35}
+
+      .rp286-card{border:1px solid #e4e8e4;border-radius:13px;overflow:hidden;background:#fff;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+      .rp286-body{padding:14px}
+      .rp286-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+      .rp286-tile{height:84px;background:#08713b;color:#fff!important;border-radius:10px;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 7px 13px rgba(0,0,0,.12)}
+      .rp286-tile i{font-size:26px;margin-bottom:6px;color:#fff}.rp286-tile b{font-size:12px;line-height:1.1;color:#fff}.rp286-tile small{font-size:9px;color:#eaffee;font-weight:900}
+    </style>
+    """
+
+def _bases_rutas_285():
+    # Base de rutas para el conductor: no muestra rutas operativas EN RUTA creadas al iniciar viaje.
+    rows = rows_to_dict(execute("""SELECT id,nombre,origen,destino,sede,hora_retorno,estado,fecha
+                                  FROM transporte_rutas
+                                  WHERE UPPER(COALESCE(estado,'PROGRAMADA')) NOT IN ('EN RUTA','LLEGÓ','LLEGO','RETORNO','CERRADA','FINALIZADA','INACTIVA')
+                                    AND (COALESCE(nombre,'')<>'' OR COALESCE(origen,'')<>'' OR COALESCE(destino,'')<>'')
+                                  ORDER BY fecha DESC, id DESC LIMIT 400""", fetchall=True))
+    seen, out = set(), []
+    for r in rows:
+        key = f"{r.get('nombre') or ''}|{r.get('origen') or ''}|{r.get('destino') or ''}|{r.get('sede') or ''}".upper()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+        if len(out) >= 100:
+            break
+    return out
+
+def transporte_home_286():
+    if not (session.get('usuario') or session.get('conductor_id')):
+        flash('Inicie sesión para ingresar a Transporte.', 'danger')
+        return redirect(url_for('login'))
+    total_cond = int(scalar('SELECT COUNT(*) AS c FROM transporte_conductores') or 0)
+    total_bus = int(scalar('SELECT COUNT(*) AS c FROM transporte_vehiculos') or 0)
+    total_rutas = int(scalar("""SELECT COUNT(*) AS c FROM transporte_rutas
+                                WHERE UPPER(COALESCE(estado,'PROGRAMADA')) NOT IN ('EN RUTA','LLEGÓ','LLEGO','RETORNO','CERRADA','FINALIZADA','INACTIVA')""") or 0)
+    viajes_hoy = int(scalar("""SELECT COUNT(*) AS c FROM transporte_rutas
+                               WHERE fecha=? AND UPPER(COALESCE(estado,'')) IN ('EN RUTA','PROGRAMADA') AND conductor_id IS NOT NULL""", (today_str(),)) or 0)
+    abordajes_hoy = int(scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE fecha=?', (today_str(),)) or 0)
+    back_target = url_for('home') if session.get('usuario') else url_for('conductor_movil_inicio_ruta')
+    body = _transport_286_css() + r"""
+    <div class="tr286-phone">
+      <div class="tr286-app">
+        <div class="tr286-hero">
+          <a class="tr286-back" href="{{back_target}}"><i class="bi bi-chevron-left"></i></a>
+          {% if session.get('usuario') %}<a class="tr286-config" href="{{url_for('transporte_config')}}"><i class="bi bi-gear"></i> Config.</a>{% endif %}
+          <div class="tr286-bus"><i class="bi bi-bus-front-fill"></i></div>
+          <div class="tr286-title">Módulo Transporte</div>
+        </div>
+        <div class="tr286-body">
+          {% if session.get('usuario') %}
+          <div class="tr286-section">Módulos</div>
+          <div class="tr286-grid3">
+            <a class="tr286-tile" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i><span class="lbl">Conductores</span></a>
+            <a class="tr286-tile" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i><span class="lbl">Buses</span></a>
+            <a class="tr286-tile" href="{{url_for('transporte_rutas')}}"><i class="bi bi-geo-alt"></i><span class="lbl">Rutas</span></a>
+          </div>
+          {% endif %}
+
+          <div class="tr286-section op">Operación</div>
+          <div class="tr286-grid3">
+            <a class="tr286-tile" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-pin-map"></i><span class="lbl">GPS</span><span class="sub">Seguimiento</span></a>
+            <a class="tr286-tile" href="{{url_for('transporte_mobile_home')}}"><i class="bi bi-phone"></i><span class="lbl">Móvil</span><span class="sub">Conductor</span></a>
+            <a class="tr286-tile" href="{{url_for('transporte_reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i><span class="lbl">Reportes</span><span class="sub">Transporte</span></a>
+          </div>
+
+          <div class="tr286-info"><i class="bi bi-info-circle-fill"></i><div>Base correcta: <b>Rutas</b> solo guarda origen/destino/sede. El <b>conductor</b> elige ruta base, bus, hora inicio y GPS desde su móvil antes de abordar.</div></div>
+
+          <div class="tr286-kpis">
+            <div class="tr286-kpi"><small>Conductores</small><b>{{total_cond}}</b></div>
+            <div class="tr286-kpi"><small>Buses</small><b>{{total_bus}}</b></div>
+            <div class="tr286-kpi"><small>Rutas base</small><b>{{total_rutas}}</b></div>
+          </div>
+
+          <div class="tr286-note">
+            <div class="ttl">Resumen operativo</div>
+            <div class="line"><b>{{viajes_hoy}}</b> viaje(s) activos/programados hoy con conductor.</div>
+            <div class="line"><b>{{abordajes_hoy}}</b> abordaje(s) registrados hoy.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(body, back_target=back_target, total_cond=total_cond, total_bus=total_bus, total_rutas=total_rutas, viajes_hoy=viajes_hoy, abordajes_hoy=abordajes_hoy, title='Módulo Transporte')
+
+@login_required
+def transporte_rutas_286():
+    if request.method == 'POST':
+        fecha = request.form.get('fecha') or today_str()
+        nombre = limpiar_texto(request.form.get('nombre') or 'RUTA')
+        origen = limpiar_texto(request.form.get('origen'))
+        destino = limpiar_texto(request.form.get('destino'))
+        sede = limpiar_texto(request.form.get('sede'))
+        estado = limpiar_texto(request.form.get('estado') or 'PROGRAMADA')
+        if not nombre or not origen or not destino:
+            flash('Ingrese ruta, origen y destino.', 'danger')
+            return redirect(url_for('transporte_rutas'))
+        execute("""INSERT INTO transporte_rutas(fecha,nombre,origen,destino,sede,hora_salida,hora_retorno,vehiculo_id,conductor_id,estado,creado_por,creado_en)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (fecha,nombre,origen,destino,sede,'','',None,None,estado,session.get('usuario'),now_str()),
+                commit=True)
+        flash('Ruta base registrada. El bus, conductor, hora y GPS se seleccionan desde Móvil conductor.', 'success')
+        return redirect(url_for('transporte_rutas'))
+
+    rutas = rows_to_dict(execute("""SELECT *
+                                  FROM transporte_rutas
+                                  WHERE UPPER(COALESCE(estado,'PROGRAMADA')) NOT IN ('EN RUTA','LLEGÓ','LLEGO','RETORNO','FINALIZADA')
+                                  ORDER BY fecha DESC, id DESC LIMIT 250""", fetchall=True))
+    total = len(rutas)
+    activas = sum(1 for r in rutas if (r.get('estado') or '').upper() in ('PROGRAMADA','ACTIVA','BASE',''))
+    cerradas = sum(1 for r in rutas if (r.get('estado') or '').upper() in ('CERRADA','INACTIVA'))
+    body = _transport_286_css() + r"""
+    <div class="tr286-phone"><div class="tr286-app">
+      <div class="rt286-head"><a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Rutas</div></div>
+      <div class="rt286-body">
+        <div class="rt286-kpis">
+          <div class="rt286-kpi"><small>Total rutas</small><b>{{total}}</b></div>
+          <div class="rt286-kpi"><small>Activas</small><b>{{activas}}</b></div>
+          <div class="rt286-kpi"><small>Cerradas</small><b>{{cerradas}}</b></div>
+        </div>
+
+        <div class="rt286-search">
+          <input id="qruta286" placeholder="BUSCAR RUTA...">
+          <a class="rt286-btnline" href="{{url_for('transporte_plantilla_rutas')}}"><i class="bi bi-file-earmark-excel"></i> Plantilla</a>
+        </div>
+
+        <div class="rt286-title">Base de rutas</div>
+        <div class="rt286-muted mb-2">Aquí solo se registra la base: ruta, origen, destino y sede. Bus, conductor, hora inicio y GPS se registran desde el móvil del conductor.</div>
+
+        <div class="rt286-tablewrap">
+          <table id="tblruta286" class="rt286-table">
+            <thead><tr><th>Código</th><th>Ruta</th><th>Origen</th><th>Destino</th><th>Sede</th><th>Estado</th><th>Activo</th></tr></thead>
+            <tbody>
+            {% for r in rutas %}
+              <tr>
+                <td>R-{{'%03d'%r.id}}</td>
+                <td>{{r.nombre or '-'}}</td>
+                <td>{{r.origen or '-'}}</td>
+                <td>{{r.destino or '-'}}</td>
+                <td>{{r.sede or '-'}}</td>
+                <td>{{badge(r.estado or 'PROGRAMADA')|safe}}</td>
+                <td>{{switch((r.estado or '').upper() not in ['INACTIVA','CERRADA'], url_for('transporte_toggle_ruta', item_id=r.id))|safe}}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="7" class="text-center text-muted">Sin rutas base.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <form method="post" enctype="multipart/form-data" action="{{url_for('transporte_upload_rutas')}}" class="rt286-upload">
+          <label><i class="bi bi-cloud-arrow-up"></i> Carga masiva rutas Excel</label>
+          <input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required>
+          <div class="rt286-help">Columnas sugeridas: FECHA, RUTA, ORIGEN, DESTINO, SEDE, ESTADO. Ya no se carga bus, conductor ni salida aquí.</div>
+          <button class="rt286-btn" type="submit"><i class="bi bi-upload"></i> Cargar rutas</button>
+        </form>
+
+        <form method="post" class="rt286-form">
+          <div class="row">
+            <div class="col-6"><label>Fecha</label><input name="fecha" type="date" value="{{hoy}}" class="form-control"></div>
+            <div class="col-6"><label>Ruta</label><input name="nombre" class="form-control" placeholder="R-001" required></div>
+            <div class="col-6"><label>Origen</label><input name="origen" class="form-control" required></div>
+            <div class="col-6"><label>Destino</label><input name="destino" class="form-control" required></div>
+            <div class="col-6"><label>Sede/Fundo</label><input name="sede" class="form-control"></div>
+            <div class="col-6"><label>Estado</label><select name="estado" class="form-select"><option>PROGRAMADA</option><option>ACTIVA</option><option>CERRADA</option><option>INACTIVA</option></select></div>
+          </div>
+          <button class="rt286-btn mt-2">+ Guardar ruta base</button>
+        </form>
+      </div>
+    </div></div>
+    <script>
+      (function(){const q=document.getElementById('qruta286'),t=document.getElementById('tblruta286'); if(!q||!t)return; q.addEventListener('input',()=>{const s=q.value.toUpperCase(); t.querySelectorAll('tbody tr').forEach(r=>{r.style.display=r.innerText.toUpperCase().includes(s)?'':'none';});});})();
+    </script>
+    """
+    return render_page(body, rutas=rutas, hoy=today_str(), total=total, activas=activas, cerradas=cerradas, badge=_tf_badge, switch=_tf_switch, title='Rutas')
+
+def _importar_rutas_excel(file_storage):
+    ok = bad = 0
+    for row in _iter_excel_upload(file_storage):
+        fecha = _excel_date(_valor(row, ['FECHA','FECHA RUTA'])) or today_str()
+        nombre = limpiar_texto(_valor(row, ['RUTA','NOMBRE','NOMBRE RUTA']) or 'RUTA')
+        origen = limpiar_texto(_valor(row, ['ORIGEN','PARADERO ORIGEN']))
+        destino = limpiar_texto(_valor(row, ['DESTINO','PARADERO DESTINO']))
+        sede = limpiar_texto(_valor(row, ['SEDE','FUNDO']))
+        estado = limpiar_texto(_valor(row, ['ESTADO']) or 'PROGRAMADA')
+        if not nombre or not origen or not destino:
+            bad += 1
+            continue
+        execute("""INSERT INTO transporte_rutas(fecha,nombre,origen,destino,sede,hora_salida,hora_retorno,vehiculo_id,conductor_id,estado,creado_por,creado_en)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (fecha,nombre,origen,destino,sede,'','',None,None,estado,session.get('usuario'),now_str()),
+                commit=True)
+        ok += 1
+    return ok, 0, bad
+
+@login_required
+def transporte_plantilla_rutas_286():
+    headers = ['FECHA','RUTA','ORIGEN','DESTINO','SEDE','ESTADO']
+    example = [today_str(),'R-001','TRUJILLO','PAIJAN','SEDE NORTE','PROGRAMADA']
+    return _tpl_xlsx(headers, example, 'plantilla_rutas_base.xlsx', 'RUTAS')
+
+def conductor_movil_login_286():
+    # Siempre que se ingrese al botón Móvil conductor se muestra login DNI/PIN.
+    # Luego del POST se abre Inicio ruta conductor.
+    if request.method == 'POST':
+        dni = limpiar_dni(request.form.get('dni'))
+        pin = (request.form.get('pin') or '').strip()
+        if len(dni) != 8 or str(dni).upper() == 'ADMIN':
+            flash('Solo conductores: ingrese DNI de 8 dígitos. No usar ADMIN.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        if not pin:
+            flash('Ingrese su PIN móvil.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        c = row_to_dict(execute("""SELECT * FROM transporte_conductores
+                                 WHERE dni=? AND COALESCE(movil_pin,'')=?
+                                 AND COALESCE(movil_estado,'ACTIVO')='ACTIVO'
+                                 AND COALESCE(estado,'ACTIVO') NOT IN ('INACTIVO','BLOQUEADO')""", (dni, pin), fetchone=True))
+        if not c:
+            flash('DNI o PIN incorrecto, bloqueado o no creado en Transporte > Conductores.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        session['conductor_id'] = c.get('id')
+        session['conductor_dni'] = c.get('dni')
+        session['conductor_nombre'] = c.get('nombres') or c.get('dni')
+        flash('Bienvenido conductor. Seleccione ruta, bus y hora de inicio.', 'success')
+        return redirect(url_for('conductor_movil_inicio_ruta'))
+    body = r"""
+    <div class="phone-wrap">
+      <div class="page-card" style="border-radius:14px;overflow:hidden;margin-top:16px">
+        <div class="green-hero" style="min-height:128px;border-radius:0;padding:18px 16px 38px">
+          <a href="{{url_for('transporte')}}" style="position:absolute;left:18px;top:23px;color:white;font-size:38px;text-decoration:none"><i class="bi bi-chevron-left"></i></a>
+          <div style="font-size:34px"><i class="bi bi-phone"></i></div>
+          <div style="font-family:Georgia,serif;font-weight:900;font-size:13px;margin-top:4px">ACCESO MÓVIL CONDUCTOR</div>
+        </div>
+        <div class="floating-card" style="margin:-30px 12px 14px;border-radius:12px;padding:16px">
+          <div class="alert alert-light" style="border:1px solid #dbe3db;color:#24405f;line-height:1.45"><b>Solo conductores:</b> ingrese DNI del conductor + PIN móvil creado en Transporte &gt; Conductores. No usar ADMIN.</div>
+          <form method="post" id="frmMovilCond286">
+            <label class="form-label">DNI conductor</label>
+            <input name="dni" id="dniMovCond286" class="form-control mb-3" inputmode="numeric" maxlength="8" pattern="\d{8}" placeholder="Ingrese DNI" required autocomplete="username" autofocus>
+            <label class="form-label">PIN móvil</label>
+            <input name="pin" class="form-control mb-3" type="password" placeholder="PIN" required autocomplete="current-password">
+            <button class="btn btn-green w-100" style="font-size:19px;height:47px">INGRESAR</button>
+          </form>
+          {% if session.get('usuario') %}
+          <a class="btn btn-outline-success w-100 mt-2" href="{{url_for('transporte_conductores')}}">Crear / resetear PIN</a>
+          {% endif %}
+          <a class="btn btn-outline-secondary w-100 mt-2" href="{{url_for('transporte')}}">Volver</a>
+        </div>
+      </div>
+    </div>
+    <script>(function(){const i=document.getElementById('dniMovCond286'); if(i){i.addEventListener('input',()=>{i.value=String(i.value||'').replace(/\D/g,'').slice(-8);});}})();</script>
+    """
+    return render_page(body, title='Acceso móvil conductor')
+
+@login_required
+def transporte_reportes_286():
+    hoy = today_str()
+    rutas_hoy = int(scalar('SELECT COUNT(*) AS c FROM transporte_rutas WHERE fecha=?', (hoy,)) or 0)
+    abordaron = int(scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE fecha=?', (hoy,)) or 0)
+    gps_hoy = int(scalar("SELECT COUNT(*) AS c FROM transporte_gps WHERE substr(fecha_hora,1,10)=?", (hoy,)) or 0)
+    conductores = int(scalar('SELECT COUNT(*) AS c FROM transporte_conductores') or 0)
+    buses = int(scalar('SELECT COUNT(*) AS c FROM transporte_vehiculos') or 0)
+    body = _transport_286_css() + r"""
+    <div class="tr286-phone"><div class="rp286-card">
+      <div class="rt286-head"><a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Reportes transporte</div></div>
+      <div class="rp286-body">
+        <div class="tr286-kpis">
+          <div class="tr286-kpi"><small>Rutas hoy</small><b>{{rutas_hoy}}</b></div>
+          <div class="tr286-kpi"><small>Abordajes</small><b>{{abordaron}}</b></div>
+          <div class="tr286-kpi"><small>GPS hoy</small><b>{{gps_hoy}}</b></div>
+        </div>
+        <div class="tr286-kpis">
+          <div class="tr286-kpi"><small>Conductores</small><b>{{conductores}}</b></div>
+          <div class="tr286-kpi"><small>Buses</small><b>{{buses}}</b></div>
+          <div class="tr286-kpi"><small>Fecha</small><b style="font-size:13px">{{hoy[5:]}}</b></div>
+        </div>
+        <div class="tr286-section op">Reportes</div>
+        <div class="rp286-grid">
+          <a class="rp286-tile" href="{{url_for('transporte_reporte_abordajes')}}"><i class="bi bi-people"></i><b>Abordajes</b><small>Resumen / Excel</small></a>
+          <a class="rp286-tile" href="{{url_for('exportar_transporte_pasajeros')}}"><i class="bi bi-file-earmark-excel"></i><b>Excel abordajes</b><small>Descarga total</small></a>
+          <a class="rp286-tile" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-geo-alt"></i><b>GPS</b><small>Seguimiento</small></a>
+          <a class="rp286-tile" href="{{url_for('transporte_rutas')}}"><i class="bi bi-signpost"></i><b>Rutas base</b><small>Base maestra</small></a>
+        </div>
+      </div>
+    </div></div>
+    """
+    return render_page(body, hoy=hoy, rutas_hoy=rutas_hoy, abordaron=abordaron, gps_hoy=gps_hoy, conductores=conductores, buses=buses, title='Reportes transporte')
+
+try:
+    app.add_url_rule('/transporte/reportes', 'transporte_reportes', transporte_reportes_286, methods=['GET'])
+except Exception:
+    app.view_functions['transporte_reportes'] = transporte_reportes_286
+
+# Overrides finales 286
+app.view_functions['transporte'] = transporte_home_286
+app.view_functions['transporte_rutas'] = transporte_rutas_286
+app.view_functions['transporte_plantilla_rutas'] = transporte_plantilla_rutas_286
+app.view_functions['conductor_movil_login'] = conductor_movil_login_286
+app.view_functions['transporte_mobile_home'] = conductor_movil_login_286
+# ======================= FIN PATCH TRANSPORTE OMAR 286 =======================
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
