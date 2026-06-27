@@ -5551,6 +5551,174 @@ app.view_functions['transporte_mobile_home'] = conductor_movil_login_286
 # ======================= FIN PATCH TRANSPORTE OMAR 286 =======================
 
 
+# ========================= PATCH TRANSPORTE OMAR 288 =========================
+# Reportes transporte mejorado: filtros por fecha/rango + búsqueda + KPIs + 4 reportes:
+# Abordajes, Buses, Rutas y Conductores.
+
+def _reporte_transporte_288_css():
+    return r"""
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}
+      .shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:6px 8px 26px!important;background:#fff!important}
+      .rp288-phone{max-width:390px;margin:0 auto}
+      .rp288-card{border:1px solid #e4e8e4;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+      .rp288-head{height:68px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}
+      .rp288-head a{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:31px;line-height:1}
+      .rp288-head .ttl{font-size:17px;font-weight:950;color:#fff;letter-spacing:.2px}
+      .rp288-body{padding:14px;background:#fff}
+      .rp288-filter{background:#fff;border:1px solid #e5ece5;border-radius:14px;padding:12px;box-shadow:0 8px 18px rgba(0,0,0,.06);margin-bottom:12px}
+      .rp288-dategrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px}
+      .rp288-datebox{border:1px solid #dce5dc;border-radius:10px;background:#fff;height:46px;display:flex;align-items:center;justify-content:space-between;padding:6px 9px;color:#142033}
+      .rp288-datebox span{display:block;font-size:9.5px;color:#5e6b72;font-weight:850;line-height:1}
+      .rp288-datebox input{border:0;outline:0;width:100%;font-size:12px;font-weight:950;color:#142033;background:transparent;padding:0;margin-top:2px}
+      .rp288-datebox i{font-size:16px;color:#142033;margin-left:6px}
+      .rp288-searchrow{display:grid;grid-template-columns:1fr 52px;gap:8px;margin-bottom:10px}
+      .rp288-searchrow input{height:42px;border:1px solid #dce5dc;border-radius:10px;padding:8px 11px;font-size:12px;font-weight:850;color:#142033}
+      .rp288-searchrow button{height:42px;border:0;border-radius:10px;background:#08713b;color:#fff;font-size:22px;display:grid;place-items:center}
+      .rp288-export{height:42px;border:1px solid #08713b;background:#fff;color:#08713b;border-radius:10px;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:9px;font-size:13px;font-weight:900;margin-bottom:9px}
+      .rp288-export i{font-size:20px}.rp288-help{display:flex;align-items:center;gap:8px;color:#4a5565;font-size:11px;font-weight:800;line-height:1.35}
+      .rp288-help i{color:#08713b;font-size:18px;flex:0 0 auto}
+      .rp288-kpibox{background:#fff;border:1px solid #e5ece5;border-radius:14px;padding:11px;box-shadow:0 8px 18px rgba(0,0,0,.06);margin-bottom:14px}
+      .rp288-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+      .rp288-kpi{background:#fff;border:1px solid #dfe7df;border-radius:12px;min-height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px 3px}
+      .rp288-kpi i{font-size:24px;color:#08713b;margin-bottom:5px;line-height:1}
+      .rp288-kpi small{display:block;font-size:10.5px;color:#1f2937;font-weight:800;line-height:1.05}
+      .rp288-kpi b{display:block;color:#08713b;font-size:24px;font-weight:950;line-height:1;margin-top:5px}
+      .rp288-section{display:flex;align-items:center;gap:8px;margin:3px 0 10px;color:#1f2937;font-size:18px;font-weight:950}
+      .rp288-section:before{content:'';width:4px;height:24px;background:#10a05b;border-radius:999px;display:block}
+      .rp288-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+      .rp288-tile{height:98px;background:#08713b;color:#fff!important;border-radius:12px;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 8px 15px rgba(0,0,0,.14);padding:8px}
+      .rp288-tile i{font-size:31px;margin-bottom:7px;color:#fff;line-height:1}.rp288-tile b{font-size:14px;line-height:1.08;color:#fff;font-weight:950}.rp288-tile small{font-size:10px;color:#eaffee;font-weight:850;line-height:1.1;margin-top:3px}
+      .rp288-results{margin-top:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;overflow:auto;max-height:220px}
+      .rp288-results table{width:100%;min-width:520px;border-collapse:collapse}.rp288-results th{background:#f8fafc;color:#12223b;font-size:11px;font-weight:950;padding:8px;border-bottom:1px solid #e5e7eb}.rp288-results td{font-size:10.5px;color:#334155;padding:8px;border-bottom:1px solid #f1f5f9;font-weight:750}
+    </style>
+    """
+
+def _rp288_params():
+    hoy = today_str()
+    desde = request.args.get('desde') or hoy
+    hasta = request.args.get('hasta') or hoy
+    q = (request.args.get('q') or '').strip()
+    if hasta < desde:
+        desde, hasta = hasta, desde
+    return desde, hasta, q
+
+def _rp288_like_clause(q):
+    if not q:
+        return "", []
+    like = f"%{q.upper()}%"
+    clause = """ AND (
+        UPPER(COALESCE(p.dni,'')) LIKE ? OR
+        UPPER(COALESCE(p.trabajador,'')) LIKE ? OR
+        UPPER(COALESCE(r.nombre,'')) LIKE ? OR
+        UPPER(COALESCE(r.origen,'')) LIKE ? OR
+        UPPER(COALESCE(r.destino,'')) LIKE ? OR
+        UPPER(COALESCE(v.placa,'')) LIKE ? OR
+        UPPER(COALESCE(c.nombres,'')) LIKE ?
+    )"""
+    return clause, [like]*7
+
+def _rp288_rows(desde, hasta, q, limit=80):
+    clause, params_q = _rp288_like_clause(q)
+    sql = f"""SELECT p.fecha, p.hora, p.dni, p.trabajador, p.metodo,
+                     r.nombre AS ruta, r.origen, r.destino, v.placa, c.nombres AS conductor
+              FROM transporte_pasajeros p
+              LEFT JOIN transporte_rutas r ON r.id=p.ruta_id
+              LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+              LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+              WHERE p.fecha BETWEEN ? AND ? {clause}
+              ORDER BY p.fecha DESC, p.hora DESC, p.id DESC LIMIT {int(limit)}"""
+    return rows_to_dict(execute(sql, tuple([desde, hasta] + params_q), fetchall=True))
+
+def transporte_reportes_288():
+    if not session.get('usuario'):
+        flash('Inicie sesión para ver reportes.', 'danger')
+        return redirect(url_for('login'))
+    desde, hasta, q = _rp288_params()
+    clause, params_q = _rp288_like_clause(q)
+
+    abordajes = int(scalar(f"""SELECT COUNT(*) AS c FROM transporte_pasajeros p
+                              LEFT JOIN transporte_rutas r ON r.id=p.ruta_id
+                              LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                              LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                              WHERE p.fecha BETWEEN ? AND ? {clause}""", tuple([desde, hasta] + params_q)) or 0)
+    rutas = int(scalar("SELECT COUNT(*) AS c FROM transporte_rutas WHERE fecha BETWEEN ? AND ?", (desde, hasta)) or 0)
+    gps_total = int(scalar("SELECT COUNT(*) AS c FROM transporte_gps WHERE substr(fecha_hora,1,10) BETWEEN ? AND ?", (desde, hasta)) or 0)
+    conductores = int(scalar('SELECT COUNT(*) AS c FROM transporte_conductores') or 0)
+    buses = int(scalar('SELECT COUNT(*) AS c FROM transporte_vehiculos') or 0)
+    cap = float(scalar("""SELECT COALESCE(SUM(COALESCE(v.capacidad,0)),0) AS c
+                         FROM transporte_rutas r LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                         WHERE r.fecha BETWEEN ? AND ?""", (desde, hasta)) or 0)
+    ocupacion = int(round((abordajes / cap) * 100, 0)) if cap else 0
+    gps_pct = int(round((gps_total / rutas) * 100, 0)) if rutas else 0
+    rows = _rp288_rows(desde, hasta, q, limit=60)
+
+    body = _reporte_transporte_288_css() + r"""
+    <div class="rp288-phone"><div class="rp288-card">
+      <div class="rp288-head"><a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Reportes transporte</div></div>
+      <div class="rp288-body">
+        <form class="rp288-filter" method="get" action="{{url_for('transporte_reportes')}}">
+          <div class="rp288-dategrid">
+            <label class="rp288-datebox"><div><span>Desde</span><input type="date" name="desde" value="{{desde}}"></div><i class="bi bi-calendar3"></i></label>
+            <label class="rp288-datebox"><div><span>Hasta</span><input type="date" name="hasta" value="{{hasta}}"></div><i class="bi bi-calendar3"></i></label>
+          </div>
+          <div class="rp288-searchrow"><input name="q" value="{{q}}" placeholder="DNI / trabajador / ruta / bus"><button type="submit"><i class="bi bi-search"></i></button></div>
+          <a class="rp288-export" href="{{url_for('exportar_transporte_reportes_288', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-file-earmark-excel"></i> EXPORTAR EXCEL</a>
+          <div class="rp288-help"><i class="bi bi-info-circle"></i><span>Selecciona un rango de fechas para ver indicadores y reportes filtrados.</span></div>
+        </form>
+
+        <div class="rp288-kpibox"><div class="rp288-kpis">
+          <div class="rp288-kpi"><i class="bi bi-signpost-split"></i><small>Rutas</small><b>{{rutas}}</b></div>
+          <div class="rp288-kpi"><i class="bi bi-people"></i><small>Abordajes</small><b>{{abordajes}}</b></div>
+          <div class="rp288-kpi"><i class="bi bi-geo-alt"></i><small>GPS</small><b>{{gps_pct}}%</b></div>
+          <div class="rp288-kpi"><i class="bi bi-person-badge"></i><small>Conductores</small><b>{{conductores}}</b></div>
+          <div class="rp288-kpi"><i class="bi bi-bus-front"></i><small>Buses</small><b>{{buses}}</b></div>
+          <div class="rp288-kpi"><i class="bi bi-pie-chart"></i><small>Ocupación</small><b>{{ocupacion}}%</b></div>
+        </div></div>
+
+        <div class="rp288-section">Reportes</div>
+        <div class="rp288-grid">
+          <a class="rp288-tile" href="{{url_for('transporte_reporte_abordajes')}}"><i class="bi bi-people"></i><b>Abordajes</b><small>Resumen / Excel</small></a>
+          <a class="rp288-tile" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i><b>Buses</b><small>Flota / estado</small></a>
+          <a class="rp288-tile" href="{{url_for('transporte_rutas')}}"><i class="bi bi-signpost-split"></i><b>Rutas</b><small>Base maestra</small></a>
+          <a class="rp288-tile" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-badge"></i><b>Conductores</b><small>Lista / estado</small></a>
+        </div>
+
+        <div class="rp288-results">
+          <table><thead><tr><th>Fecha</th><th>DNI</th><th>Trabajador</th><th>Ruta</th><th>Bus</th><th>Método</th></tr></thead><tbody>
+          {% for r in rows %}<tr><td>{{r.fecha}} {{r.hora}}</td><td>{{r.dni}}</td><td>{{r.trabajador}}</td><td>{{r.ruta or '-'}}<br><small>{{r.origen or ''}} → {{r.destino or ''}}</small></td><td>{{r.placa or '-'}}</td><td>{{r.metodo or '-'}}</td></tr>
+          {% else %}<tr><td colspan="6" class="text-center text-muted">Sin datos para el rango seleccionado.</td></tr>{% endfor %}
+          </tbody></table>
+        </div>
+      </div>
+    </div></div>
+    """
+    return render_page(body, desde=desde, hasta=hasta, q=q, rutas=rutas, abordajes=abordajes, gps_pct=gps_pct, conductores=conductores, buses=buses, ocupacion=ocupacion, rows=rows, title='Reportes transporte')
+
+def exportar_transporte_reportes_288():
+    if not session.get('usuario'):
+        flash('Inicie sesión para exportar.', 'danger')
+        return redirect(url_for('login'))
+    desde, hasta, q = _rp288_params()
+    rows = _rp288_rows(desde, hasta, q, limit=100000)
+    data = []
+    for r in rows:
+        data.append({
+            'fecha': r.get('fecha'), 'hora': r.get('hora'), 'dni': r.get('dni'), 'trabajador': r.get('trabajador'),
+            'ruta': r.get('ruta'), 'origen': r.get('origen'), 'destino': r.get('destino'),
+            'bus': r.get('placa'), 'conductor': r.get('conductor'), 'metodo': r.get('metodo')
+        })
+    return excel_response(['fecha','hora','dni','trabajador','ruta','origen','destino','bus','conductor','metodo'], data, f'reporte_transporte_{desde}_a_{hasta}.xlsx', 'REPORTE')
+
+try:
+    app.add_url_rule('/transporte/reportes/exportar', 'exportar_transporte_reportes_288', exportar_transporte_reportes_288, methods=['GET'])
+except Exception:
+    app.view_functions['exportar_transporte_reportes_288'] = exportar_transporte_reportes_288
+
+app.view_functions['transporte_reportes'] = transporte_reportes_288
+# ======================= FIN PATCH TRANSPORTE OMAR 288 =======================
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
