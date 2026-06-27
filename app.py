@@ -5953,6 +5953,196 @@ app.view_functions['transporte_reportes'] = transporte_reportes_289
 app.view_functions['transporte_config'] = transporte_config_289
 # ======================= FIN PATCH TRANSPORTE OMAR 289 =======================
 
+# ========================= PATCH CONTRATACIÓN OMAR 290 =========================
+# Módulo integrado al Tareo Móvil con interfaz clásica miniatura.
+# Se toma la lógica base del sistema de contratación: requerimiento -> postulante -> evaluación médica -> inducción -> indumentaria -> fotocheck -> firma/contrato.
+
+def _contratacion_init_290():
+    idtype = "SERIAL PRIMARY KEY" if is_pg() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    execute(f"""CREATE TABLE IF NOT EXISTS contratacion_requerimientos(
+        id {idtype}, fecha TEXT, codigo TEXT, empresa TEXT, area TEXT, cargo TEXT, actividad TEXT,
+        cantidad INTEGER DEFAULT 0, fecha_ingreso TEXT, tipo_contrato TEXT, regimen_laboral TEXT,
+        estado TEXT DEFAULT 'ABIERTO', creado_por TEXT, creado_en TEXT)""", commit=True)
+    execute(f"""CREATE TABLE IF NOT EXISTS contratacion_ingresos(
+        id {idtype}, requerimiento_id INTEGER, requerimiento TEXT, dni TEXT, nombres TEXT, telefono TEXT, correo TEXT,
+        empresa TEXT, area TEXT, cargo TEXT, actividad TEXT, tipo_contrato TEXT, regimen_laboral TEXT,
+        fecha_inicio TEXT, fecha_fin TEXT, basico REAL DEFAULT 0, estado TEXT DEFAULT 'POSTULANTE',
+        medica_estado TEXT DEFAULT 'PENDIENTE', induccion_estado TEXT DEFAULT 'PENDIENTE',
+        indumentaria_estado TEXT DEFAULT 'PENDIENTE', fotocheck_estado TEXT DEFAULT 'PENDIENTE',
+        firma_estado TEXT DEFAULT 'PENDIENTE', observacion TEXT, creado_por TEXT, creado_en TEXT)""", commit=True)
+    try:
+        conn=get_conn(); cur=conn.cursor()
+        for col, ddl in [('codigo','TEXT'),('fecha_ingreso','TEXT'),('tipo_contrato','TEXT'),('regimen_laboral','TEXT')]:
+            _add_column_if_missing(cur, 'contratacion_requerimientos', col, ddl)
+        for col, ddl in [('requerimiento_id','INTEGER'),('requerimiento','TEXT'),('telefono','TEXT'),('correo','TEXT'),('tipo_contrato','TEXT'),('regimen_laboral','TEXT'),('fecha_inicio','TEXT'),('fecha_fin','TEXT'),('basico','REAL DEFAULT 0'),('medica_estado',"TEXT DEFAULT 'PENDIENTE'"),('induccion_estado',"TEXT DEFAULT 'PENDIENTE'"),('indumentaria_estado',"TEXT DEFAULT 'PENDIENTE'"),('fotocheck_estado',"TEXT DEFAULT 'PENDIENTE'"),('firma_estado',"TEXT DEFAULT 'PENDIENTE'"),('observacion','TEXT')]:
+            _add_column_if_missing(cur, 'contratacion_ingresos', col, ddl)
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print('Migración contratación 290:', e)
+
+def _contratacion_css_290():
+    return r'''
+    <style>
+      .ct290-phone{max-width:390px;margin:0 auto}.ct290-app{background:#fff;border:1px solid #e4e8e4;border-radius:13px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+      .ct290-head{height:118px;background:#08713b;color:#fff;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center}.ct290-head a{position:absolute;left:14px;top:26px;color:#fff!important;text-decoration:none;font-size:31px;line-height:1}.ct290-head .ico{font-size:35px;line-height:1;margin-bottom:5px}.ct290-head .ttl{font-size:16px;font-weight:950;letter-spacing:.2px;text-transform:uppercase;color:#fff}
+      .ct290-body{padding:16px 14px 18px}.ct290-section{font-size:14px;font-weight:950;color:#08713b;text-transform:uppercase;margin:5px 0 10px;letter-spacing:.2px}.ct290-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.ct290-grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.ct290-tile{height:78px;background:#08713b;border-radius:10px;color:#fff!important;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 7px 13px rgba(0,0,0,.12);padding:5px}.ct290-tile i{font-size:24px;color:#fff;margin-bottom:5px;line-height:1}.ct290-tile .lbl{font-size:10.8px;font-weight:950;line-height:1.05;color:#fff}.ct290-tile .sub{font-size:8px;font-weight:900;color:#eaffee;margin-top:3px;line-height:1}.ct290-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.ct290-kpi{background:#10964e;color:#fff;border-radius:9px;text-align:center;padding:8px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}.ct290-kpi small{display:block;font-size:9px;font-weight:950;line-height:1.05}.ct290-kpi b{display:block;font-size:21px;line-height:1.05;font-weight:950;margin-top:4px}.ct290-info{border:1px solid #b8d7ff;background:#eef6ff;color:#0b2e83;border-radius:12px;padding:10px 11px;font-size:11px;font-weight:900;line-height:1.36;margin:12px 0}
+      .ct290-card{border:1px solid #e3e8e3;background:#fff;border-radius:12px;box-shadow:0 5px 14px rgba(0,0,0,.06);padding:11px;margin:9px 0}.ct290-mini{font-size:10.5px;color:#486156;font-weight:850;line-height:1.35}.ct290-form{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:11px;margin:10px 0}.ct290-form label{font-size:10.5px;font-weight:950;color:#176a35;margin-bottom:4px}.ct290-form .form-control,.ct290-form .form-select{height:37px!important;border-radius:9px!important;font-size:12px!important;font-weight:850}.ct290-btn{height:39px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff!important;font-weight:950;font-size:12px;width:100%;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px}.ct290-outline{height:39px;border-radius:10px;background:#fff;border:1px solid #08713b;color:#08713b!important;font-weight:900;font-size:12px;width:100%;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px}.ct290-search{height:38px;border:1px solid #dfe7df;border-radius:10px;padding:8px 11px;font-size:12px;font-weight:850;width:100%;margin-bottom:9px}.ct290-tablewrap{border:1px solid #e5e7eb;border-radius:10px;overflow:auto;background:#fff;scrollbar-color:#08713b #e5e7eb}.ct290-tablewrap::-webkit-scrollbar{height:8px}.ct290-tablewrap::-webkit-scrollbar-thumb{background:#08713b;border-radius:999px}.ct290-tablewrap::-webkit-scrollbar-track{background:#e5e7eb}.ct290-table{width:100%;min-width:590px;border-collapse:collapse}.ct290-table th{background:#f8fafc;color:#12223b;font-size:10.5px;font-weight:950;padding:8px;border-bottom:1px solid #e5e7eb}.ct290-table td{font-size:10.5px;color:#334155;padding:8px;border-bottom:1px solid #f1f5f9;font-weight:750}.ct290-badge{display:inline-block;border-radius:999px;background:#eaf8ee;color:#08713b;padding:4px 8px;font-size:9px;font-weight:950}.ct290-badge.bad{background:#fee2e2;color:#991b1b}.ct290-badge.warn{background:#fff7ed;color:#9a3412}.ct290-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ct290-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}@media(max-width:430px){.ct290-phone{max-width:360px}.ct290-body{padding:14px 12px}.ct290-tile{height:72px}.ct290-tile i{font-size:22px}.ct290-tile .lbl{font-size:10px}.ct290-table{min-width:560px}}
+    </style>'''
+
+def _ct_badge_290(v):
+    s=(v or 'PENDIENTE').upper()
+    cls='bad' if s in ('NO APTO','RECHAZADO','BLOQUEADO','OBSERVADO') else ('warn' if s in ('PENDIENTE','POSTULANTE','EN PROCESO') else '')
+    return f"<span class='ct290-badge {cls}'>{s}</span>"
+
+def _ct_req_label_290(r):
+    return f"REQ-{int(r.get('id') or 0):03d} · {r.get('cargo') or '-'} · {r.get('area') or '-'}"
+
+def _ct_req_options_290(reqs, selected=''):
+    html=['<option value="">Seleccione requerimiento...</option>']
+    for r in reqs:
+        sel='selected' if str(r.get('id'))==str(selected) else ''
+        html.append(f"<option value='{r.get('id')}' {sel}>{_ct_req_label_290(r)}</option>")
+    return ''.join(html)
+
+@login_required
+def contratacion_home_290():
+    _contratacion_init_290()
+    total_req=int(scalar('SELECT COUNT(*) AS c FROM contratacion_requerimientos') or 0)
+    abiertos=int(scalar("SELECT COUNT(*) AS c FROM contratacion_requerimientos WHERE UPPER(COALESCE(estado,'ABIERTO')) NOT IN ('CERRADO','CANCELADO')") or 0)
+    postulantes=int(scalar('SELECT COUNT(*) AS c FROM contratacion_ingresos') or 0)
+    med_ok=int(scalar("SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE UPPER(COALESCE(medica_estado,'')) IN ('APTO','OK','COMPLETO')") or 0)
+    firma=int(scalar("SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE UPPER(COALESCE(firma_estado,'')) IN ('FIRMADO','COMPLETO','OK')") or 0)
+    body=_contratacion_css_290()+r'''
+    <div class="ct290-phone"><div class="ct290-app">
+      <div class="ct290-head"><a href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-person-plus"></i></div><div class="ttl">Módulo contratación</div></div>
+      <div class="ct290-body">
+        <div class="ct290-section">Gestión</div>
+        <div class="ct290-grid3">
+          <a class="ct290-tile" href="{{url_for('contratacion_requerimientos')}}"><i class="bi bi-clipboard2-plus"></i><span class="lbl">Requerim.</span><span class="sub">Cupos</span></a>
+          <a class="ct290-tile" href="{{url_for('contratacion_postulantes')}}"><i class="bi bi-person-lines-fill"></i><span class="lbl">Postulantes</span><span class="sub">DNI / datos</span></a>
+          <a class="ct290-tile" href="{{url_for('contratacion_etapa', etapa='medica')}}"><i class="bi bi-heart-pulse"></i><span class="lbl">Médica</span><span class="sub">Aptitud</span></a>
+          <a class="ct290-tile" href="{{url_for('contratacion_etapa', etapa='induccion')}}"><i class="bi bi-play-btn"></i><span class="lbl">Inducción</span><span class="sub">Asistencia</span></a>
+          <a class="ct290-tile" href="{{url_for('contratacion_etapa', etapa='indumentaria')}}"><i class="bi bi-bag-check"></i><span class="lbl">Indument.</span><span class="sub">EPP</span></a>
+          <a class="ct290-tile" href="{{url_for('contratacion_etapa', etapa='fotocheck')}}"><i class="bi bi-person-badge"></i><span class="lbl">Fotocheck</span><span class="sub">Carnet</span></a>
+        </div>
+        <div class="ct290-section" style="margin-top:16px">Operación</div>
+        <div class="ct290-grid2">
+          <a class="ct290-tile" href="{{url_for('contratacion_etapa', etapa='firma')}}"><i class="bi bi-pen"></i><span class="lbl">Firma / contrato</span><span class="sub">Documentos</span></a>
+          <a class="ct290-tile" href="{{url_for('contratacion_reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i><span class="lbl">Reportes</span><span class="sub">Control</span></a>
+        </div>
+        <div class="ct290-info"><i class="bi bi-info-circle"></i> Flujo: Requerimiento → Postulantes → Evaluación médica → Inducción → Indumentaria → Fotocheck → Firma/contrato.</div>
+        <div class="ct290-kpis"><div class="ct290-kpi"><small>Req.</small><b>{{total_req}}</b></div><div class="ct290-kpi"><small>Abiertos</small><b>{{abiertos}}</b></div><div class="ct290-kpi"><small>Postul.</small><b>{{postulantes}}</b></div></div>
+        <div class="ct290-kpis"><div class="ct290-kpi"><small>Méd. OK</small><b>{{med_ok}}</b></div><div class="ct290-kpi"><small>Firmados</small><b>{{firma}}</b></div><div class="ct290-kpi"><small>Hoy</small><b style="font-size:13px">{{hoy[5:]}}</b></div></div>
+      </div>
+    </div></div>'''
+    return render_page(body,total_req=total_req,abiertos=abiertos,postulantes=postulantes,med_ok=med_ok,firma=firma,hoy=today_str(),title='Contratación')
+
+@login_required
+def contratacion_requerimientos_290():
+    _contratacion_init_290()
+    if request.method=='POST':
+        fecha=request.form.get('fecha') or today_str(); empresa=limpiar_texto(request.form.get('empresa') or 'AQUANQA'); area=limpiar_texto(request.form.get('area')); cargo=limpiar_texto(request.form.get('cargo')); actividad=limpiar_texto(request.form.get('actividad'))
+        try: cantidad=int(request.form.get('cantidad') or 0)
+        except Exception: cantidad=0
+        if not area or not cargo or cantidad<=0:
+            flash('Ingrese área, cargo y cantidad.', 'danger'); return redirect(url_for('contratacion_requerimientos'))
+        estado=limpiar_texto(request.form.get('estado') or 'ABIERTO'); tipo=limpiar_texto(request.form.get('tipo_contrato') or 'TEMPORAL'); regimen=limpiar_texto(request.form.get('regimen_laboral') or 'AGRARIO')
+        execute('''INSERT INTO contratacion_requerimientos(fecha,codigo,empresa,area,cargo,actividad,cantidad,fecha_ingreso,tipo_contrato,regimen_laboral,estado,creado_por,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''', (fecha,'',empresa,area,cargo,actividad,cantidad,request.form.get('fecha_ingreso') or fecha,tipo,regimen,estado,session.get('usuario'),now_str()), commit=True)
+        rid=scalar('SELECT MAX(id) AS id FROM contratacion_requerimientos'); execute('UPDATE contratacion_requerimientos SET codigo=? WHERE id=?', (f'REQ-{int(rid or 0):03d}',rid), commit=True)
+        flash('Requerimiento creado correctamente.', 'success'); return redirect(url_for('contratacion_requerimientos'))
+    reqs=rows_to_dict(execute('''SELECT r.*, (SELECT COUNT(*) FROM contratacion_ingresos i WHERE i.requerimiento_id=r.id) AS registrados FROM contratacion_requerimientos r ORDER BY r.id DESC LIMIT 150''', fetchall=True))
+    body=_contratacion_css_290()+r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-clipboard2-plus"></i></div><div class="ttl">Requerimientos</div></div><div class="ct290-body">
+      <div class="ct290-kpis"><div class="ct290-kpi"><small>Total</small><b>{{reqs|length}}</b></div><div class="ct290-kpi"><small>Abiertos</small><b>{{abiertos}}</b></div><div class="ct290-kpi"><small>Cupos</small><b>{{cupos}}</b></div></div>
+      <form method="post" class="ct290-form"><div class="ct290-row"><div><label>Fecha</label><input class="form-control" type="date" name="fecha" value="{{hoy}}"></div><div><label>Cantidad</label><input class="form-control" type="number" name="cantidad" value="1" min="1"></div></div><div class="ct290-row mt-2"><div><label>Empresa</label><input class="form-control" name="empresa" placeholder="AQUANQA"></div><div><label>Área</label><input class="form-control" name="area" required></div></div><div class="ct290-row mt-2"><div><label>Cargo</label><input class="form-control" name="cargo" required></div><div><label>Actividad</label><input class="form-control" name="actividad"></div></div><div class="ct290-row mt-2"><div><label>Fecha ingreso</label><input class="form-control" type="date" name="fecha_ingreso" value="{{hoy}}"></div><div><label>Estado</label><select name="estado" class="form-select"><option>ABIERTO</option><option>CERRADO</option><option>CANCELADO</option></select></div></div><div class="ct290-row mt-2"><div><label>Tipo contrato</label><select name="tipo_contrato" class="form-select"><option>TEMPORAL</option><option>INTERMITENTE</option><option>INDETERMINADO</option></select></div><div><label>Régimen</label><select name="regimen_laboral" class="form-select"><option>AGRARIO</option><option>GENERAL</option></select></div></div><button class="ct290-btn mt-2"><i class="bi bi-plus-circle"></i> Crear requerimiento</button></form>
+      <input class="ct290-search" id="qreq290" placeholder="Buscar requerimiento..."><div class="ct290-tablewrap"><table id="tblreq290" class="ct290-table"><thead><tr><th>Código</th><th>Área</th><th>Cargo</th><th>Cupos</th><th>Registrados</th><th>Estado</th></tr></thead><tbody>{% for r in reqs %}<tr><td>{{r.codigo or ('REQ-%03d'%r.id)}}</td><td>{{r.area or '-'}}</td><td>{{r.cargo or '-'}}</td><td>{{r.cantidad or 0}}</td><td>{{r.registrados or 0}}</td><td>{{badge(r.estado)|safe}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin requerimientos.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div><script>(function(){const q=document.getElementById('qreq290'),t=document.getElementById('tblreq290'); if(q&&t)q.addEventListener('input',()=>{const s=q.value.toUpperCase();t.querySelectorAll('tbody tr').forEach(r=>r.style.display=r.innerText.toUpperCase().includes(s)?'':'none')});})();</script>'''
+    abiertos=sum(1 for r in reqs if (r.get('estado') or '').upper() not in ('CERRADO','CANCELADO')); cupos=sum(int(r.get('cantidad') or 0) for r in reqs)
+    return render_page(body, reqs=reqs, abiertos=abiertos, cupos=cupos, hoy=today_str(), badge=_ct_badge_290, title='Requerimientos')
+
+@login_required
+def contratacion_postulantes_290():
+    _contratacion_init_290()
+    req_id=request.args.get('req') or request.form.get('requerimiento_id') or ''
+    reqs=rows_to_dict(execute("SELECT * FROM contratacion_requerimientos WHERE UPPER(COALESCE(estado,'ABIERTO')) NOT IN ('CANCELADO') ORDER BY id DESC LIMIT 200", fetchall=True))
+    if request.method=='POST':
+        dni=limpiar_dni(request.form.get('dni')); req=row_to_dict(execute('SELECT * FROM contratacion_requerimientos WHERE id=?', (req_id,), fetchone=True)) if req_id else None
+        if not req: flash('Seleccione requerimiento.', 'danger'); return redirect(url_for('contratacion_postulantes'))
+        if len(dni)!=8: flash('DNI inválido.', 'danger'); return redirect(url_for('contratacion_postulantes', req=req_id))
+        if scalar('SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE requerimiento_id=? AND dni=?', (req_id,dni)):
+            flash('Este DNI ya está registrado en el requerimiento.', 'danger'); return redirect(url_for('contratacion_postulantes', req=req_id))
+        ocupados=int(scalar('SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE requerimiento_id=?', (req_id,)) or 0)
+        if int(req.get('cantidad') or 0) and ocupados >= int(req.get('cantidad') or 0): flash('Cupo completo para este requerimiento.', 'danger'); return redirect(url_for('contratacion_postulantes', req=req_id))
+        base=row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True)) or {}; nombres=limpiar_texto(request.form.get('nombres') or base.get('trabajador'))
+        if not nombres: flash('Ingrese nombres del postulante.', 'danger'); return redirect(url_for('contratacion_postulantes', req=req_id))
+        execute('''INSERT INTO contratacion_ingresos(requerimiento_id,requerimiento,dni,nombres,telefono,correo,empresa,area,cargo,actividad,tipo_contrato,regimen_laboral,fecha_inicio,fecha_fin,basico,estado,creado_por,creado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (req_id, req.get('codigo') or f'REQ-{int(req_id):03d}', dni, nombres, request.form.get('telefono',''), request.form.get('correo',''), req.get('empresa'), req.get('area'), req.get('cargo'), req.get('actividad'), req.get('tipo_contrato'), req.get('regimen_laboral'), req.get('fecha_ingreso') or today_str(), request.form.get('fecha_fin',''), float(request.form.get('basico') or 0), 'POSTULANTE', session.get('usuario'), now_str()), commit=True)
+        flash('Postulante registrado correctamente.', 'success'); return redirect(url_for('contratacion_postulantes', req=req_id))
+    posts=rows_to_dict(execute('''SELECT * FROM contratacion_ingresos WHERE (?='' OR requerimiento_id=?) ORDER BY id DESC LIMIT 250''', (str(req_id),str(req_id)), fetchall=True))
+    body=_contratacion_css_290()+r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-person-lines-fill"></i></div><div class="ttl">Postulantes</div></div><div class="ct290-body"><form method="get" class="ct290-form"><label>Requerimiento</label><select class="form-select" name="req" onchange="this.form.submit()">{{req_opts|safe}}</select></form>
+      <form method="post" class="ct290-form" id="frmPost290"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><div class="ct290-row"><div><label>DNI</label><input class="form-control" name="dni" id="dniPost290" maxlength="8" inputmode="numeric" required></div><div><label>Nombres</label><input class="form-control" name="nombres" id="nomPost290" required></div></div><div class="ct290-row mt-2"><div><label>Teléfono</label><input class="form-control" name="telefono"></div><div><label>Correo</label><input class="form-control" name="correo" type="email"></div></div><div class="ct290-row mt-2"><div><label>Básico</label><input class="form-control" name="basico" type="number" step="0.01"></div><div><label>Fin contrato</label><input class="form-control" name="fecha_fin" type="date"></div></div><div id="stPost290" class="ct290-mini mt-2">Digite DNI de 8 dígitos para buscar en trabajadores.</div><button class="ct290-btn mt-2"><i class="bi bi-person-plus"></i> Registrar postulante</button></form>
+      <input class="ct290-search" id="qpost290" placeholder="Buscar DNI / postulante..."><div class="ct290-tablewrap"><table id="tblpost290" class="ct290-table"><thead><tr><th>DNI</th><th>Postulante</th><th>Req.</th><th>Cargo</th><th>Médica</th><th>Firma</th></tr></thead><tbody>{% for p in posts %}<tr><td>{{p.dni}}</td><td>{{p.nombres}}</td><td>{{p.requerimiento}}</td><td>{{p.cargo or '-'}}</td><td>{{badge(p.medica_estado)|safe}}</td><td>{{badge(p.firma_estado)|safe}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin postulantes.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div><script>(function(){const q=document.getElementById('qpost290'),t=document.getElementById('tblpost290'); if(q&&t)q.addEventListener('input',()=>{const s=q.value.toUpperCase();t.querySelectorAll('tbody tr').forEach(r=>r.style.display=r.innerText.toUpperCase().includes(s)?'':'none')}); const i=document.getElementById('dniPost290'),n=document.getElementById('nomPost290'),st=document.getElementById('stPost290'); async function buscar(){const d=String(i.value||'').replace(/\D/g,'').slice(-8);i.value=d;if(d.length<8)return;st.innerHTML='Buscando DNI '+d+'...';try{let r=await fetch('/api/trabajador/'+d,{cache:'no-store'});let j=await r.json();if(j.ok){n.value=j.trabajador.trabajador||'';st.innerHTML='✓ Datos encontrados en trabajadores.';if(typeof beep==='function')beep();}else{st.innerHTML='No está en trabajadores. Puede digitar nombre manualmente.';}}catch(e){st.innerHTML='No se pudo consultar trabajadores.';}} if(i){i.addEventListener('input',buscar);}})();</script>'''
+    return render_page(body, reqs=reqs, posts=posts, req_id=req_id, req_opts=_ct_req_options_290(reqs, req_id), badge=_ct_badge_290, title='Postulantes')
+
+_ETAPAS_290={'medica':('Evaluación médica','heart-pulse','medica_estado',['PENDIENTE','APTO','NO APTO','OBSERVADO']),'induccion':('Inducción','play-btn','induccion_estado',['PENDIENTE','ASISTIÓ','NO ASISTIÓ','OBSERVADO']),'indumentaria':('Indumentaria','bag-check','indumentaria_estado',['PENDIENTE','ENTREGADO','OBSERVADO']),'fotocheck':('Fotocheck','person-badge','fotocheck_estado',['PENDIENTE','GENERADO','IMPRESO','ENTREGADO']),'firma':('Firma / contrato','pen','firma_estado',['PENDIENTE','GENERADO','ENVIADO','FIRMADO','OBSERVADO'])}
+
+@login_required
+def contratacion_etapa_290(etapa):
+    _contratacion_init_290()
+    if etapa not in _ETAPAS_290: return redirect(url_for('contratacion_home'))
+    titulo, icono, col, estados=_ETAPAS_290[etapa]; req_id=request.args.get('req') or request.form.get('requerimiento_id') or ''
+    reqs=rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 200', fetchall=True))
+    if request.method=='POST':
+        dni=limpiar_dni(request.form.get('dni')); estado=limpiar_texto(request.form.get('estado') or 'PENDIENTE'); obs=limpiar_texto(request.form.get('observacion'), upper=False)
+        where='dni=?' + (' AND requerimiento_id=?' if req_id else ''); params=[dni] + ([req_id] if req_id else [])
+        if len(dni)!=8: flash('DNI inválido.', 'danger'); return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+        if not scalar(f'SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE {where}', tuple(params)):
+            flash('El DNI no está registrado como postulante en el requerimiento.', 'danger'); return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+        execute(f"UPDATE contratacion_ingresos SET {col}=?, observacion=? WHERE {where}", tuple([estado,obs]+params), commit=True)
+        flash(f'{titulo}: estado actualizado para {dni}.', 'success'); return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+    posts=rows_to_dict(execute('''SELECT * FROM contratacion_ingresos WHERE (?='' OR requerimiento_id=?) ORDER BY id DESC LIMIT 250''', (str(req_id),str(req_id)), fetchall=True))
+    pendientes=sum(1 for p in posts if (p.get(col) or '').upper() in ('PENDIENTE','POSTULANTE','')); ok=sum(1 for p in posts if (p.get(col) or '').upper() not in ('PENDIENTE','POSTULANTE','','NO APTO','OBSERVADO','NO ASISTIÓ'))
+    opts=''.join([f'<option>{e}</option>' for e in estados])
+    body=_contratacion_css_290()+r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-{{icono}}"></i></div><div class="ttl">{{titulo}}</div></div><div class="ct290-body"><div class="ct290-kpis"><div class="ct290-kpi"><small>Total</small><b>{{posts|length}}</b></div><div class="ct290-kpi"><small>OK</small><b>{{ok}}</b></div><div class="ct290-kpi"><small>Pend.</small><b>{{pendientes}}</b></div></div>
+      <form method="get" class="ct290-form"><label>Requerimiento</label><select class="form-select" name="req" onchange="this.form.submit()">{{req_opts|safe}}</select></form><form method="post" class="ct290-form"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><div class="ct290-row"><div><label>DNI postulante</label><input class="form-control" name="dni" maxlength="8" inputmode="numeric" required></div><div><label>Estado</label><select name="estado" class="form-select">{{opts|safe}}</select></div></div><div class="mt-2"><label>Observación</label><input class="form-control" name="observacion"></div><button class="ct290-btn mt-2"><i class="bi bi-check-circle"></i> Actualizar estado</button></form>
+      <input class="ct290-search" id="qet290" placeholder="Buscar DNI / trabajador..."><div class="ct290-tablewrap"><table id="tblet290" class="ct290-table"><thead><tr><th>DNI</th><th>Postulante</th><th>Req.</th><th>Cargo</th><th>Estado etapa</th></tr></thead><tbody>{% for p in posts %}<tr><td>{{p.dni}}</td><td>{{p.nombres}}</td><td>{{p.requerimiento}}</td><td>{{p.cargo or '-'}}</td><td>{{badge(p[col])|safe}}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Sin postulantes.</td></tr>{% endfor %}</tbody></table></div></div></div></div><script>(function(){const q=document.getElementById('qet290'),t=document.getElementById('tblet290'); if(q&&t)q.addEventListener('input',()=>{const s=q.value.toUpperCase();t.querySelectorAll('tbody tr').forEach(r=>r.style.display=r.innerText.toUpperCase().includes(s)?'':'none')});})();</script>'''
+    return render_page(body, etapa=etapa,titulo=titulo,icono=icono,posts=posts,req_id=req_id,req_opts=_ct_req_options_290(reqs, req_id),opts=opts,badge=_ct_badge_290,col=col,ok=ok,pendientes=pendientes,title=titulo)
+
+@login_required
+def contratacion_reportes_290():
+    _contratacion_init_290()
+    total_req=int(scalar('SELECT COUNT(*) AS c FROM contratacion_requerimientos') or 0); total_post=int(scalar('SELECT COUNT(*) AS c FROM contratacion_ingresos') or 0)
+    med_ok=int(scalar("SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE UPPER(COALESCE(medica_estado,'')) IN ('APTO','OK','COMPLETO')") or 0); indu_ok=int(scalar("SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE UPPER(COALESCE(induccion_estado,'')) IN ('ASISTIÓ','ASISTIO','OK','COMPLETO')") or 0); foto_ok=int(scalar("SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE UPPER(COALESCE(fotocheck_estado,'')) IN ('GENERADO','IMPRESO','ENTREGADO','OK')") or 0); firm_ok=int(scalar("SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE UPPER(COALESCE(firma_estado,'')) IN ('FIRMADO','OK','COMPLETO')") or 0)
+    rows=rows_to_dict(execute('SELECT * FROM contratacion_ingresos ORDER BY id DESC LIMIT 250', fetchall=True))
+    body=_contratacion_css_290()+r'''<div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-file-earmark-bar-graph"></i></div><div class="ttl">Reportes contratación</div></div><div class="ct290-body"><div class="ct290-kpis"><div class="ct290-kpi"><small>Req.</small><b>{{total_req}}</b></div><div class="ct290-kpi"><small>Post.</small><b>{{total_post}}</b></div><div class="ct290-kpi"><small>Méd.</small><b>{{med_ok}}</b></div></div><div class="ct290-kpis"><div class="ct290-kpi"><small>Induc.</small><b>{{indu_ok}}</b></div><div class="ct290-kpi"><small>Foto.</small><b>{{foto_ok}}</b></div><div class="ct290-kpi"><small>Firma</small><b>{{firm_ok}}</b></div></div><a class="ct290-outline mb-2" href="{{url_for('contratacion_export_postulantes')}}"><i class="bi bi-file-earmark-excel"></i> Exportar Excel</a><input class="ct290-search" id="qrep290" placeholder="Buscar DNI / trabajador / cargo..."><div class="ct290-tablewrap"><table id="tblrep290" class="ct290-table"><thead><tr><th>DNI</th><th>Postulante</th><th>Cargo</th><th>Médica</th><th>Inducción</th><th>Firma</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{{r.cargo or '-'}}</td><td>{{badge(r.medica_estado)|safe}}</td><td>{{badge(r.induccion_estado)|safe}}</td><td>{{badge(r.firma_estado)|safe}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin datos.</td></tr>{% endfor %}</tbody></table></div></div></div></div><script>(function(){const q=document.getElementById('qrep290'),t=document.getElementById('tblrep290'); if(q&&t)q.addEventListener('input',()=>{const s=q.value.toUpperCase();t.querySelectorAll('tbody tr').forEach(r=>r.style.display=r.innerText.toUpperCase().includes(s)?'':'none')});})();</script>'''
+    return render_page(body,total_req=total_req,total_post=total_post,med_ok=med_ok,indu_ok=indu_ok,foto_ok=foto_ok,firm_ok=firm_ok,rows=rows,badge=_ct_badge_290,title='Reportes contratación')
+
+@login_required
+def contratacion_export_postulantes_290():
+    _contratacion_init_290(); rows=rows_to_dict(execute('SELECT dni,nombres,requerimiento,empresa,area,cargo,actividad,medica_estado,induccion_estado,indumentaria_estado,fotocheck_estado,firma_estado,estado,creado_en FROM contratacion_ingresos ORDER BY id DESC', fetchall=True))
+    headers=['dni','nombres','requerimiento','empresa','area','cargo','actividad','medica_estado','induccion_estado','indumentaria_estado','fotocheck_estado','firma_estado','estado','creado_en']; return excel_response(headers, rows, 'contratacion_postulantes.xlsx', 'CONTRATACION')
+
+def home_290():
+    if not session.get('usuario'): return redirect(url_for('inicio'))
+    hojas = rows_to_dict(execute('SELECT * FROM hojas_tareo ORDER BY fecha DESC, id DESC LIMIT 8', fetchall=True))
+    body = """
+    <div class="desktop-grid"><div class="phone-wrap"><div class="green-hero" style="min-height:220px"><div class="green-top"><a class="text-white text-decoration-none" href="{{url_for('soporte')}}"><i class="bi bi-headset"></i> Soporte</a>{% if session.get('rol')=='admin' %}<a class="text-white text-decoration-none" href="{{url_for('configuraciones')}}"><i class="bi bi-gear"></i> Config.</a>{% else %}<span></span>{% endif %}</div><div class="avatar"><i class="bi bi-person-circle"></i></div><div class="login-name">{{ session.get('nombres','USUARIO') }}</div><div class="white-input mt-3"></div></div><div class="top-actions"><a class="tile text-decoration-none" href="{{url_for('hojas_tareo')}}"><i class="bi bi-list-check"></i>TAREO</a><a class="tile text-decoration-none" href="{{url_for('asistencia_modulo')}}"><i class="bi bi-fingerprint"></i>ASIST.</a><a class="tile text-decoration-none" href="{{url_for('documentos_firma')}}"><i class="bi bi-pen"></i>FIRMAS</a><a class="tile text-decoration-none" href="{{url_for('transporte')}}"><i class="bi bi-bus-front"></i>TRANSP.</a><a class="tile text-decoration-none" href="{{url_for('contratacion_home')}}"><i class="bi bi-person-plus"></i>CONTRAT.</a><a class="tile text-decoration-none" href="{{url_for('reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i>REPORTES<br>TAREO</a><a class="tile text-decoration-none" href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-repeat"></i>SINC.</a></div><div class="leaf"></div><div class="bottom-sync"><i class="bi bi-arrow-repeat"></i> Sincronizar Tablas Maestras<br>Actualizado hasta: {{ now }}</div><a href="{{url_for('logout')}}" class="bottom-out"><i class="bi bi-box-arrow-right"></i></a></div><div class="desk-panel"><h1 class="header-title">TAREO MÓVIL – GRUPO DE COSECHA</h1><div class="card-pro p-4 mb-3"><div class="d-flex justify-content-between align-items-center"><div><h4 class="fw-bold text-success mb-1">Hojas recientes</h4><div class="text-muted small">Crea una hoja y registra labores, trabajadores y avances.</div></div><a class="btn btn-green" href="{{url_for('crear_hoja')}}"><i class="bi bi-plus-lg"></i> Crear hoja</a></div></div><div class="card-pro p-3"><div class="table-responsive"><table class="table list-table"><thead><tr><th>Fecha</th><th>Grupo</th><th>Subgrupo</th><th>Labor</th><th>Responsable</th><th>Estado</th><th></th></tr></thead><tbody>{% for h in hojas %}<tr><td>{{h.fecha}}</td><td>{{h.grupo}}</td><td>{{h.subgrupo}}</td><td>{{h.labor}}</td><td>{{h.responsable}}</td><td><span class="status-pill">{{h.estado}}</span></td><td><a class="btn btn-sm btn-green" href="{{url_for('detalle_hoja', hoja_id=h.id)}}">Abrir</a></td></tr>{% else %}<tr><td colspan="7" class="text-center text-muted py-4">Sin hojas creadas.</td></tr>{% endfor %}</tbody></table></div></div></div></div>"""
+    return render_page(body, hojas=hojas, now=now_str())
+
+try:
+    app.add_url_rule('/contratacion', 'contratacion_home', contratacion_home_290, methods=['GET'])
+    app.add_url_rule('/contratacion/requerimientos', 'contratacion_requerimientos', contratacion_requerimientos_290, methods=['GET','POST'])
+    app.add_url_rule('/contratacion/postulantes', 'contratacion_postulantes', contratacion_postulantes_290, methods=['GET','POST'])
+    app.add_url_rule('/contratacion/etapa/<etapa>', 'contratacion_etapa', contratacion_etapa_290, methods=['GET','POST'])
+    app.add_url_rule('/contratacion/reportes', 'contratacion_reportes', contratacion_reportes_290, methods=['GET'])
+    app.add_url_rule('/contratacion/export/postulantes', 'contratacion_export_postulantes', contratacion_export_postulantes_290, methods=['GET'])
+except Exception as e:
+    print('Rutas contratación 290:', e)
+app.view_functions['home'] = home_290
+# ======================= FIN PATCH CONTRATACIÓN OMAR 290 =======================
+
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
