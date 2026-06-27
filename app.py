@@ -4551,6 +4551,644 @@ app.view_functions['conductor_movil_ruta'] = conductor_movil_ruta_283
 # ======================= FIN PATCH TRANSPORTE OMAR 283 =======================
 
 
+# ========================= PATCH TRANSPORTE OMAR 284 =========================
+# 1) Vista móvil conductor más compacta.
+# 2) Al salir de abordaje/submódulos vuelve a Módulo Transporte, no al login genérico.
+# 3) Se preserva la sesión ADMIN al probar ingreso como conductor y se refuerza la relación Conductor ↔ Bus ↔ Ruta.
+
+def _trans_can_open_284():
+    return bool(session.get('usuario') or session.get('conductor_id'))
+
+
+def _movil_cond_284_css():
+    return r"""
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}
+      .shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:6px 8px 24px!important;background:#fff!important}
+      .phone-wrap{max-width:390px!important;width:100%!important;margin:0 auto!important}
+      .mv284-card{background:#fff;border:1px solid #e4e8e4;border-radius:14px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07);margin:6px auto 12px}
+      .mv284-head{height:62px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}
+      .mv284-head a{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:31px;line-height:1}
+      .mv284-head .ttl{font-size:16px;font-weight:950;letter-spacing:.15px;color:#fff;text-align:center}
+      .mv284-body{padding:12px 12px 14px;background:#fff}
+      .mv284-info{border:1px solid #b8d7ff;background:#eef6ff;color:#0b2e83;border-radius:10px;padding:10px 11px;font-size:12px;font-weight:900;line-height:1.42;margin-bottom:10px}
+      .mv284-ok{border:1px solid #bbf7d0;background:#ecfdf5;color:#065f2a;border-radius:10px;padding:9px 10px;font-size:12px;font-weight:900;line-height:1.4;margin-bottom:11px}
+      .mv284-section{font-size:13px;font-weight:950;color:#08713b;text-transform:uppercase;margin:6px 1px 8px}
+      .mv284-route{display:grid;grid-template-columns:34px 1fr 17px;gap:9px;align-items:center;text-decoration:none;color:#102a43!important;border:1px solid #dfe7df;background:#fff;border-radius:11px;padding:12px 10px;margin:7px 0;box-shadow:0 4px 10px rgba(0,0,0,.04)}
+      .mv284-route i.bus{font-size:23px;color:#08713b}
+      .mv284-route .name{font-size:14px;font-weight:950;color:#0a1f44;line-height:1.1}
+      .mv284-route .meta{font-size:11px;font-weight:900;color:#0a1f44;margin-top:3px}
+      .mv284-route .chev{font-size:21px;color:#111}
+      .mv284-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 12px}
+      .mv284-kpi{background:#10964e;color:#fff;border-radius:8px;text-align:center;padding:8px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}
+      .mv284-kpi small{display:block;font-size:10px;font-weight:950;line-height:1.08;color:#effff3}
+      .mv284-kpi b{display:block;font-size:21px;line-height:1.05;font-weight:950;color:#fff;margin-top:4px}
+      .mv284-routebox{border:1px solid #b8d7ff;background:#eaf3ff;color:#0b2e83;border-radius:10px;padding:10px 11px;font-size:12px;font-weight:900;line-height:1.42;margin-bottom:10px}
+      .mv284-routebox .label{font-size:12px;color:#0b2e83;text-transform:uppercase}
+      .mv284-routebox .route-title{font-size:14px;color:#0b2e83;font-weight:950}
+      .mv284-form{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:11px;margin-bottom:10px}
+      .mv284-form label{font-size:12px;font-weight:950;color:#176a35;margin-bottom:5px}
+      .mv284-form .input-group .form-control{height:40px;border-radius:10px 0 0 10px!important;font-size:13px;font-weight:850}
+      .mv284-camera{min-width:54px;background:#08713b!important;color:#fff!important;border-color:#08713b!important;border-radius:0 10px 10px 0!important}
+      .mv284-btn{height:41px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff;font-weight:950;font-size:13px;width:100%}
+      .mv284-btn:hover{background:#065f2a;color:#fff}
+      .mv284-outline{height:41px;border-radius:10px;background:#fff;border:1px solid #08713b;color:#08713b;font-weight:900;font-size:13px;width:100%}
+      .mv284-tablewrap{border:1px solid #e5e7eb;border-radius:10px;overflow-x:auto;background:#fff;scrollbar-color:#08713b #e5e7eb}
+      .mv284-tablewrap::-webkit-scrollbar{height:8px}.mv284-tablewrap::-webkit-scrollbar-thumb{background:#08713b;border-radius:999px}.mv284-tablewrap::-webkit-scrollbar-track{background:#e5e7eb}
+      .mv284-table{width:100%;min-width:460px;border-collapse:collapse}
+      .mv284-table th{background:#f8fafc;color:#12223b;font-size:12px;font-weight:950;padding:8px;border-bottom:1px solid #e5e7eb}
+      .mv284-table td{font-size:11.5px;color:#334155;padding:8px;border-bottom:1px solid #f1f5f9}
+      .mv284-quick{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:12px;text-align:center;color:#1f3b2a}
+      .scan-ok,.scan-bad,.field-help{font-size:12px!important;font-weight:900!important}
+      .scan-ok{background:#ecfdf5!important;border:1px solid #bbf7d0!important;color:#065f2a!important;border-radius:9px!important;padding:8px 10px!important}
+      .scan-bad{background:#fee2e2!important;border:1px solid #fecaca!important;color:#991b1b!important;border-radius:9px!important;padding:8px 10px!important}
+      .field-help{color:#4a644f!important;margin-top:5px}.flash{animation:mv284flash .3s ease}@keyframes mv284flash{0%{transform:scale(.99)}60%{transform:scale(1.01)}100%{transform:scale(1)}}
+      .tr284-rel{margin-top:16px;border:1px solid #cfe4d6;background:#f7fff8;border-radius:12px;padding:11px 12px;color:#1f3b2a;box-shadow:0 5px 12px rgba(0,0,0,.04)}
+      .tr284-rel .ttl{font-size:13px;font-weight:950;color:#08713b;margin-bottom:6px;text-transform:uppercase}
+      .tr284-rel .line{font-size:12px;font-weight:900;line-height:1.45}
+      .tr284-rel .muted{font-size:11px;color:#486156;font-weight:800;line-height:1.35;margin-top:4px}
+      .tr284-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:12px}
+      .tr284-kpi{background:#0d8f47;color:#fff;border-radius:10px;text-align:center;padding:8px 5px;box-shadow:0 8px 14px rgba(13,143,71,.16)}
+      .tr284-kpi small{display:block;font-size:10px;font-weight:900;line-height:1.1}.tr284-kpi b{display:block;font-size:20px;font-weight:950;line-height:1.05;margin-top:4px}
+    </style>
+    """
+
+
+def transporte_home_284():
+    if not _trans_can_open_284():
+        flash('Inicie sesión para ingresar a Transporte.', 'danger')
+        return redirect(url_for('login'))
+    total_cond = int(scalar('SELECT COUNT(*) AS c FROM transporte_conductores') or 0)
+    total_bus = int(scalar('SELECT COUNT(*) AS c FROM transporte_vehiculos') or 0)
+    total_rutas = int(scalar('SELECT COUNT(*) AS c FROM transporte_rutas') or 0)
+    rutas_rel = int(scalar('SELECT COUNT(*) AS c FROM transporte_rutas WHERE conductor_id IS NOT NULL AND vehiculo_id IS NOT NULL') or 0)
+    sin_rel = max(0, total_rutas - rutas_rel)
+    back_target = url_for('home') if session.get('usuario') else url_for('conductor_movil_panel')
+    body = _transporte_ui_280_css() + _movil_cond_284_css() + r"""
+    <div class="tr279-phone">
+      <div class="tr279-app">
+        <div class="tr279-hero">
+          <a class="tr279-back" href="{{back_target}}"><i class="bi bi-chevron-left"></i></a>
+          {% if session.get('usuario') %}<a class="tr279-config" href="{{url_for('transporte_config')}}"><i class="bi bi-gear"></i> Config.</a>{% endif %}
+          <div class="tr279-bus"><i class="bi bi-bus-front-fill"></i></div>
+          <div class="tr279-title">Módulo Transporte</div>
+        </div>
+        <div class="tr279-body">
+          {% if session.get('usuario') %}
+          <div class="tr279-section">Módulos</div>
+          <div class="tr279-grid3">
+            <a class="tr279-tile" href="{{url_for('transporte_conductores')}}"><i class="bi bi-person-vcard"></i><span class="lbl">Conductores</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_vehiculos')}}"><i class="bi bi-bus-front"></i><span class="lbl">Buses</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_rutas')}}"><i class="bi bi-geo-alt"></i><span class="lbl">Rutas</span></a>
+          </div>
+          {% endif %}
+          <div class="tr279-section op">Operación</div>
+          <div class="tr279-grid2">
+            <a class="tr279-tile" href="{{url_for('transporte_mapa_general')}}"><i class="bi bi-pin-map"></i><span class="lbl">GPS / Seguimiento</span><span class="sub">Ver ubicación</span></a>
+            <a class="tr279-tile" href="{{url_for('transporte_mobile_home')}}"><i class="bi bi-phone"></i><span class="lbl">Móvil conductor</span><span class="sub">Abordaje y GPS</span></a>
+          </div>
+          <div class="tr279-info"><i class="bi bi-info-circle-fill"></i><div>Flujo correcto: primero crea el usuario/PIN en <b>Conductores</b>, luego registra el <b>Bus</b>, después crea la <b>Ruta</b> asignando <b>conductor + bus</b>. Recién allí el conductor entra a <b>Móvil conductor</b> para abordar y enviar GPS.</div></div>
+          <div class="tr284-kpis">
+            <div class="tr284-kpi"><small>Conductores</small><b>{{total_cond}}</b></div>
+            <div class="tr284-kpi"><small>Buses</small><b>{{total_bus}}</b></div>
+            <div class="tr284-kpi"><small>Rutas</small><b>{{total_rutas}}</b></div>
+          </div>
+          <div class="tr284-rel">
+            <div class="ttl">Relación conductor ↔ bus ↔ ruta</div>
+            <div class="line"><b>{{rutas_rel}}</b> ruta(s) ya están completas con <b>conductor + bus</b>.</div>
+            <div class="line"><b>{{sin_rel}}</b> ruta(s) aún requieren completar la relación.</div>
+            <div class="muted">Si desea que el abordaje funcione perfecto, cada ruta debe tener conductor asignado y, de preferencia, bus/capacidad definida.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+    return render_page(body, back_target=back_target, total_cond=total_cond, total_bus=total_bus, total_rutas=total_rutas, rutas_rel=rutas_rel, sin_rel=sin_rel, title='Módulo Transporte')
+
+
+def conductor_movil_login_284():
+    if request.method == 'POST':
+        dni = limpiar_dni(request.form.get('dni'))
+        pin = (request.form.get('pin') or '').strip()
+        if len(dni) != 8 or str(dni).upper() == 'ADMIN':
+            flash('Solo conductores: ingrese DNI de 8 dígitos. No usar ADMIN.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        if not pin:
+            flash('Ingrese su PIN móvil.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        c = row_to_dict(execute("""SELECT * FROM transporte_conductores
+                                 WHERE dni=? AND COALESCE(movil_pin,'')=?
+                                 AND COALESCE(movil_estado,'ACTIVO')='ACTIVO'
+                                 AND COALESCE(estado,'ACTIVO') NOT IN ('INACTIVO','BLOQUEADO')""", (dni, pin), fetchone=True))
+        if not c:
+            flash('DNI o PIN incorrecto, bloqueado o no creado en Transporte > Conductores.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        session['conductor_id'] = c.get('id')
+        session['conductor_dni'] = c.get('dni')
+        session['conductor_nombre'] = c.get('nombres') or c.get('dni')
+        flash('Bienvenido conductor. Ya puede registrar abordaje y GPS.', 'success')
+        return redirect(url_for('conductor_movil_panel'))
+    body = r"""
+    <div class="phone-wrap">
+      <div class="page-card" style="border-radius:14px;overflow:hidden;margin-top:16px">
+        <div class="green-hero" style="min-height:128px;border-radius:0;padding:18px 16px 38px">
+          <a href="{{url_for('transporte')}}" style="position:absolute;left:18px;top:23px;color:white;font-size:38px;text-decoration:none"><i class="bi bi-chevron-left"></i></a>
+          <div style="font-size:34px"><i class="bi bi-phone"></i></div>
+          <div style="font-family:Georgia,serif;font-weight:900;font-size:13px;margin-top:4px">ACCESO MÓVIL CONDUCTOR</div>
+        </div>
+        <div class="floating-card" style="margin:-30px 12px 14px;border-radius:12px;padding:16px">
+          <div class="alert alert-light" style="border:1px solid #dbe3db;color:#24405f;line-height:1.45"><b>Solo conductores:</b> ingrese DNI del conductor + PIN móvil creado en Transporte &gt; Conductores. No usar ADMIN.</div>
+          <form method="post" id="frmMovilCond284">
+            <label class="form-label">DNI conductor</label>
+            <input name="dni" id="dniMovCond284" class="form-control mb-3" inputmode="numeric" maxlength="8" pattern="\d{8}" placeholder="Ingrese DNI" required autocomplete="username" autofocus>
+            <label class="form-label">PIN móvil</label>
+            <input name="pin" class="form-control mb-3" type="password" placeholder="PIN" required autocomplete="current-password">
+            <button class="btn btn-green w-100" style="font-size:19px;height:47px">INGRESAR</button>
+          </form>
+          {% if session.get('usuario') %}
+          <a class="btn btn-outline-success w-100 mt-2" href="{{url_for('transporte_conductores')}}">Crear / resetear PIN</a>
+          {% endif %}
+          <a class="btn btn-outline-secondary w-100 mt-2" href="{{url_for('transporte')}}">Volver</a>
+        </div>
+      </div>
+    </div>
+    <script>(function(){const i=document.getElementById('dniMovCond284'); if(i){i.addEventListener('input',()=>{i.value=String(i.value||'').replace(/\D/g,'').slice(-8);});}})();</script>
+    """
+    return render_page(body, title='Acceso móvil conductor')
+
+
+def conductor_movil_panel_284():
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+    cid = session.get('conductor_id')
+    hoy = today_str()
+    rutas = rows_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor
+                                  FROM transporte_rutas r
+                                  LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                  LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                                  WHERE r.conductor_id=?
+                                    AND (r.fecha>=? OR UPPER(COALESCE(r.estado,'')) IN ('PROGRAMADA','EN RUTA'))
+                                  ORDER BY CASE WHEN r.fecha=? THEN 0 ELSE 1 END,
+                                           r.fecha DESC, r.hora_salida ASC, r.id DESC LIMIT 50""", (cid, hoy, hoy), fetchall=True))
+    ruta_ids = [str(r.get('id')) for r in rutas if r.get('id')]
+    abordados_hoy = 0
+    rutas_con_abordaje = 0
+    if ruta_ids:
+        marks = ','.join(['?'] * len(ruta_ids))
+        abordados_hoy = scalar(f"SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE fecha=? AND ruta_id IN ({marks})", tuple([hoy] + ruta_ids))
+        rutas_con_abordaje = scalar(f"SELECT COUNT(DISTINCT ruta_id) AS c FROM transporte_pasajeros WHERE fecha=? AND ruta_id IN ({marks})", tuple([hoy] + ruta_ids))
+    pendientes = max(0, len(rutas) - int(rutas_con_abordaje or 0))
+    body = _movil_cond_284_css() + r"""
+    <div class="phone-wrap"><div class="mv284-card">
+      <div class="mv284-head"><a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Abordaje trabajadores</div></div>
+      <div class="mv284-body">
+        <div class="mv284-info">Seleccione una ruta y luego escanee QR / código de barras o digite DNI manualmente.</div>
+        <div class="mv284-ok"><i class="bi bi-check-circle"></i> Lectura habilitada: QR, código de barras y DNI manual. La cámara se abre dentro de cada ruta.</div>
+        <div class="mv284-section">Rutas disponibles</div>
+        {% for r in rutas %}
+          <a class="mv284-route" href="{{url_for('conductor_movil_ruta', ruta_id=r.id)}}">
+            <i class="bi bi-bus-front bus"></i>
+            <div><div class="name">{{r.nombre or 'RUTA'}}</div><div class="meta">{{r.placa or 'SIN BUS'}} · {{r.hora_salida or '-'}} · {{r.conductor or session.get('conductor_nombre') or '-'}}</div></div>
+            <i class="bi bi-chevron-right chev"></i>
+          </a>
+        {% else %}
+          <div class="mv284-quick">
+            <b>No hay ruta asignada a este conductor.</b><br>
+            <small>El login está correcto. El abordaje aparece cuando ADMIN crea una ruta y asigna este conductor.</small>
+            <form method="post" action="{{url_for('conductor_movil_ruta_rapida')}}" class="mt-2"><button class="mv284-btn" type="submit"><i class="bi bi-plus-circle"></i> Crear ruta rápida y abrir abordaje</button></form>
+            <div class="field-help mt-2">Ruta rápida no asigna bus. Para control completo: ADMIN &gt; Movilidad &gt; Rutas.</div>
+          </div>
+        {% endfor %}
+        <div class="mv284-kpis"><div class="mv284-kpi"><small>Rutas visibles</small><b>{{rutas|length}}</b></div><div class="mv284-kpi"><small>Abordados hoy</small><b>{{abordados_hoy}}</b></div><div class="mv284-kpi"><small>Pendientes</small><b>{{pendientes}}</b></div></div>
+      </div>
+    </div></div>
+    """
+    return render_page(body, rutas=rutas, abordados_hoy=abordados_hoy, pendientes=pendientes, title='Abordaje trabajadores')
+
+
+def conductor_movil_ruta_284(ruta_id):
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+    if not _trans_is_allowed_281(ruta_id):
+        flash('Esta ruta no está asignada a su usuario conductor.', 'danger')
+        return redirect(url_for('conductor_movil_panel'))
+    ruta = row_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor
+                                FROM transporte_rutas r
+                                LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                                WHERE r.id=?""", (ruta_id,), fetchone=True))
+    if not ruta:
+        flash('Ruta no encontrada.', 'danger')
+        return redirect(url_for('conductor_movil_panel'))
+    pasajeros = rows_to_dict(execute('SELECT * FROM transporte_pasajeros WHERE ruta_id=? ORDER BY fecha_hora DESC', (ruta_id,), fetchall=True))
+    ocupados = len(pasajeros)
+    capacidad = int((ruta or {}).get('capacidad') or 0)
+    libres = max(0, capacidad - ocupados) if capacidad else 0
+    body = _movil_cond_284_css() + r"""
+    <div class="phone-wrap"><div class="mv284-card">
+      <div class="mv284-head"><a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Abordaje ruta</div></div>
+      <div class="mv284-body">
+        <div class="mv284-routebox">
+          <div class="label">Ruta</div>
+          <div class="route-title">{{ruta.origen or '-'}} → {{ruta.destino or '-'}}</div>
+          <div>Bus: <b>{{ruta.placa or 'SIN BUS'}}</b> | Conductor: <b>{{ruta.conductor or session.get('conductor_nombre') or '-'}}</b> | Capacidad: <b>{{capacidad or 'SIN DEFINIR'}}</b> | Ocupados: <b>{{ocupados}}</b></div>
+        </div>
+        <form method="post" action="{{url_for('transporte_abordar', ruta_id=ruta.id)}}" id="frmAbordar284" class="mv284-form">
+          <label>DNI / QR / Código de barras</label>
+          <div class="input-group"><input name="dni" id="dniTransporte284" class="form-control" inputmode="numeric" maxlength="20" required placeholder="ESCANEAR O DIGITAR DNI" autofocus><button type="button" class="btn mv284-camera" onclick="abrirScanner&&abrirScanner('readerTrans284','dniTransporte284')"><i class="bi bi-camera"></i></button></div>
+          <div id="readerTrans284" class="scan-box mt-2" style="display:none"></div>
+          <div id="transpStatus284" class="field-help">Al completar 8 dígitos se validará en Trabajadores.</div>
+          <select name="metodo" id="metodoTransporte284" class="form-select mt-2"><option>DNI DIGITADO</option><option>QR</option><option>CODIGO DE BARRAS</option></select>
+          <input type="hidden" name="latitud" id="latitudTrans284"><input type="hidden" name="longitud" id="longitudTrans284">
+          <button class="mv284-btn mt-2"><i class="bi bi-person-check"></i> Registrar subida</button>
+        </form>
+        <div class="d-grid gap-2 mb-2"><button class="mv284-btn" type="button" onclick="enviarGpsTransporte284({{ruta.id}}, false)"><i class="bi bi-geo-alt"></i> Enviar GPS de esta ruta</button><button class="mv284-outline" type="button" onclick="enviarGpsTransporte284({{ruta.id}}, true)"><i class="bi bi-broadcast-pin"></i> Iniciar / detener GPS en vivo</button></div>
+        <div class="mv284-kpis"><div class="mv284-kpi"><small>Abordados</small><b>{{ocupados}}</b></div><div class="mv284-kpi"><small>Libres</small><b>{{libres}}</b></div><div class="mv284-kpi"><small>Capacidad</small><b>{{capacidad or 0}}</b></div></div>
+        <div class="mv284-tablewrap"><table class="mv284-table"><thead><tr><th>Hora</th><th>DNI</th><th>Trabajador</th><th>Método</th></tr></thead><tbody>{% for p in pasajeros %}<tr><td>{{p.hora}}</td><td>{{p.dni}}</td><td>{{p.trabajador}}</td><td>{{p.metodo}}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Sin abordajes.</td></tr>{% endfor %}</tbody></table></div>
+      </div>
+    </div></div>
+    <script>
+    (function(){
+      const input=document.getElementById('dniTransporte284'), st=document.getElementById('transpStatus284'), lat=document.getElementById('latitudTrans284'), lon=document.getElementById('longitudTrans284'), frm=document.getElementById('frmAbordar284');
+      const dni=v=>{const m=String(v||'').match(/(?:^|\D)(\d{8})(?:\D|$)/); return m?m[1]:String(v||'').replace(/\D/g,'').slice(-8)};
+      let last='';
+      async function validar(){const d=dni(input.value); if(d.length<8){st.className='field-help';st.innerHTML='Esperando 8 dígitos...';return;} input.value=d; if(d===last)return; last=d; st.className='scan-ok flash'; st.innerHTML='Validando DNI '+d+'...'; try{let r=await fetch('/api/trabajador/'+d,{cache:'no-store',credentials:'same-origin'});let j=await r.json(); if(j.ok){st.className='scan-ok flash';st.innerHTML='✓ '+(j.trabajador.trabajador||'TRABAJADOR')+' encontrado'; if(typeof beep==='function')beep();}else{st.className='scan-bad flash';st.innerHTML='✕ '+(j.msg||'DNI no encontrado en base trabajadores');}}catch(e){st.className='scan-bad flash';st.innerHTML='Error validando DNI';}}
+      if(input){input.addEventListener('input',validar);input.addEventListener('paste',()=>setTimeout(validar,80));input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();frm.requestSubmit();}});} if(navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{lat.value=p.coords.latitude;lon.value=p.coords.longitude;},()=>{}, {enableHighAccuracy:true,maximumAge:10000,timeout:15000});}
+    })();
+    let gpsWatch284=null; async function enviarGpsTransporte284(rid, live){function post(p){let fd=new FormData();fd.append('latitud',p.coords.latitude);fd.append('longitud',p.coords.longitude);document.getElementById('latitudTrans284').value=p.coords.latitude;document.getElementById('longitudTrans284').value=p.coords.longitude;return fetch('/transporte/ruta/'+rid+'/gps',{method:'POST',body:fd,credentials:'same-origin'}).then(r=>r.json());} if(!navigator.geolocation){alert('GPS no disponible');return;} if(live){if(gpsWatch284){navigator.geolocation.clearWatch(gpsWatch284);gpsWatch284=null;alert('GPS en vivo detenido');return;} gpsWatch284=navigator.geolocation.watchPosition(p=>post(p).catch(()=>{}),()=>alert('Permite ubicación/GPS'),{enableHighAccuracy:true,maximumAge:10000,timeout:15000}); alert('GPS en vivo iniciado. Mantenga esta pantalla abierta.'); return;} navigator.geolocation.getCurrentPosition(async p=>{let j=await post(p);alert(j.msg||'GPS actualizado');},()=>alert('Permite ubicación/GPS en el navegador'),{enableHighAccuracy:true,maximumAge:10000,timeout:15000});}
+    </script>
+    """
+    return render_page(body, ruta=ruta, pasajeros=pasajeros, ocupados=ocupados, capacidad=capacidad, libres=libres, title='Abordaje ruta')
+
+
+def conductor_movil_logout_284():
+    for k in ('conductor_id','conductor_dni','conductor_nombre'):
+        session.pop(k, None)
+    flash('Sesión móvil cerrada.', 'success')
+    return redirect(url_for('transporte') if session.get('usuario') else url_for('conductor_movil_login'))
+
+app.view_functions['transporte'] = transporte_home_284
+app.view_functions['conductor_movil_login'] = conductor_movil_login_284
+app.view_functions['transporte_mobile_home'] = conductor_movil_login_284
+app.view_functions['conductor_movil_panel'] = conductor_movil_panel_284
+app.view_functions['conductor_movil_ruta'] = conductor_movil_ruta_284
+app.view_functions['conductor_movil_logout'] = conductor_movil_logout_284
+# ======================= FIN PATCH TRANSPORTE OMAR 284 =======================
+
+
+# ========================= PATCH TRANSPORTE OMAR 285 =========================
+# Flujo conductor profesional:
+# El conductor entra con DNI/PIN, selecciona ruta base + bus, define hora de inicio,
+# toma GPS inicial y recién comienza el registro de abordaje.
+
+def _movil_cond_285_css():
+    return r"""
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}
+      .shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:6px 8px 24px!important;background:#fff!important}
+      .phone-wrap{max-width:390px!important;width:100%!important;margin:0 auto!important}
+      .mv285-card{background:#fff;border:1px solid #e4e8e4;border-radius:14px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07);margin:6px auto 12px}
+      .mv285-head{height:62px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}
+      .mv285-head a{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:30px;line-height:1}
+      .mv285-head .ttl{font-size:16px;font-weight:950;letter-spacing:.15px;color:#fff;text-align:center}
+      .mv285-body{padding:12px 12px 14px;background:#fff}
+      .mv285-info{border:1px solid #b8d7ff;background:#eef6ff;color:#0b2e83;border-radius:10px;padding:10px 11px;font-size:12px;font-weight:900;line-height:1.42;margin-bottom:10px}
+      .mv285-ok{border:1px solid #bbf7d0;background:#ecfdf5;color:#065f2a;border-radius:10px;padding:9px 10px;font-size:12px;font-weight:900;line-height:1.4;margin-bottom:10px}
+      .mv285-section{font-size:13px;font-weight:950;color:#08713b;text-transform:uppercase;margin:8px 1px 8px}
+      .mv285-form{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:11px;margin-bottom:10px}
+      .mv285-form label{font-size:11px;font-weight:950;color:#176a35;margin-bottom:4px}
+      .mv285-form .form-control,.mv285-form .form-select{height:38px!important;border-radius:9px!important;font-size:12px!important;font-weight:850}
+      .mv285-btn{height:41px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff;font-weight:950;font-size:13px;width:100%}
+      .mv285-btn:hover{background:#065f2a;color:#fff}
+      .mv285-outline{height:39px;border-radius:10px;background:#fff;border:1px solid #08713b;color:#08713b;font-weight:900;font-size:12px;width:100%}
+      .mv285-grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .mv285-route{display:grid;grid-template-columns:35px 1fr 18px;gap:9px;align-items:center;text-decoration:none;color:#102a43!important;border:1px solid #dfe7df;background:#fff;border-radius:11px;padding:11px 10px;margin:7px 0;box-shadow:0 4px 10px rgba(0,0,0,.04)}
+      .mv285-route i.bus{font-size:22px;color:#08713b}
+      .mv285-route .name{font-size:13px;font-weight:950;color:#0a1f44;line-height:1.1}
+      .mv285-route .meta{font-size:10.5px;font-weight:900;color:#0a1f44;margin-top:3px;line-height:1.25}
+      .mv285-route .chev{font-size:21px;color:#111}
+      .mv285-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 12px}
+      .mv285-kpi{background:#10964e;color:#fff;border-radius:8px;text-align:center;padding:8px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}
+      .mv285-kpi small{display:block;font-size:10px;font-weight:950;line-height:1.08;color:#effff3}
+      .mv285-kpi b{display:block;font-size:21px;line-height:1.05;font-weight:950;color:#fff;margin-top:4px}
+      .mv285-pill{display:inline-flex;align-items:center;gap:5px;background:#ecfdf5;border:1px solid #bbf7d0;color:#065f2a;border-radius:999px;padding:5px 9px;font-size:10.5px;font-weight:950;margin-bottom:8px}
+      .mv285-status{font-size:11px;font-weight:900;border-radius:9px;padding:8px 9px;margin-top:7px}
+      .mv285-status.ok{background:#ecfdf5;border:1px solid #bbf7d0;color:#065f2a}
+      .mv285-status.bad{background:#fee2e2;border:1px solid #fecaca;color:#991b1b}
+      .mv285-help{font-size:10.5px;color:#4a644f;font-weight:800;line-height:1.35;margin-top:5px}
+      .mv285-empty{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:12px;text-align:center;color:#1f3b2a;font-size:12px;font-weight:900;line-height:1.4}
+    </style>
+    """
+
+def _bases_rutas_285():
+    rows = rows_to_dict(execute("""SELECT id,nombre,origen,destino,sede,hora_salida,hora_retorno,estado,fecha
+                                  FROM transporte_rutas
+                                  WHERE COALESCE(nombre,'')<>'' OR COALESCE(origen,'')<>'' OR COALESCE(destino,'')<>''
+                                  ORDER BY fecha DESC, id DESC LIMIT 300""", fetchall=True))
+    seen, out = set(), []
+    for r in rows:
+        key = f"{r.get('nombre') or ''}|{r.get('origen') or ''}|{r.get('destino') or ''}|{r.get('sede') or ''}".upper()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+        if len(out) >= 80:
+            break
+    return out
+
+def _buses_activos_285():
+    return rows_to_dict(execute("""SELECT id,placa,tipo,capacidad,estado
+                                  FROM transporte_vehiculos
+                                  WHERE COALESCE(estado,'ACTIVO') NOT IN ('INACTIVO','BLOQUEADO')
+                                  ORDER BY placa LIMIT 200""", fetchall=True))
+
+def conductor_movil_login_285():
+    if request.method == 'POST':
+        dni = limpiar_dni(request.form.get('dni'))
+        pin = (request.form.get('pin') or '').strip()
+        if len(dni) != 8 or str(dni).upper() == 'ADMIN':
+            flash('Solo conductores: ingrese DNI de 8 dígitos. No usar ADMIN.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        if not pin:
+            flash('Ingrese su PIN móvil.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        c = row_to_dict(execute("""SELECT * FROM transporte_conductores
+                                 WHERE dni=? AND COALESCE(movil_pin,'')=?
+                                 AND COALESCE(movil_estado,'ACTIVO')='ACTIVO'
+                                 AND COALESCE(estado,'ACTIVO') NOT IN ('INACTIVO','BLOQUEADO')""", (dni, pin), fetchone=True))
+        if not c:
+            flash('DNI o PIN incorrecto, bloqueado o no creado en Transporte > Conductores.', 'danger')
+            return redirect(url_for('conductor_movil_login'))
+        session['conductor_id'] = c.get('id')
+        session['conductor_dni'] = c.get('dni')
+        session['conductor_nombre'] = c.get('nombres') or c.get('dni')
+        flash('Bienvenido conductor. Seleccione ruta, bus y hora de inicio.', 'success')
+        return redirect(url_for('conductor_movil_inicio_ruta'))
+    if session.get('conductor_id'):
+        return redirect(url_for('conductor_movil_inicio_ruta'))
+    body = r"""
+    <div class="phone-wrap">
+      <div class="page-card" style="border-radius:14px;overflow:hidden;margin-top:16px">
+        <div class="green-hero" style="min-height:128px;border-radius:0;padding:18px 16px 38px">
+          <a href="{{url_for('transporte')}}" style="position:absolute;left:18px;top:23px;color:white;font-size:38px;text-decoration:none"><i class="bi bi-chevron-left"></i></a>
+          <div style="font-size:34px"><i class="bi bi-phone"></i></div>
+          <div style="font-family:Georgia,serif;font-weight:900;font-size:13px;margin-top:4px">ACCESO MÓVIL CONDUCTOR</div>
+        </div>
+        <div class="floating-card" style="margin:-30px 12px 14px;border-radius:12px;padding:16px">
+          <div class="alert alert-light" style="border:1px solid #dbe3db;color:#24405f;line-height:1.45"><b>Solo conductores:</b> ingrese DNI del conductor + PIN móvil creado en Transporte &gt; Conductores. No usar ADMIN.</div>
+          <form method="post" id="frmMovilCond285">
+            <label class="form-label">DNI conductor</label>
+            <input name="dni" id="dniMovCond285" class="form-control mb-3" inputmode="numeric" maxlength="8" pattern="\d{8}" placeholder="Ingrese DNI" required autocomplete="username" autofocus>
+            <label class="form-label">PIN móvil</label>
+            <input name="pin" class="form-control mb-3" type="password" placeholder="PIN" required autocomplete="current-password">
+            <button class="btn btn-green w-100" style="font-size:19px;height:47px">INGRESAR</button>
+          </form>
+          {% if session.get('usuario') %}
+          <a class="btn btn-outline-success w-100 mt-2" href="{{url_for('transporte_conductores')}}">Crear / resetear PIN</a>
+          {% endif %}
+          <a class="btn btn-outline-secondary w-100 mt-2" href="{{url_for('transporte')}}">Volver</a>
+        </div>
+      </div>
+    </div>
+    <script>(function(){const i=document.getElementById('dniMovCond285'); if(i){i.addEventListener('input',()=>{i.value=String(i.value||'').replace(/\D/g,'').slice(-8);});}})();</script>
+    """
+    return render_page(body, title='Acceso móvil conductor')
+
+def conductor_movil_inicio_ruta_285():
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+
+    cid = session.get('conductor_id')
+    if request.method == 'POST':
+        base_id = request.form.get('base_ruta_id') or ''
+        bus_id = request.form.get('vehiculo_id') or ''
+        hora_inicio = request.form.get('hora_inicio') or datetime.now().strftime('%H:%M')
+        km_inicio_raw = request.form.get('km_inicio') or 0
+        lat = (request.form.get('latitud') or '').strip()
+        lon = (request.form.get('longitud') or '').strip()
+
+        if not base_id:
+            flash('Seleccione una ruta base.', 'danger')
+            return redirect(url_for('conductor_movil_inicio_ruta'))
+        if not bus_id:
+            flash('Seleccione el bus asignado.', 'danger')
+            return redirect(url_for('conductor_movil_inicio_ruta'))
+
+        base = row_to_dict(execute('SELECT * FROM transporte_rutas WHERE id=?', (base_id,), fetchone=True))
+        bus = row_to_dict(execute('SELECT * FROM transporte_vehiculos WHERE id=?', (bus_id,), fetchone=True))
+        if not base:
+            flash('Ruta base no encontrada.', 'danger')
+            return redirect(url_for('conductor_movil_inicio_ruta'))
+        if not bus:
+            flash('Bus no encontrado.', 'danger')
+            return redirect(url_for('conductor_movil_inicio_ruta'))
+
+        try:
+            km_inicio = float(km_inicio_raw or 0)
+        except Exception:
+            km_inicio = 0
+
+        creado = now_str()
+        nombre = limpiar_texto(base.get('nombre') or 'RUTA')
+        origen = limpiar_texto(base.get('origen'))
+        destino = limpiar_texto(base.get('destino'))
+        sede = limpiar_texto(base.get('sede'))
+        execute("""INSERT INTO transporte_rutas(
+                    fecha,nombre,origen,destino,sede,hora_salida,hora_retorno,
+                    vehiculo_id,conductor_id,estado,latitud,longitud,ultima_ubicacion,
+                    km_inicio,creado_por,creado_en)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (today_str(), nombre, origen, destino, sede, hora_inicio, base.get('hora_retorno') or '',
+                 bus_id, cid, 'EN RUTA', lat, lon, creado if lat and lon else '', km_inicio, _trans_user_281(), creado),
+                commit=True)
+        nueva = row_to_dict(execute('SELECT id FROM transporte_rutas WHERE conductor_id=? AND creado_en=? ORDER BY id DESC LIMIT 1', (cid, creado), fetchone=True))
+        nueva_id = nueva.get('id') if nueva else None
+        if nueva_id and lat and lon:
+            execute("""INSERT INTO transporte_gps(ruta_id,latitud,longitud,fecha_hora,registrado_por,conductor_id,placa,ruta_nombre)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    (nueva_id, lat, lon, creado, _trans_user_281(), cid, bus.get('placa'), nombre), commit=True)
+            execute('UPDATE transporte_conductores SET ultima_latitud=?, ultima_longitud=?, ultimo_gps=? WHERE id=?',
+                    (lat, lon, creado, cid), commit=True)
+        flash('Ruta iniciada. Ya puede registrar abordaje de trabajadores.', 'success')
+        return redirect(url_for('conductor_movil_ruta', ruta_id=nueva_id)) if nueva_id else redirect(url_for('conductor_movil_inicio_ruta'))
+
+    bases = _bases_rutas_285()
+    buses = _buses_activos_285()
+    hoy = today_str()
+    activas = rows_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor,
+                                      (SELECT COUNT(*) FROM transporte_pasajeros p WHERE p.ruta_id=r.id) AS ocupados
+                                      FROM transporte_rutas r
+                                      LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                      LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                                      WHERE r.conductor_id=?
+                                        AND (r.fecha>=? OR UPPER(COALESCE(r.estado,'')) IN ('EN RUTA','PROGRAMADA'))
+                                      ORDER BY CASE WHEN UPPER(COALESCE(r.estado,''))='EN RUTA' THEN 0 ELSE 1 END,
+                                               r.fecha DESC, r.id DESC LIMIT 30""", (cid, hoy), fetchall=True))
+    body = _movil_cond_285_css() + r"""
+    <div class="phone-wrap"><div class="mv285-card">
+      <div class="mv285-head"><a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Inicio ruta conductor</div></div>
+      <div class="mv285-body">
+        <div class="mv285-pill"><i class="bi bi-person-badge"></i> {{session.get('conductor_nombre')}} · {{session.get('conductor_dni')}}</div>
+        <div class="mv285-info">Antes de abordar, seleccione <b>ruta base</b>, <b>bus</b>, hora de inicio y tome GPS inicial. Luego pulse <b>Comenzar registro</b>.</div>
+
+        <div class="mv285-section">Comenzar nueva ruta</div>
+        <form method="post" class="mv285-form" id="frmInicioRuta285">
+          <label>Ruta base</label>
+          <select name="base_ruta_id" id="baseRuta285" class="form-select" required>
+            <option value="">Seleccionar ruta...</option>
+            {% for r in bases %}
+              <option value="{{r.id}}">{{r.nombre or 'RUTA'}} · {{r.origen or '-'}} → {{r.destino or '-'}}</option>
+            {% endfor %}
+          </select>
+          <div class="mv285-help">La ruta base trae origen, destino y sede. Se creará una ruta operativa nueva para este viaje.</div>
+
+          <div class="mv285-grid2 mt-2">
+            <div>
+              <label>Bus</label>
+              <select name="vehiculo_id" class="form-select" required>
+                <option value="">Bus...</option>
+                {% for b in buses %}
+                  <option value="{{b.id}}">{{b.placa}} · Cap. {{b.capacidad or 0}}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label>Hora inicio</label>
+              <input name="hora_inicio" type="time" class="form-control" value="{{hora_actual}}" required>
+            </div>
+          </div>
+
+          <div class="mv285-grid2 mt-2">
+            <div>
+              <label>Km inicio</label>
+              <input name="km_inicio" type="number" step="0.01" class="form-control" placeholder="Opcional">
+            </div>
+            <div>
+              <label>GPS inicial</label>
+              <button type="button" class="mv285-outline" onclick="tomarGpsInicio285()"><i class="bi bi-geo-alt"></i> Tomar GPS</button>
+            </div>
+          </div>
+
+          <input type="hidden" name="latitud" id="latInicio285">
+          <input type="hidden" name="longitud" id="lonInicio285">
+          <div id="gpsStatus285" class="mv285-status bad">GPS pendiente. Pulse “Tomar GPS”.</div>
+
+          <button class="mv285-btn mt-2" type="submit"><i class="bi bi-play-circle"></i> Comenzar registro</button>
+        </form>
+
+        <div class="mv285-section">Rutas en proceso</div>
+        {% for r in activas %}
+          <a class="mv285-route" href="{{url_for('conductor_movil_ruta', ruta_id=r.id)}}">
+            <i class="bi bi-bus-front bus"></i>
+            <div>
+              <div class="name">{{r.nombre or 'RUTA'}} · {{r.placa or 'SIN BUS'}}</div>
+              <div class="meta">{{r.origen or '-'}} → {{r.destino or '-'}} · Inicio {{r.hora_salida or '-'}} · Abordados {{r.ocupados or 0}}</div>
+            </div>
+            <i class="bi bi-chevron-right chev"></i>
+          </a>
+        {% else %}
+          <div class="mv285-empty">Aún no tiene rutas iniciadas. Complete el formulario superior para comenzar.</div>
+        {% endfor %}
+
+        <div class="mv285-kpis">
+          <div class="mv285-kpi"><small>Rutas</small><b>{{activas|length}}</b></div>
+          <div class="mv285-kpi"><small>Buses</small><b>{{buses|length}}</b></div>
+          <div class="mv285-kpi"><small>Bases</small><b>{{bases|length}}</b></div>
+        </div>
+      </div>
+    </div></div>
+    <script>
+      function tomarGpsInicio285(){
+        const st=document.getElementById('gpsStatus285'), lat=document.getElementById('latInicio285'), lon=document.getElementById('lonInicio285');
+        if(!navigator.geolocation){st.className='mv285-status bad';st.innerHTML='GPS no disponible en este navegador.';return;}
+        st.className='mv285-status ok'; st.innerHTML='Tomando GPS...';
+        navigator.geolocation.getCurrentPosition(p=>{
+          lat.value=p.coords.latitude; lon.value=p.coords.longitude;
+          st.className='mv285-status ok'; st.innerHTML='✓ GPS capturado: '+Number(p.coords.latitude).toFixed(6)+', '+Number(p.coords.longitude).toFixed(6);
+        },()=>{
+          st.className='mv285-status bad'; st.innerHTML='No se pudo tomar GPS. Permita ubicación desde el candado del navegador.';
+        },{enableHighAccuracy:true,maximumAge:10000,timeout:15000});
+      }
+    </script>
+    """
+    return render_page(body, bases=bases, buses=buses, activas=activas, hora_actual=datetime.now().strftime('%H:%M'), title='Inicio ruta conductor')
+
+def conductor_movil_panel_285():
+    return conductor_movil_inicio_ruta_285()
+
+def conductor_movil_ruta_285(ruta_id):
+    # Misma experiencia compacta del 284, pero la flecha vuelve al inicio de ruta del conductor.
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+    if not _trans_is_allowed_281(ruta_id):
+        flash('Esta ruta no está asignada a su usuario conductor.', 'danger')
+        return redirect(url_for('conductor_movil_inicio_ruta'))
+    ruta = row_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor
+                                FROM transporte_rutas r
+                                LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                                WHERE r.id=?""", (ruta_id,), fetchone=True))
+    if not ruta:
+        flash('Ruta no encontrada.', 'danger')
+        return redirect(url_for('conductor_movil_inicio_ruta'))
+    pasajeros = rows_to_dict(execute('SELECT * FROM transporte_pasajeros WHERE ruta_id=? ORDER BY fecha_hora DESC', (ruta_id,), fetchall=True))
+    ocupados = len(pasajeros)
+    capacidad = int((ruta or {}).get('capacidad') or 0)
+    libres = max(0, capacidad - ocupados) if capacidad else 0
+    body = _movil_cond_284_css() + r"""
+    <div class="phone-wrap"><div class="mv284-card">
+      <div class="mv284-head"><a href="{{url_for('conductor_movil_inicio_ruta')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Abordaje ruta</div></div>
+      <div class="mv284-body">
+        <div class="mv284-routebox">
+          <div class="label">Ruta</div>
+          <div class="route-title">{{ruta.origen or '-'}} → {{ruta.destino or '-'}}</div>
+          <div>Bus: <b>{{ruta.placa or 'SIN BUS'}}</b> | Conductor: <b>{{ruta.conductor or session.get('conductor_nombre') or '-'}}</b> | Inicio: <b>{{ruta.hora_salida or '-'}}</b> | Ocupados: <b>{{ocupados}}</b></div>
+        </div>
+        <form method="post" action="{{url_for('transporte_abordar', ruta_id=ruta.id)}}" id="frmAbordar284" class="mv284-form">
+          <label>DNI / QR / Código de barras</label>
+          <div class="input-group"><input name="dni" id="dniTransporte284" class="form-control" inputmode="numeric" maxlength="20" required placeholder="ESCANEAR O DIGITAR DNI" autofocus><button type="button" class="btn mv284-camera" onclick="abrirScanner&&abrirScanner('readerTrans284','dniTransporte284')"><i class="bi bi-camera"></i></button></div>
+          <div id="readerTrans284" class="scan-box mt-2" style="display:none"></div>
+          <div id="transpStatus284" class="field-help">Al completar 8 dígitos se validará en Trabajadores.</div>
+          <select name="metodo" id="metodoTransporte284" class="form-select mt-2"><option>DNI DIGITADO</option><option>QR</option><option>CODIGO DE BARRAS</option></select>
+          <input type="hidden" name="latitud" id="latitudTrans284"><input type="hidden" name="longitud" id="longitudTrans284">
+          <button class="mv284-btn mt-2"><i class="bi bi-person-check"></i> Registrar subida</button>
+        </form>
+        <div class="d-grid gap-2 mb-2"><button class="mv284-btn" type="button" onclick="enviarGpsTransporte284({{ruta.id}}, false)"><i class="bi bi-geo-alt"></i> Enviar GPS de esta ruta</button><button class="mv284-outline" type="button" onclick="enviarGpsTransporte284({{ruta.id}}, true)"><i class="bi bi-broadcast-pin"></i> Iniciar / detener GPS en vivo</button></div>
+        <div class="mv284-kpis"><div class="mv284-kpi"><small>Abordados</small><b>{{ocupados}}</b></div><div class="mv284-kpi"><small>Libres</small><b>{{libres}}</b></div><div class="mv284-kpi"><small>Capacidad</small><b>{{capacidad or 0}}</b></div></div>
+        <div class="mv284-tablewrap"><table class="mv284-table"><thead><tr><th>Hora</th><th>DNI</th><th>Trabajador</th><th>Método</th></tr></thead><tbody>{% for p in pasajeros %}<tr><td>{{p.hora}}</td><td>{{p.dni}}</td><td>{{p.trabajador}}</td><td>{{p.metodo}}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Sin abordajes.</td></tr>{% endfor %}</tbody></table></div>
+      </div>
+    </div></div>
+    <script>
+    (function(){
+      const input=document.getElementById('dniTransporte284'), st=document.getElementById('transpStatus284'), lat=document.getElementById('latitudTrans284'), lon=document.getElementById('longitudTrans284'), frm=document.getElementById('frmAbordar284');
+      const dni=v=>{const m=String(v||'').match(/(?:^|\D)(\d{8})(?:\D|$)/); return m?m[1]:String(v||'').replace(/\D/g,'').slice(-8)};
+      let last='';
+      async function validar(){const d=dni(input.value); if(d.length<8){st.className='field-help';st.innerHTML='Esperando 8 dígitos...';return;} input.value=d; if(d===last)return; last=d; st.className='scan-ok flash'; st.innerHTML='Validando DNI '+d+'...'; try{let r=await fetch('/api/trabajador/'+d,{cache:'no-store',credentials:'same-origin'});let j=await r.json(); if(j.ok){st.className='scan-ok flash';st.innerHTML='✓ '+(j.trabajador.trabajador||'TRABAJADOR')+' encontrado'; if(typeof beep==='function')beep();}else{st.className='scan-bad flash';st.innerHTML='✕ '+(j.msg||'DNI no encontrado en base trabajadores');}}catch(e){st.className='scan-bad flash';st.innerHTML='Error validando DNI';}}
+      if(input){input.addEventListener('input',validar);input.addEventListener('paste',()=>setTimeout(validar,80));input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();frm.requestSubmit();}});}
+      if(navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{lat.value=p.coords.latitude;lon.value=p.coords.longitude;},()=>{}, {enableHighAccuracy:true,maximumAge:10000,timeout:15000});}
+    })();
+    let gpsWatch284=null; async function enviarGpsTransporte284(rid, live){function post(p){let fd=new FormData();fd.append('latitud',p.coords.latitude);fd.append('longitud',p.coords.longitude);document.getElementById('latitudTrans284').value=p.coords.latitude;document.getElementById('longitudTrans284').value=p.coords.longitude;return fetch('/transporte/ruta/'+rid+'/gps',{method:'POST',body:fd,credentials:'same-origin'}).then(r=>r.json());} if(!navigator.geolocation){alert('GPS no disponible');return;} if(live){if(gpsWatch284){navigator.geolocation.clearWatch(gpsWatch284);gpsWatch284=null;alert('GPS en vivo detenido');return;} gpsWatch284=navigator.geolocation.watchPosition(p=>post(p).catch(()=>{}),()=>alert('Permite ubicación/GPS'),{enableHighAccuracy:true,maximumAge:10000,timeout:15000}); alert('GPS en vivo iniciado. Mantenga esta pantalla abierta.'); return;} navigator.geolocation.getCurrentPosition(async p=>{let j=await post(p);alert(j.msg||'GPS actualizado');},()=>alert('Permite ubicación/GPS en el navegador'),{enableHighAccuracy:true,maximumAge:10000,timeout:15000});}
+    </script>
+    """
+    return render_page(body, ruta=ruta, pasajeros=pasajeros, ocupados=ocupados, capacidad=capacidad, libres=libres, title='Abordaje ruta')
+
+try:
+    app.add_url_rule('/movil/conductor/iniciar-ruta', 'conductor_movil_inicio_ruta', conductor_movil_inicio_ruta_285, methods=['GET','POST'])
+except Exception:
+    app.view_functions['conductor_movil_inicio_ruta'] = conductor_movil_inicio_ruta_285
+
+# Overrides finales 285
+app.view_functions['conductor_movil_login'] = conductor_movil_login_285
+app.view_functions['transporte_mobile_home'] = conductor_movil_login_285
+app.view_functions['conductor_movil_panel'] = conductor_movil_panel_285
+app.view_functions['conductor_movil_ruta'] = conductor_movil_ruta_285
+# ======================= FIN PATCH TRANSPORTE OMAR 285 =======================
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
