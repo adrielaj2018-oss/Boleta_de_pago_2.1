@@ -4268,30 +4268,64 @@ def conductor_movil_panel_281():
         flash('Inicie sesión como conductor.', 'danger')
         return redirect(url_for('conductor_movil_login'))
     cid = session.get('conductor_id')
+    hoy = today_str()
+    # Mostrar rutas de hoy y también rutas activas anteriores. Si una ruta se creó ayer y sigue PROGRAMADA/EN RUTA,
+    # el conductor debe poder abrir abordaje y GPS.
     rutas = rows_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor
                                   FROM transporte_rutas r
                                   LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
                                   LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
-                                  WHERE r.conductor_id=? AND r.fecha>=?
-                                  ORDER BY r.fecha ASC, r.hora_salida ASC, r.id DESC LIMIT 50""", (cid, today_str()), fetchall=True))
+                                  WHERE r.conductor_id=?
+                                    AND (r.fecha>=? OR UPPER(COALESCE(r.estado,'')) IN ('PROGRAMADA','EN RUTA'))
+                                  ORDER BY CASE WHEN r.fecha=? THEN 0 ELSE 1 END,
+                                           r.fecha DESC, r.hora_salida ASC, r.id DESC LIMIT 50""", (cid, hoy, hoy), fetchall=True))
     body = r"""
     <div class="phone-wrap"><div class="page-card" style="border-radius:14px;overflow:hidden;margin-top:12px">
       <div class="green-hero" style="border-radius:0;min-height:118px;padding:18px 14px 32px">
         <a href="{{url_for('conductor_movil_logout')}}" style="position:absolute;left:15px;top:24px;color:white;font-size:30px"><i class="bi bi-box-arrow-left"></i></a>
         <div style="font-size:34px"><i class="bi bi-person-badge"></i></div><div style="font-weight:900;font-size:13px">{{session.get('conductor_nombre')}}</div><div style="font-size:11px;font-weight:800">{{session.get('conductor_dni')}}</div>
       </div>
-      <div class="floating-card" style="margin:-24px 12px 14px;border-radius:12px;padding:13px"><b>Mis rutas asignadas</b><br><small>Seleccione ruta para abordar trabajadores y enviar GPS.</small></div>
+      <div class="floating-card" style="margin:-24px 12px 14px;border-radius:12px;padding:13px"><b>Mis rutas asignadas</b><br><small>Toque una ruta para abrir <b>Abordaje</b> y <b>GPS</b>.</small></div>
       {% for r in rutas %}
         <a class="worker-card" style="display:block;text-decoration:none;color:inherit" href="{{url_for('conductor_movil_ruta', ruta_id=r.id)}}">
           <div class="worker-title"><div>{{r.fecha}} {{r.hora_salida or ''}}<br><b>{{r.nombre}}</b></div><div class="text-end">{{r.placa or 'SIN BUS'}}<br><b>{{r.estado}}</b></div></div>
           <div class="worker-grid"><div><label>ORIGEN</label><div class="small-value">{{r.origen or '-'}}</div></div><div><label>DESTINO</label><div class="small-value">{{r.destino or '-'}}</div></div><div><label>CAP.</label><div class="small-value">{{r.capacidad or '-'}}</div></div></div>
         </a>
       {% else %}
-        <div class="worker-card text-center text-muted">No tiene rutas asignadas desde hoy. El administrador debe crear una ruta y asignarle su conductor.</div>
+        <div class="worker-card text-center" style="color:#24405f">
+          <b>No hay ruta asignada a este conductor.</b><br>
+          <small>El login está correcto, pero el abordaje aparece dentro de una ruta. Cree una ruta en ADMIN y asigne este conductor, o use ruta rápida para prueba/emergencia.</small>
+          <form method="post" action="{{url_for('conductor_movil_ruta_rapida')}}" class="mt-2">
+            <button class="btn btn-green w-100" type="submit"><i class="bi bi-plus-circle"></i> Crear ruta rápida y abrir abordaje</button>
+          </form>
+          <div class="field-help mt-2">Ruta rápida no asigna bus. Para control completo: ADMIN &gt; Movilidad &gt; Rutas.</div>
+        </div>
       {% endfor %}
     </div></div>
     """
     return render_page(body, rutas=rutas, title='Panel conductor')
+
+@app.route('/movil/conductor/ruta-rapida', methods=['POST'])
+def conductor_movil_ruta_rapida_282():
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+    cid = session.get('conductor_id')
+    hoy = today_str()
+    # Reutiliza una ruta rápida abierta del mismo día para no duplicar.
+    existe = row_to_dict(execute("""SELECT id FROM transporte_rutas
+                                  WHERE conductor_id=? AND fecha=?
+                                    AND nombre LIKE 'RUTA RAPIDA MOVIL%'
+                                    AND UPPER(COALESCE(estado,'')) IN ('PROGRAMADA','EN RUTA')
+                                  ORDER BY id DESC LIMIT 1""", (cid, hoy), fetchone=True))
+    if existe:
+        return redirect(url_for('conductor_movil_ruta', ruta_id=existe.get('id')))
+    nombre = 'RUTA RAPIDA MOVIL ' + datetime.now().strftime('%H:%M')
+    execute("""INSERT INTO transporte_rutas(fecha,nombre,origen,destino,sede,hora_salida,hora_retorno,vehiculo_id,conductor_id,estado,creado_por,creado_en)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (hoy, nombre, 'ORIGEN', 'DESTINO', '', datetime.now().strftime('%H:%M'), '', None, cid, 'EN RUTA', _trans_user_281(), now_str()), commit=True)
+    r = row_to_dict(execute('SELECT id FROM transporte_rutas WHERE conductor_id=? AND fecha=? AND nombre=? ORDER BY id DESC LIMIT 1', (cid, hoy, nombre), fetchone=True))
+    flash('Ruta rápida creada. Ya puede registrar abordaje y enviar GPS.', 'success')
+    return redirect(url_for('conductor_movil_ruta', ruta_id=r.get('id')))
 
 def conductor_movil_ruta_281(ruta_id):
     if not session.get('conductor_id'):
@@ -4393,6 +4427,128 @@ app.view_functions['conductor_movil_logout'] = conductor_movil_logout_281
 app.view_functions['transporte_abordar'] = transporte_abordar_281
 app.view_functions['transporte_gps_actualizar'] = transporte_gps_actualizar_281
 # ======================= FIN PATCH TRANSPORTE OMAR 281 =======================
+
+
+# ========================= PATCH TRANSPORTE OMAR 283 =========================
+# Unifica Móvil conductor con la interfaz preferida de Abordaje trabajadores / Abordaje ruta.
+# Elimina la experiencia duplicada tipo imagen 3/4: ahora el conductor ve la misma lógica visual de imagen 1/2.
+
+def _movil_cond_283_css():
+    return r'''
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}.shell{max-width:560px!important;width:100%!important;margin:0 auto!important;padding:8px 10px 28px!important;background:#fff!important}.phone-wrap{max-width:520px!important;width:100%!important;margin:0 auto!important}.mv283-card{background:#fff;border:1px solid #e3e8e3;border-radius:15px;overflow:hidden;box-shadow:0 12px 26px rgba(0,0,0,.08);margin:8px auto 16px}.mv283-head{height:70px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}.mv283-head a{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:35px;line-height:1}.mv283-head .ttl{font-size:19px;font-weight:950;letter-spacing:.2px;color:#fff;text-align:center}.mv283-body{padding:15px 15px 18px;background:#fff}.mv283-info{border:1px solid #b8d7ff;background:#eef6ff;color:#0b2e83;border-radius:10px;padding:13px 14px;font-size:15px;font-weight:900;line-height:1.45;margin-bottom:12px}.mv283-ok{border:1px solid #bbf7d0;background:#ecfdf5;color:#065f2a;border-radius:10px;padding:11px 12px;font-size:14px;font-weight:900;line-height:1.45;margin-bottom:15px}.mv283-section{font-size:16px;font-weight:950;color:#08713b;text-transform:uppercase;margin:7px 2px 10px}.mv283-route{display:grid;grid-template-columns:42px 1fr 24px;gap:10px;align-items:center;text-decoration:none;color:#102a43!important;border:1px solid #dfe7df;background:#fff;border-radius:12px;padding:15px 12px;margin:8px 0;box-shadow:0 5px 14px rgba(0,0,0,.04)}.mv283-route i.bus{font-size:27px;color:#08713b}.mv283-route .name{font-size:17px;font-weight:950;color:#0a1f44;line-height:1.1}.mv283-route .meta{font-size:12px;font-weight:950;color:#0a1f44;margin-top:5px}.mv283-route .chev{font-size:26px;color:#111}.mv283-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0 14px}.mv283-kpi{background:#10964e;color:#fff;border-radius:8px;text-align:center;padding:10px 6px;box-shadow:0 8px 16px rgba(16,150,78,.18)}.mv283-kpi small{display:block;font-size:12px;font-weight:950;line-height:1.08;color:#effff3}.mv283-kpi b{display:block;font-size:29px;line-height:1.05;font-weight:950;color:#fff;margin-top:5px}.mv283-routebox{border:1px solid #b8d7ff;background:#eaf3ff;color:#0b2e83;border-radius:10px;padding:14px;font-size:14px;font-weight:950;line-height:1.48;margin-bottom:13px}.mv283-routebox .label{font-size:14px;color:#0b2e83;text-transform:uppercase}.mv283-routebox .route-title{font-size:16px;color:#0b2e83;font-weight:950}.mv283-form{border:1px solid #d7eadc;background:#fbfffc;border-radius:13px;padding:14px;margin-bottom:11px}.mv283-form label{font-size:13px;font-weight:950;color:#176a35;margin-bottom:6px}.mv283-form .input-group .form-control{height:45px;border-radius:10px 0 0 10px!important;font-size:16px;font-weight:850}.mv283-camera{min-width:58px;background:#08713b!important;color:#fff!important;border-color:#08713b!important;border-radius:0 10px 10px 0!important}.mv283-btn{height:46px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff;font-weight:950;font-size:16px;width:100%}.mv283-btn:hover{background:#065f2a;color:#fff}.mv283-outline{height:46px;border-radius:10px;background:#fff;border:1px solid #08713b;color:#08713b;font-weight:900;font-size:16px;width:100%}.mv283-tablewrap{border:1px solid #e5e7eb;border-radius:10px;overflow-x:auto;background:#fff;scrollbar-color:#08713b #e5e7eb}.mv283-tablewrap::-webkit-scrollbar{height:9px}.mv283-tablewrap::-webkit-scrollbar-thumb{background:#08713b;border-radius:999px}.mv283-tablewrap::-webkit-scrollbar-track{background:#e5e7eb}.mv283-table{width:100%;min-width:500px;border-collapse:collapse}.mv283-table th{background:#f8fafc;color:#12223b;font-size:14px;font-weight:950;padding:9px;border-bottom:1px solid #e5e7eb}.mv283-table td{font-size:13px;color:#334155;padding:9px;border-bottom:1px solid #f1f5f9}.mv283-empty{border:1px solid #e5e7eb;background:#fff;border-radius:12px;text-align:center;color:#5f6673;font-size:19px;line-height:1.45;padding:17px;margin-top:10px;box-shadow:0 5px 14px rgba(0,0,0,.04)}.mv283-quick{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:13px;text-align:center;color:#1f3b2a}.mv283-driver{background:#25773a;color:#fff;text-align:center;padding:18px 12px 28px;position:relative}.mv283-driver a{position:absolute;left:15px;top:24px;color:#fff!important;text-decoration:none;font-size:30px}.mv283-driver .ico{font-size:38px}.mv283-driver .name{font-size:15px;font-weight:950;color:#fff}.mv283-driver .dni{font-size:13px;font-weight:900;color:#fff}.mv283-driver + .mv283-body{margin-top:-16px;border-radius:15px 15px 0 0;position:relative}.mv283-mini-card{background:#fff;border-radius:11px;padding:11px 14px;margin-bottom:13px;box-shadow:0 6px 15px rgba(0,0,0,.09);font-size:15px;color:#102a43;line-height:1.5}.scan-ok,.scan-bad,.field-help{font-size:13px!important;font-weight:900!important}.scan-ok{background:#ecfdf5!important;border:1px solid #bbf7d0!important;color:#065f2a!important;border-radius:9px!important;padding:8px 10px!important}.scan-bad{background:#fee2e2!important;border:1px solid #fecaca!important;color:#991b1b!important;border-radius:9px!important;padding:8px 10px!important}.field-help{color:#4a644f!important;margin-top:6px}.flash{animation:mv283flash .3s ease}@keyframes mv283flash{0%{transform:scale(.99)}60%{transform:scale(1.01)}100%{transform:scale(1)}}@media(max-width:430px){.shell{max-width:100%!important;padding:5px 7px 22px!important}.phone-wrap{max-width:100%!important}.mv283-head{height:68px}.mv283-head .ttl{font-size:18px}.mv283-body{padding:14px 14px 16px}.mv283-info{font-size:14px}.mv283-ok{font-size:13px}.mv283-routebox{font-size:13px}.mv283-kpis{gap:8px}.mv283-kpi{padding:9px 4px}.mv283-kpi small{font-size:11px}.mv283-kpi b{font-size:28px}.mv283-empty{font-size:17px}.mv283-route{grid-template-columns:39px 1fr 20px;padding:13px 10px}.mv283-route .name{font-size:16px}.mv283-route .meta{font-size:11px}.mv283-form .input-group .form-control{font-size:15px}}
+    </style>
+    '''
+
+def conductor_movil_panel_283():
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+    cid = session.get('conductor_id')
+    hoy = today_str()
+    rutas = rows_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor
+                                  FROM transporte_rutas r
+                                  LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                  LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                                  WHERE r.conductor_id=?
+                                    AND (r.fecha>=? OR UPPER(COALESCE(r.estado,'')) IN ('PROGRAMADA','EN RUTA'))
+                                  ORDER BY CASE WHEN r.fecha=? THEN 0 ELSE 1 END,
+                                           r.fecha DESC, r.hora_salida ASC, r.id DESC LIMIT 50""", (cid, hoy, hoy), fetchall=True))
+    ruta_ids = [str(r.get('id')) for r in rutas if r.get('id')]
+    abordados_hoy = 0
+    rutas_con_abordaje = 0
+    if ruta_ids:
+        marks = ','.join(['?'] * len(ruta_ids))
+        abordados_hoy = scalar(f"SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE fecha=? AND ruta_id IN ({marks})", tuple([hoy] + ruta_ids))
+        rutas_con_abordaje = scalar(f"SELECT COUNT(DISTINCT ruta_id) AS c FROM transporte_pasajeros WHERE fecha=? AND ruta_id IN ({marks})", tuple([hoy] + ruta_ids))
+    pendientes = max(0, len(rutas) - int(rutas_con_abordaje or 0))
+    body = _movil_cond_283_css() + r'''
+    <div class="phone-wrap"><div class="mv283-card">
+      <div class="mv283-head"><a href="{{url_for('conductor_movil_logout')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Abordaje trabajadores</div></div>
+      <div class="mv283-body">
+        <div class="mv283-info">Seleccione una ruta y luego escanee QR / código de barras o digite DNI manualmente.</div>
+        <div class="mv283-ok"><i class="bi bi-check-circle"></i> Lectura habilitada: QR, código de barras y DNI manual. La cámara se abre dentro de cada ruta.</div>
+        <div class="mv283-section">Rutas disponibles</div>
+        {% for r in rutas %}
+          <a class="mv283-route" href="{{url_for('conductor_movil_ruta', ruta_id=r.id)}}">
+            <i class="bi bi-bus-front bus"></i>
+            <div><div class="name">{{r.nombre or 'RUTA'}}</div><div class="meta">{{r.placa or 'SIN BUS'}} · {{r.hora_salida or '-'}} · {{r.conductor or session.get('conductor_nombre') or '-'}}</div></div>
+            <i class="bi bi-chevron-right chev"></i>
+          </a>
+        {% else %}
+          <div class="mv283-quick">
+            <b>No hay ruta asignada a este conductor.</b><br>
+            <small>El login está correcto. El abordaje aparece cuando ADMIN crea una ruta y asigna este conductor.</small>
+            <form method="post" action="{{url_for('conductor_movil_ruta_rapida')}}" class="mt-2"><button class="mv283-btn" type="submit"><i class="bi bi-plus-circle"></i> Crear ruta rápida y abrir abordaje</button></form>
+            <div class="field-help mt-2">Ruta rápida no asigna bus. Para control completo: ADMIN &gt; Movilidad &gt; Rutas.</div>
+          </div>
+        {% endfor %}
+        <div class="mv283-kpis"><div class="mv283-kpi"><small>Rutas visibles</small><b>{{rutas|length}}</b></div><div class="mv283-kpi"><small>Abordados hoy</small><b>{{abordados_hoy}}</b></div><div class="mv283-kpi"><small>Pendientes</small><b>{{pendientes}}</b></div></div>
+      </div>
+    </div></div>
+    '''
+    return render_page(body, rutas=rutas, abordados_hoy=abordados_hoy, pendientes=pendientes, title='Abordaje trabajadores')
+
+def conductor_movil_ruta_283(ruta_id):
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+    if not _trans_is_allowed_281(ruta_id):
+        flash('Esta ruta no está asignada a su usuario conductor.', 'danger')
+        return redirect(url_for('conductor_movil_panel'))
+    ruta = row_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor
+                                FROM transporte_rutas r
+                                LEFT JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                LEFT JOIN transporte_conductores c ON c.id=r.conductor_id
+                                WHERE r.id=?""", (ruta_id,), fetchone=True))
+    if not ruta:
+        flash('Ruta no encontrada.', 'danger')
+        return redirect(url_for('conductor_movil_panel'))
+    pasajeros = rows_to_dict(execute('SELECT * FROM transporte_pasajeros WHERE ruta_id=? ORDER BY fecha_hora DESC', (ruta_id,), fetchall=True))
+    ocupados = len(pasajeros)
+    capacidad = int((ruta or {}).get('capacidad') or 0)
+    libres = max(0, capacidad - ocupados) if capacidad else 0
+    body = _movil_cond_283_css() + r'''
+    <div class="phone-wrap"><div class="mv283-card">
+      <div class="mv283-head"><a href="{{url_for('conductor_movil_panel')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Abordaje ruta</div></div>
+      <div class="mv283-body">
+        <div class="mv283-routebox">
+          <div class="label">Ruta</div>
+          <div class="route-title">{{ruta.origen or '-'}} → {{ruta.destino or '-'}}</div>
+          <div>Bus: <b>{{ruta.placa or 'SIN BUS'}}</b> | Conductor: <b>{{ruta.conductor or session.get('conductor_nombre') or '-'}}</b> | Capacidad: <b>{{capacidad or 'SIN DEFINIR'}}</b> | Ocupados: <b>{{ocupados}}</b></div>
+        </div>
+        <form method="post" action="{{url_for('transporte_abordar', ruta_id=ruta.id)}}" id="frmAbordar283" class="mv283-form">
+          <label>DNI / QR / Código de barras</label>
+          <div class="input-group"><input name="dni" id="dniTransporte283" class="form-control" inputmode="numeric" maxlength="20" required placeholder="ESCANEAR O DIGITAR DNI" autofocus><button type="button" class="btn mv283-camera" onclick="abrirScanner&&abrirScanner('readerTrans283','dniTransporte283')"><i class="bi bi-camera"></i></button></div>
+          <div id="readerTrans283" class="scan-box mt-2" style="display:none"></div>
+          <div id="transpStatus283" class="field-help">Al completar 8 dígitos se validará en Trabajadores.</div>
+          <select name="metodo" id="metodoTransporte283" class="form-select mt-2"><option>DNI DIGITADO</option><option>QR</option><option>CODIGO DE BARRAS</option></select>
+          <input type="hidden" name="latitud" id="latitudTrans283"><input type="hidden" name="longitud" id="longitudTrans283">
+          <button class="mv283-btn mt-2"><i class="bi bi-person-check"></i> Registrar subida</button>
+        </form>
+        <div class="d-grid gap-2 mb-2"><button class="mv283-btn" type="button" onclick="enviarGpsTransporte283({{ruta.id}}, false)"><i class="bi bi-geo-alt"></i> Enviar GPS de esta ruta</button><button class="mv283-outline" type="button" onclick="enviarGpsTransporte283({{ruta.id}}, true)"><i class="bi bi-broadcast-pin"></i> Iniciar / detener GPS en vivo</button></div>
+        <div class="mv283-kpis"><div class="mv283-kpi"><small>Abordados</small><b>{{ocupados}}</b></div><div class="mv283-kpi"><small>Libres</small><b>{{libres}}</b></div><div class="mv283-kpi"><small>Capacidad</small><b>{{capacidad or 0}}</b></div></div>
+        <div class="mv283-tablewrap"><table class="mv283-table"><thead><tr><th>Hora</th><th>DNI</th><th>Trabajador</th><th>Método</th></tr></thead><tbody>{% for p in pasajeros %}<tr><td>{{p.hora}}</td><td>{{p.dni}}</td><td>{{p.trabajador}}</td><td>{{p.metodo}}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Sin abordajes.</td></tr>{% endfor %}</tbody></table></div>
+      </div>
+    </div></div>
+    <script>
+    (function(){
+      const input=document.getElementById('dniTransporte283'), st=document.getElementById('transpStatus283'), lat=document.getElementById('latitudTrans283'), lon=document.getElementById('longitudTrans283'), frm=document.getElementById('frmAbordar283');
+      const dni=v=>{const m=String(v||'').match(/(?:^|\D)(\d{8})(?:\D|$)/); return m?m[1]:String(v||'').replace(/\D/g,'').slice(-8)};
+      let last='';
+      async function validar(){const d=dni(input.value); if(d.length<8){st.className='field-help';st.innerHTML='Esperando 8 dígitos...';return;} input.value=d; if(d===last)return; last=d; st.className='scan-ok flash'; st.innerHTML='Validando DNI '+d+'...'; try{let r=await fetch('/api/trabajador/'+d,{cache:'no-store',credentials:'same-origin'});let j=await r.json(); if(j.ok){st.className='scan-ok flash';st.innerHTML='✓ '+(j.trabajador.trabajador||'TRABAJADOR')+' encontrado'; if(typeof beep==='function')beep();}else{st.className='scan-bad flash';st.innerHTML='✕ '+(j.msg||'DNI no encontrado en base trabajadores');}}catch(e){st.className='scan-bad flash';st.innerHTML='Error validando DNI';}}
+      if(input){input.addEventListener('input',validar);input.addEventListener('paste',()=>setTimeout(validar,80));input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();frm.requestSubmit();}});}
+      if(navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{lat.value=p.coords.latitude;lon.value=p.coords.longitude;},()=>{}, {enableHighAccuracy:true,maximumAge:10000,timeout:15000});}
+    })();
+    let gpsWatch283=null; async function enviarGpsTransporte283(rid, live){function post(p){let fd=new FormData();fd.append('latitud',p.coords.latitude);fd.append('longitud',p.coords.longitude);document.getElementById('latitudTrans283').value=p.coords.latitude;document.getElementById('longitudTrans283').value=p.coords.longitude;return fetch('/transporte/ruta/'+rid+'/gps',{method:'POST',body:fd,credentials:'same-origin'}).then(r=>r.json());} if(!navigator.geolocation){alert('GPS no disponible');return;} if(live){if(gpsWatch283){navigator.geolocation.clearWatch(gpsWatch283);gpsWatch283=null;alert('GPS en vivo detenido');return;} gpsWatch283=navigator.geolocation.watchPosition(p=>post(p).catch(()=>{}),()=>alert('Permite ubicación/GPS'),{enableHighAccuracy:true,maximumAge:10000,timeout:15000}); alert('GPS en vivo iniciado. Mantenga esta pantalla abierta.'); return;} navigator.geolocation.getCurrentPosition(async p=>{let j=await post(p);alert(j.msg||'GPS actualizado');},()=>alert('Permite ubicación/GPS en el navegador'),{enableHighAccuracy:true,maximumAge:10000,timeout:15000});}
+    </script>
+    '''
+    return render_page(body, ruta=ruta, pasajeros=pasajeros, ocupados=ocupados, capacidad=capacidad, libres=libres, title='Abordaje ruta')
+
+# Overrides finales: conductor móvil queda con UI única y profesional.
+app.view_functions['conductor_movil_panel'] = conductor_movil_panel_283
+app.view_functions['conductor_movil_ruta'] = conductor_movil_ruta_283
+# ======================= FIN PATCH TRANSPORTE OMAR 283 =======================
 
 
 if __name__ == '__main__':
