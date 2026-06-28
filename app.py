@@ -6389,6 +6389,376 @@ except Exception as e:
 app.view_functions['home'] = home_291
 # ======================= FIN PATCH BOLETAS OMAR 291 =======================
 
+# ========================= PATCH OMAR 292: PORTAL RRHH INTEGRADO =========================
+# Integra: Boletas Admin/Usuario, Solicitud de vacaciones, Renovación,
+# configuración por módulo y firma de contratación con cámara/firma.
+
+
+def _is_admin_292():
+    return str(session.get('rol') or '').lower() == 'admin'
+
+
+def _user_dni_292():
+    d = session.get('dni') or session.get('usuario') or ''
+    return limpiar_dni(d)
+
+
+def _deny_admin_292(msg='Opción disponible solo para ADMINISTRADOR.'):
+    flash(msg, 'danger')
+    return redirect(url_for('home'))
+
+
+def _rrhh_css_292():
+    return r'''
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}.shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:6px 8px 26px!important;background:#fff!important}.phone-wrap{max-width:390px!important;margin:0 auto!important}.rr292-app{background:#fff;border:1px solid #e4e8e4;border-radius:13px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+      .rr292-head{height:78px;background:#25773a;color:#fff;position:relative;display:flex;align-items:center;justify-content:center}.rr292-head .back{position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:31px;color:#fff!important;text-decoration:none;line-height:1}.rr292-head .cfg{position:absolute;right:10px;top:14px;color:#fff!important;text-decoration:none;font-size:12px;font-weight:950;border:1px solid rgba(255,255,255,.65);border-radius:12px;padding:5px 8px}.rr292-head .ttl{font-size:17px;font-weight:950;text-align:center;color:#fff;line-height:1.1}.rr292-body{padding:13px 13px 16px;background:#fff}.rr292-section{font-size:14px;font-weight:950;color:#08713b;text-transform:uppercase;margin:8px 0 9px;letter-spacing:.2px}.rr292-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.rr292-grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.rr292-tile{height:78px;background:#08713b;border-radius:10px;color:#fff!important;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 7px 13px rgba(0,0,0,.12);padding:5px}.rr292-tile i{font-size:24px;color:#fff;margin-bottom:4px;line-height:1}.rr292-tile .lbl{font-size:11px;font-weight:950;line-height:1.04;color:#fff}.rr292-tile .sub{font-size:8.5px;font-weight:850;color:#eaffee;margin-top:3px;line-height:1.05}.rr292-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}.rr292-kpi{background:#10964e;color:#fff;border-radius:9px;text-align:center;padding:8px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}.rr292-kpi small{display:block;font-size:9.5px;font-weight:950;line-height:1.05}.rr292-kpi b{display:block;font-size:21px;line-height:1.05;font-weight:950;margin-top:4px;color:#fff}.rr292-form{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:11px;margin-bottom:11px}.rr292-form label{font-size:11px;font-weight:950;color:#176a35;margin-bottom:4px}.rr292-form .form-control,.rr292-form .form-select{height:38px!important;border-radius:9px!important;font-size:12px!important;font-weight:850}.rr292-btn{height:41px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff!important;font-weight:950;font-size:13px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}.rr292-outline{height:40px;border-radius:10px;background:#fff;border:1px solid #08713b;color:#08713b!important;font-weight:900;font-size:12px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}.rr292-list{border:1px solid #e5e7eb;border-radius:10px;overflow:auto;background:#fff;scrollbar-color:#08713b #e5e7eb}.rr292-table{width:100%;min-width:540px;border-collapse:collapse}.rr292-table th{background:#f8fafc;color:#12223b;font-size:11px;font-weight:950;padding:8px;border-bottom:1px solid #e5e7eb}.rr292-table td{font-size:11px;color:#334155;padding:8px;border-bottom:1px solid #f1f5f9;font-weight:750}.rr292-info{display:grid;grid-template-columns:20px 1fr;gap:8px;border:1px solid #b8d7ff;background:#eef6ff;border-radius:12px;padding:10px;margin:10px 0;color:#0b2e83;font-size:11px;font-weight:900;line-height:1.35}.rr292-info i{font-size:17px;color:#0b5ed7}.rr292-rowlink{display:grid;grid-template-columns:32px 1fr 18px;gap:10px;align-items:center;text-decoration:none;color:#102a43!important;border:1px solid #dfe7df;background:#fff;border-radius:11px;padding:12px 10px;margin:7px 0}.rr292-rowlink i{font-size:22px;color:#08713b}.rr292-rowlink b{font-size:12.5px;color:#0a1f44}.rr292-rowlink small{font-size:10px;color:#486156;font-weight:800}.rr292-badge{display:inline-block;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:950;background:#dcfce7;color:#166534}.rr292-danger{background:#fee2e2!important;color:#991b1b!important}.rr292-canvas{height:170px;border:2px dashed #86c995;border-radius:12px;background:#fff;touch-action:none;width:100%}.rr292-video{width:100%;height:180px;background:#f1f5f9;border:1px dashed #86c995;border-radius:12px;object-fit:cover}.rr292-photo{max-width:100%;border-radius:10px;border:1px solid #d7eadc;display:none}.top-actions{justify-content:center!important}.top-actions .tile{width:74px!important;height:70px!important;font-size:9px!important}.top-actions .tile i{font-size:25px!important;margin-bottom:4px!important}.green-hero{min-height:210px!important}.avatar{width:76px!important;height:76px!important;font-size:41px!important}.white-input{height:34px!important}
+    </style>
+    '''
+
+
+def _ensure_rrhh_292():
+    _boleta_init_291()
+    _contratacion_init_290()
+    idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+    execute(f'''CREATE TABLE IF NOT EXISTS vacaciones_saldos(
+        id {idtype}, dni TEXT, trabajador TEXT, empresa TEXT, area TEXT, jefe TEXT,
+        periodo_inicio TEXT, periodo_fin TEXT, dias_ganados REAL DEFAULT 0,
+        dias_gozados REAL DEFAULT 0, saldo REAL DEFAULT 0, fecha_carga TEXT, uploaded_by TEXT)''', commit=True)
+    execute(f'''CREATE TABLE IF NOT EXISTS vacaciones_solicitudes(
+        id {idtype}, dni TEXT, trabajador TEXT, fecha_inicio TEXT, fecha_fin TEXT,
+        dias REAL DEFAULT 0, motivo TEXT, estado TEXT DEFAULT 'PENDIENTE', fecha_solicitud TEXT,
+        comentario_jefe TEXT, comentario_gh TEXT, creado_por TEXT)''', commit=True)
+    execute(f'''CREATE TABLE IF NOT EXISTS renovaciones(
+        id {idtype}, dni TEXT, trabajador TEXT, empresa TEXT, area TEXT, cargo TEXT,
+        contrato_actual_inicio TEXT, contrato_actual_fin TEXT, nuevo_inicio TEXT, nuevo_fin TEXT,
+        tipo_contrato TEXT, basico REAL DEFAULT 0, estado TEXT DEFAULT 'PENDIENTE', observacion TEXT,
+        creado_por TEXT, creado_en TEXT, actualizado_en TEXT)''', commit=True)
+    execute(f'''CREATE TABLE IF NOT EXISTS contratacion_firmas_bio(
+        id {idtype}, dni TEXT, trabajador TEXT, documento TEXT, metodo TEXT,
+        firma_path TEXT, foto_path TEXT, fecha TEXT, hora TEXT, fecha_hora TEXT,
+        registrado_por TEXT, observacion TEXT)''', commit=True)
+    execute(f'''CREATE TABLE IF NOT EXISTS contratacion_maestros(
+        id {idtype}, tipo TEXT, valor TEXT, estado TEXT DEFAULT 'ACTIVO', creado_en TEXT, creado_por TEXT)''', commit=True)
+
+
+def _find_worker_any_292(dni):
+    dni = limpiar_dni(dni)
+    r = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if not r:
+        return {'dni': dni, 'trabajador': '', 'empresa':'', 'area':'', 'cargo':'', 'actividad':''}
+    return {'dni': r.get('dni') or dni, 'trabajador': r.get('trabajador') or r.get('nombre') or '', 'empresa': r.get('empresa') or '', 'area': r.get('area') or '', 'cargo': r.get('cargo') or '', 'actividad': r.get('actividad') or ''}
+
+
+def login_292():
+    if request.method == 'POST':
+        usuario = (request.form.get('usuario') or '').strip()
+        password = request.form.get('password') or ''
+        modo = request.form.get('modo') or 'usuario'
+        row = row_to_dict(execute('SELECT * FROM usuarios WHERE usuario=?', (usuario,), fetchone=True))
+        if row and row.get('estado','ACTIVO') == 'ACTIVO' and check_password_hash(row['password_hash'], password):
+            if modo == 'admin' and row.get('rol') != 'admin':
+                flash('Este acceso es solo para administradores.', 'danger'); return redirect(url_for('login'))
+            session['usuario']=usuario; session['rol']=row.get('rol','operador'); session['nombres']=row.get('nombres') or usuario; session['dni']=limpiar_dni(usuario)
+            return redirect(url_for('home'))
+        # Acceso usuario trabajador por DNI. Claves simples demo: DNI, últimos 4 o 1234.
+        dni = limpiar_dni(usuario)
+        if modo == 'usuario' and len(dni) == 8:
+            w = _find_worker_any_292(dni)
+            if w and w.get('dni') and password in (dni, dni[-4:], '1234'):
+                session['usuario']=dni; session['rol']='usuario'; session['nombres']=w.get('trabajador') or dni; session['dni']=dni
+                return redirect(url_for('home'))
+        flash('Usuario/clave incorrecta o usuario inactivo.', 'danger')
+    body = r'''
+    <div class="phone-wrap">
+      <div class="green-hero" style="min-height:245px;border-radius:0 0 22px 22px">
+        <div class="green-top"><span><i class="bi bi-headset"></i> Soporte</span><span><i class="bi bi-gear"></i> Config.</span></div>
+        <div class="splash-logo" style="width:96px;height:96px;font-size:42px;margin:14px auto 6px"><i class="bi bi-clipboard2-data"></i></div>
+        <div class="splash-title">TAREO MOVIL</div><div class="login-name">INICIAR SESIÓN</div>
+      </div>
+      <form method="post" class="login-form"><div class="floating-card">
+        <div class="role-toggle mb-2"><label><input type="radio" name="modo" value="usuario" checked><span>USUARIO</span></label><label><input type="radio" name="modo" value="admin"><span>ADMINISTRADOR</span></label></div>
+        <input class="form-control white-input mb-2" name="usuario" required autofocus placeholder="Usuario / DNI">
+        <input class="form-control white-input mb-3" name="password" type="password" required placeholder="Clave / PIN">
+        <button class="btn btn-green w-100"><i class="bi bi-box-arrow-in-right me-1"></i> INGRESAR</button>
+        <div class="text-center small mt-2 text-muted">Admin demo: admin / admin123 · Usuario demo: DNI / últimos 4</div>
+      </div></form>
+      <div class="d-flex justify-content-center gap-3 mt-4"><div class="tile"><i class="bi bi-list-check"></i>TAREO</div><div class="tile"><i class="bi bi-file-earmark-text"></i>BOLETA</div><div class="tile"><i class="bi bi-calendar-check"></i>VACAC.</div></div>
+      <div class="leaf"></div>
+    </div>'''
+    return render_page(body, title='Login Tareo Móvil', now=now_str())
+
+
+def home_292():
+    if not session.get('usuario'):
+        return redirect(url_for('inicio'))
+    hojas = rows_to_dict(execute('SELECT * FROM hojas_tareo ORDER BY fecha DESC, id DESC LIMIT 8', fetchall=True))
+    is_admin = _is_admin_292()
+    body = _rrhh_css_292() + r'''
+    <div class="desktop-grid"><div class="phone-wrap"><div class="green-hero" style="min-height:220px"><div class="green-top"><a class="text-white text-decoration-none" href="{{url_for('soporte')}}"><i class="bi bi-headset"></i> Soporte</a>{% if is_admin %}<a class="text-white text-decoration-none" href="{{url_for('configuraciones')}}"><i class="bi bi-gear"></i> Config.</a>{% else %}<span></span>{% endif %}</div><div class="avatar"><i class="bi bi-person-circle"></i></div><div class="login-name">{{ session.get('nombres','USUARIO') }}</div><div class="white-input mt-3"></div></div>
+      <div class="top-actions">
+        <a class="tile text-decoration-none" href="{{url_for('hojas_tareo')}}"><i class="bi bi-list-check"></i>TAREO</a>
+        <a class="tile text-decoration-none" href="{{url_for('asistencia_modulo')}}"><i class="bi bi-fingerprint"></i>ASIST.</a>
+        <a class="tile text-decoration-none" href="{{url_for('documentos_firma')}}"><i class="bi bi-pen"></i>FIRMAS</a>
+        {% if is_admin %}<a class="tile text-decoration-none" href="{{url_for('transporte')}}"><i class="bi bi-bus-front"></i>TRANSP.</a>{% endif %}
+        {% if is_admin %}<a class="tile text-decoration-none" href="{{url_for('contratacion_home')}}"><i class="bi bi-person-plus"></i>CONTRAT.</a>{% endif %}
+        <a class="tile text-decoration-none" href="{{url_for('boletas_home')}}"><i class="bi bi-file-earmark-text"></i>BOLETA</a>
+        <a class="tile text-decoration-none" href="{{url_for('vacaciones_home')}}"><i class="bi bi-calendar-check"></i>VACAC.</a>
+        <a class="tile text-decoration-none" href="{{url_for('renovacion_home')}}"><i class="bi bi-arrow-repeat"></i>RENOV.</a>
+        {% if is_admin %}<a class="tile text-decoration-none" href="{{url_for('reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i>REPORTES<br>TAREO</a>{% endif %}
+        {% if is_admin %}<a class="tile text-decoration-none" href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-repeat"></i>SINC.</a>{% endif %}
+      </div><div class="leaf"></div><div class="bottom-sync"><i class="bi bi-arrow-repeat"></i> Actualizado hasta: {{ now }}</div><a href="{{url_for('logout')}}" class="bottom-out"><i class="bi bi-box-arrow-right"></i></a></div>
+      <div class="desk-panel"><h1 class="header-title">TAREO MÓVIL – GRUPO DE COSECHA</h1><div class="card-pro p-4 mb-3"><h4 class="fw-bold text-success mb-1">Panel integrado RR.HH.</h4><div class="text-muted small">Administrador: acceso total. Usuario: boletas, vacaciones, renovaciones y firmas asignadas.</div></div></div></div>'''
+    return render_page(body, hojas=hojas, now=now_str(), is_admin=is_admin)
+
+
+# ========================= BOLETAS 292 =========================
+def _bt_query_docs_role_292(desde=None, hasta=None, tipo=None, buscar=None, limit=300):
+    if _is_admin_292():
+        return _bt_query_docs_291(desde,hasta,tipo,buscar,limit)
+    dni = _user_dni_292()
+    b = buscar or dni
+    rows = _bt_query_docs_291(desde,hasta,tipo,b,limit)
+    return [r for r in rows if limpiar_dni(r.get('dni')) == dni]
+
+
+@login_required
+def boletas_home_292():
+    _boleta_init_291()
+    if _is_admin_292():
+        total=int(scalar('SELECT COUNT(*) AS c FROM boleta_documentos') or 0)
+        cargadas_hoy=int(scalar('SELECT COUNT(*) AS c FROM boleta_documentos WHERE substr(fecha_subida,1,10)=?', (today_str(),)) or 0)
+        trabajadores=int(scalar('SELECT COUNT(DISTINCT dni) AS c FROM boleta_documentos') or 0)
+        rows=rows_to_dict(execute('SELECT tipo, COUNT(*) AS c FROM boleta_documentos GROUP BY tipo ORDER BY c DESC', fetchall=True)); conteos={r.get('tipo'):r.get('c') for r in rows}
+    else:
+        dni=_user_dni_292(); total=int(scalar('SELECT COUNT(*) AS c FROM boleta_documentos WHERE dni=?', (dni,)) or 0); cargadas_hoy=int(scalar('SELECT COUNT(*) AS c FROM boleta_documentos WHERE dni=? AND substr(fecha_subida,1,10)=?', (dni,today_str())) or 0); trabajadores=1 if dni else 0; conteos={}
+    body=_rrhh_css_292()+r'''
+    <div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a>{% if is_admin %}<a class="cfg" href="{{url_for('boletas_config')}}"><i class="bi bi-gear"></i> Config.</a>{% endif %}<div class="ttl">Módulo Boletas</div></div><div class="rr292-body">
+      <div class="rr292-kpis"><div class="rr292-kpi"><small>Total</small><b>{{total}}</b></div><div class="rr292-kpi"><small>Hoy</small><b>{{cargadas_hoy}}</b></div><div class="rr292-kpi"><small>DNI</small><b>{{trabajadores}}</b></div></div>
+      {% if is_admin %}<div class="rr292-info"><i class="bi bi-info-circle-fill"></i><div>El administrador carga boletas en PDF por DNI. El usuario ingresa con su DNI/PIN y solo visualiza sus boletas.</div></div>{% else %}<div class="rr292-info"><i class="bi bi-info-circle-fill"></i><div>Visualización limitada: solo documentos vinculados al DNI {{dni}}.</div></div>{% endif %}
+      <div class="rr292-section">Documentos de pago</div><div class="rr292-grid3">{% for t,lbl,ico in tipos %}<a class="rr292-tile" href="{{url_for('boletas_listar', tipo=t)}}"><i class="bi {{ico}}"></i><span class="lbl">{{t}}</span><span class="sub">{{conteos.get(t,'')}}</span></a>{% endfor %}</div>
+      <div class="rr292-section" style="margin-top:16px">Operación</div><div class="rr292-grid3">{% if is_admin %}<a class="rr292-tile" href="{{url_for('boletas_subir')}}"><i class="bi bi-cloud-arrow-up"></i><span class="lbl">Subir PDF</span><span class="sub">Admin</span></a><a class="rr292-tile" href="{{url_for('boletas_detectar')}}"><i class="bi bi-search"></i><span class="lbl">Detectar</span><span class="sub">DNI</span></a><a class="rr292-tile" href="{{url_for('boletas_reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i><span class="lbl">Reportes</span><span class="sub">Excel</span></a>{% else %}<a class="rr292-tile" href="{{url_for('boletas_listar')}}"><i class="bi bi-folder2-open"></i><span class="lbl">Mis boletas</span><span class="sub">Ver/descargar</span></a>{% endif %}</div>
+    </div></div></div>'''
+    return render_page(body,total=total,cargadas_hoy=cargadas_hoy,trabajadores=trabajadores,tipos=BOLETA_TIPOS_CANON_291,conteos=conteos,is_admin=_is_admin_292(),dni=_user_dni_292(),title='Módulo Boletas')
+
+
+@login_required
+def boletas_subir_292():
+    if not _is_admin_292(): return _deny_admin_292()
+    _boleta_init_291()
+    if request.method == 'POST':
+        dni=limpiar_dni(request.form.get('dni')); tipo=_bt_norm_tipo_291(request.form.get('tipo')); periodo=limpiar_texto(request.form.get('periodo') or datetime.now().strftime('%Y-%m'), upper=False); detalle=limpiar_texto(request.form.get('detalle'), upper=False); obs=limpiar_texto(request.form.get('observacion'), upper=False); f=request.files.get('archivo')
+        if len(dni)!=8: flash('Ingrese DNI válido de 8 dígitos.', 'danger'); return redirect(url_for('boletas_subir'))
+        if not f or not f.filename: flash('Seleccione archivo PDF de boleta.', 'danger'); return redirect(url_for('boletas_subir'))
+        if not f.filename.lower().endswith('.pdf'): flash('Las boletas deben cargarse en PDF.', 'danger'); return redirect(url_for('boletas_subir'))
+        try:
+            path, original, ext = _bt_save_file_291(f, dni, tipo, periodo); _bt_insert_doc_291(dni, tipo, periodo, detalle, obs, path, original, ext, session.get('usuario'))
+            flash('Boleta PDF cargada correctamente.', 'success'); return redirect(url_for('boletas_listar', tipo=tipo, buscar=dni))
+        except Exception as e:
+            flash(str(e), 'danger'); return redirect(url_for('boletas_subir'))
+    body=_rrhh_css_292()+r'''<div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('boletas_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Subir boleta PDF</div></div><div class="rr292-body"><form class="rr292-form" method="post" enctype="multipart/form-data"><div class="row"><div class="col-6"><label>DNI</label><input class="form-control" name="dni" maxlength="8" inputmode="numeric" required autofocus></div><div class="col-6"><label>Tipo</label><select class="form-select" name="tipo">{{tipo_opts|safe}}</select></div><div class="col-6"><label>Periodo</label><input class="form-control" name="periodo" value="{{periodo}}" placeholder="2026-06"></div><div class="col-6"><label>PDF</label><input class="form-control" name="archivo" type="file" accept="application/pdf,.pdf" required></div><div class="col-12"><label>Detalle</label><input class="form-control" name="detalle" placeholder="Boleta mensual / CTS / grati..."></div><div class="col-12"><label>Observación</label><input class="form-control" name="observacion"></div></div><button class="rr292-btn mt-2"><i class="bi bi-upload"></i> Guardar boleta</button></form><a class="rr292-outline" href="{{url_for('boletas_plantilla')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla control</a></div></div></div>'''
+    return render_page(body,tipo_opts=_bt_tipo_options_291(),periodo=datetime.now().strftime('%Y-%m'),title='Subir boleta')
+
+
+@login_required
+def boletas_listar_292(tipo=None):
+    _boleta_init_291(); desde=request.args.get('desde') or ''; hasta=request.args.get('hasta') or ''; buscar=request.args.get('buscar') or ''
+    docs=_bt_query_docs_role_292(desde,hasta,tipo,buscar,300)
+    body=_rrhh_css_292()+r'''<div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('boletas_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Boletas {{tipo or ''}}</div></div><div class="rr292-body"><form class="rr292-form" method="get"><div class="row"><div class="col-6"><label>Desde</label><input type="date" name="desde" value="{{desde}}" class="form-control"></div><div class="col-6"><label>Hasta</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"></div>{% if is_admin %}<div class="col-12"><label>Buscar</label><input name="buscar" value="{{buscar}}" class="form-control" placeholder="DNI / trabajador / periodo"></div>{% endif %}<div class="col-6"><button class="rr292-btn"><i class="bi bi-search"></i> Buscar</button></div>{% if is_admin %}<div class="col-6"><a class="rr292-outline" href="{{url_for('boletas_subir')}}"><i class="bi bi-plus-circle"></i> Subir</a></div>{% endif %}</div></form><div class="rr292-info"><i class="bi bi-file-earmark-text"></i><div>Documentos encontrados: <b>{{docs|length}}</b></div></div>{% for d in docs %}<a class="rr292-rowlink" href="{{url_for('boletas_archivo', doc_id=d.id)}}" target="_blank"><i class="bi bi-filetype-pdf"></i><div><b>{{d.tipo}} · {{d.periodo or '-'}}</b><br><small>{{d.dni}} · {{d.trabajador or 'NO ENCONTRADO'}}<br>{{d.archivo_nombre}}</small></div><i class="bi bi-chevron-right"></i></a>{% else %}<div class="rr292-form text-center text-muted">Sin boletas para el filtro.</div>{% endfor %}</div></div></div>'''
+    return render_page(body,docs=docs,desde=desde,hasta=hasta,buscar=buscar,tipo=tipo or '',is_admin=_is_admin_292(),title='Boletas')
+
+
+@login_required
+def boletas_reportes_292():
+    if not _is_admin_292(): return _deny_admin_292()
+    return boletas_reportes_291()
+
+
+@login_required
+def boletas_config_292():
+    if not _is_admin_292(): return _deny_admin_292()
+    body=_rrhh_css_292()+r'''<div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('boletas_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Config. Boletas</div></div><div class="rr292-body"><div class="rr292-section">Configuraciones</div><a class="rr292-rowlink" href="{{url_for('boletas_subir')}}"><i class="bi bi-cloud-arrow-up"></i><div><b>Carga individual PDF</b><br><small>Subir boleta por DNI y periodo</small></div><i class="bi bi-chevron-right"></i></a><a class="rr292-rowlink" href="{{url_for('boletas_detectar')}}"><i class="bi bi-search"></i><div><b>Detección automática</b><br><small>Carpeta BOLETAS_UPLOAD_AUTO por DNI</small></div><i class="bi bi-chevron-right"></i></a><a class="rr292-rowlink" href="{{url_for('boletas_plantilla')}}"><i class="bi bi-file-earmark-excel"></i><div><b>Plantilla de control</b><br><small>Excel para seguimiento</small></div><i class="bi bi-chevron-right"></i></a><a class="rr292-rowlink" href="{{url_for('boletas_reportes')}}"><i class="bi bi-bar-chart"></i><div><b>Reportes</b><br><small>Control de lectura y carga</small></div><i class="bi bi-chevron-right"></i></a></div></div></div>'''
+    return render_page(body,title='Config. Boletas')
+
+
+# ========================= VACACIONES 292 =========================
+@login_required
+def vacaciones_home_292():
+    _ensure_rrhh_292(); dni=_user_dni_292(); is_admin=_is_admin_292()
+    if request.method == 'POST' and not is_admin:
+        fi=request.form.get('fecha_inicio') or ''; ff=request.form.get('fecha_fin') or ''; dias=float(request.form.get('dias') or 0); motivo=limpiar_texto(request.form.get('motivo'), upper=False)
+        w=_find_worker_any_292(dni); execute('''INSERT INTO vacaciones_solicitudes(dni,trabajador,fecha_inicio,fecha_fin,dias,motivo,estado,fecha_solicitud,creado_por) VALUES(?,?,?,?,?,?,?,?,?)''', (dni,w.get('trabajador'),fi,ff,dias,motivo,'PENDIENTE',now_str(),session.get('usuario')), commit=True)
+        flash('Solicitud de vacaciones registrada.', 'success'); return redirect(url_for('vacaciones_home'))
+    if is_admin:
+        solicitudes=rows_to_dict(execute('SELECT * FROM vacaciones_solicitudes ORDER BY id DESC LIMIT 80', fetchall=True)); total=len(solicitudes); pend=sum(1 for s in solicitudes if (s.get('estado') or '').upper()=='PENDIENTE'); aprob=sum(1 for s in solicitudes if (s.get('estado') or '').upper()=='APROBADO')
+    else:
+        solicitudes=rows_to_dict(execute('SELECT * FROM vacaciones_solicitudes WHERE dni=? ORDER BY id DESC LIMIT 40', (dni,), fetchall=True)); total=len(solicitudes); pend=sum(1 for s in solicitudes if (s.get('estado') or '').upper()=='PENDIENTE'); aprob=sum(1 for s in solicitudes if (s.get('estado') or '').upper()=='APROBADO')
+    saldo=float(scalar('SELECT COALESCE(SUM(saldo),0) AS s FROM vacaciones_saldos WHERE dni=?', (dni,)) or 0) if not is_admin else float(scalar('SELECT COALESCE(SUM(saldo),0) AS s FROM vacaciones_saldos') or 0)
+    body=_rrhh_css_292()+r'''<div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a>{% if is_admin %}<a class="cfg" href="{{url_for('vacaciones_config')}}"><i class="bi bi-gear"></i> Config.</a>{% endif %}<div class="ttl">Solicitud vacaciones</div></div><div class="rr292-body"><div class="rr292-kpis"><div class="rr292-kpi"><small>Saldo</small><b>{{saldo|round(1)}}</b></div><div class="rr292-kpi"><small>Pend.</small><b>{{pend}}</b></div><div class="rr292-kpi"><small>Aprob.</small><b>{{aprob}}</b></div></div>{% if not is_admin %}<form method="post" class="rr292-form"><div class="row"><div class="col-6"><label>Inicio</label><input type="date" name="fecha_inicio" class="form-control" required></div><div class="col-6"><label>Fin</label><input type="date" name="fecha_fin" class="form-control" required></div><div class="col-4"><label>Días</label><input type="number" step="0.5" name="dias" class="form-control" required></div><div class="col-8"><label>Motivo</label><input name="motivo" class="form-control" placeholder="Vacaciones"></div></div><button class="rr292-btn mt-2"><i class="bi bi-send"></i> Solicitar vacaciones</button></form>{% else %}<div class="rr292-grid3 mb-2"><a class="rr292-tile" href="{{url_for('vacaciones_config')}}"><i class="bi bi-upload"></i><span class="lbl">Saldos</span><span class="sub">Carga masiva</span></a><a class="rr292-tile" href="{{url_for('vacaciones_exportar')}}"><i class="bi bi-file-earmark-excel"></i><span class="lbl">Exportar</span><span class="sub">Solicitudes</span></a><a class="rr292-tile" href="{{url_for('vacaciones_home')}}"><i class="bi bi-check2-square"></i><span class="lbl">Aprobar</span><span class="sub">Estados</span></a></div>{% endif %}<div class="rr292-section">Solicitudes</div><div class="rr292-list"><table class="rr292-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Estado</th>{% if is_admin %}<th>Acción</th>{% endif %}</tr></thead><tbody>{% for s in solicitudes %}<tr><td>{{s.dni}}</td><td>{{s.trabajador or '-'}}</td><td>{{s.fecha_inicio}}</td><td>{{s.fecha_fin}}</td><td>{{s.dias}}</td><td><span class="rr292-badge">{{s.estado}}</span></td>{% if is_admin %}<td><a href="{{url_for('vacaciones_estado', sol_id=s.id, estado='APROBADO')}}">Aprobar</a> · <a href="{{url_for('vacaciones_estado', sol_id=s.id, estado='RECHAZADO')}}">Rechazar</a></td>{% endif %}</tr>{% else %}<tr><td colspan="7" class="text-center text-muted">Sin solicitudes.</td></tr>{% endfor %}</tbody></table></div></div></div></div>'''
+    return render_page(body,solicitudes=solicitudes,saldo=saldo,pend=pend,aprob=aprob,is_admin=is_admin,title='Vacaciones')
+
+
+@login_required
+def vacaciones_estado_292(sol_id, estado):
+    if not _is_admin_292(): return _deny_admin_292()
+    estado = estado if estado in ('APROBADO','RECHAZADO','PENDIENTE') else 'PENDIENTE'
+    execute('UPDATE vacaciones_solicitudes SET estado=?, comentario_gh=? WHERE id=?', (estado, f'Actualizado por {session.get("usuario")} {now_str()}', sol_id), commit=True)
+    flash('Estado actualizado.', 'success'); return redirect(url_for('vacaciones_home'))
+
+
+@login_required
+def vacaciones_config_292():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_rrhh_292(); cargados=0
+    if request.method=='POST':
+        f=request.files.get('archivo')
+        if not f or not f.filename: flash('Seleccione Excel de saldos.', 'danger'); return redirect(url_for('vacaciones_config'))
+        try:
+            for row in _iter_excel_upload(f):
+                dni=limpiar_dni(_valor(row,['DNI','DOCUMENTO']));
+                if len(dni)!=8: continue
+                w=_find_worker_any_292(dni); saldo=float(_valor(row,['SALDO','DIAS SALDO','DÍAS SALDO']) or 0); ganados=float(_valor(row,['DIAS GANADOS','DÍAS GANADOS']) or saldo); gozados=float(_valor(row,['DIAS GOZADOS','DÍAS GOZADOS']) or 0)
+                execute('INSERT INTO vacaciones_saldos(dni,trabajador,empresa,area,jefe,periodo_inicio,periodo_fin,dias_ganados,dias_gozados,saldo,fecha_carga,uploaded_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', (dni,w.get('trabajador'),w.get('empresa'),w.get('area'),'',_valor(row,['I_PERIODO','PERIODO INICIO']) or '',_valor(row,['F_PERIODO','PERIODO FIN']) or '',ganados,gozados,saldo,now_str(),session.get('usuario')), commit=True); cargados+=1
+            flash(f'Saldos cargados: {cargados}.', 'success')
+        except Exception as e: flash(str(e),'danger')
+        return redirect(url_for('vacaciones_config'))
+    body=_rrhh_css_292()+r'''<div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('vacaciones_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Config. vacaciones</div></div><div class="rr292-body"><form method="post" enctype="multipart/form-data" class="rr292-form"><label>Carga masiva de saldos Excel</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="field-help mt-1">Columnas: DNI, TRABAJADOR, I_PERIODO, F_PERIODO, DIAS GANADOS, DIAS GOZADOS, SALDO.</div><button class="rr292-btn mt-2"><i class="bi bi-upload"></i> Cargar saldos</button></form><a class="rr292-rowlink" href="{{url_for('vacaciones_exportar')}}"><i class="bi bi-file-earmark-excel"></i><div><b>Exportar solicitudes</b><br><small>Reporte de vacaciones</small></div><i class="bi bi-chevron-right"></i></a></div></div></div>'''
+    return render_page(body,title='Config. vacaciones')
+
+
+@login_required
+def vacaciones_exportar_292():
+    _ensure_rrhh_292()
+    if _is_admin_292(): rows=rows_to_dict(execute('SELECT * FROM vacaciones_solicitudes ORDER BY id DESC', fetchall=True))
+    else: rows=rows_to_dict(execute('SELECT * FROM vacaciones_solicitudes WHERE dni=? ORDER BY id DESC', (_user_dni_292(),), fetchall=True))
+    headers=['id','dni','trabajador','fecha_inicio','fecha_fin','dias','motivo','estado','fecha_solicitud','comentario_jefe','comentario_gh']
+    return excel_response(headers, rows, 'reporte_vacaciones.xlsx', 'VACACIONES')
+
+
+# ========================= RENOVACION 292 =========================
+@login_required
+def renovacion_home_292():
+    _ensure_rrhh_292(); is_admin=_is_admin_292(); dni=_user_dni_292()
+    if request.method=='POST':
+        if not is_admin: return _deny_admin_292()
+        d=limpiar_dni(request.form.get('dni')); w=_find_worker_any_292(d)
+        execute('''INSERT INTO renovaciones(dni,trabajador,empresa,area,cargo,contrato_actual_inicio,contrato_actual_fin,nuevo_inicio,nuevo_fin,tipo_contrato,basico,estado,observacion,creado_por,creado_en,actualizado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (d,w.get('trabajador'),w.get('empresa'),w.get('area'),w.get('cargo'),request.form.get('actual_inicio',''),request.form.get('actual_fin',''),request.form.get('nuevo_inicio',''),request.form.get('nuevo_fin',''),request.form.get('tipo_contrato','RENOVACIÓN'),float(request.form.get('basico') or 0),'PENDIENTE',request.form.get('observacion',''),session.get('usuario'),now_str(),now_str()), commit=True)
+        flash('Renovación registrada.', 'success'); return redirect(url_for('renovacion_home'))
+    rows=rows_to_dict(execute('SELECT * FROM renovaciones ORDER BY id DESC LIMIT 120', fetchall=True)) if is_admin else rows_to_dict(execute('SELECT * FROM renovaciones WHERE dni=? ORDER BY id DESC LIMIT 80', (dni,), fetchall=True))
+    total=len(rows); pend=sum(1 for r in rows if (r.get('estado') or '').upper()=='PENDIENTE'); aprob=sum(1 for r in rows if (r.get('estado') or '').upper()=='APROBADO')
+    body=_rrhh_css_292()+r'''<div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a>{% if is_admin %}<a class="cfg" href="{{url_for('renovacion_config')}}"><i class="bi bi-gear"></i> Config.</a>{% endif %}<div class="ttl">Renovaciones</div></div><div class="rr292-body"><div class="rr292-kpis"><div class="rr292-kpi"><small>Total</small><b>{{total}}</b></div><div class="rr292-kpi"><small>Pend.</small><b>{{pend}}</b></div><div class="rr292-kpi"><small>Aprob.</small><b>{{aprob}}</b></div></div>{% if is_admin %}<form method="post" class="rr292-form"><div class="row"><div class="col-6"><label>DNI</label><input name="dni" maxlength="8" class="form-control" required></div><div class="col-6"><label>Tipo</label><select name="tipo_contrato" class="form-select"><option>RENOVACIÓN</option><option>INTERMITENTE</option><option>INDETERMINADO</option><option>TEMPORAL</option></select></div><div class="col-6"><label>Actual fin</label><input type="date" name="actual_fin" class="form-control"></div><div class="col-6"><label>Nuevo inicio</label><input type="date" name="nuevo_inicio" class="form-control"></div><div class="col-6"><label>Nuevo fin</label><input type="date" name="nuevo_fin" class="form-control"></div><div class="col-6"><label>Básico</label><input type="number" step="0.01" name="basico" class="form-control"></div><div class="col-12"><label>Observación</label><input name="observacion" class="form-control"></div></div><button class="rr292-btn mt-2"><i class="bi bi-save"></i> Registrar renovación</button></form>{% endif %}<div class="rr292-list"><table class="rr292-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Nuevo inicio</th><th>Nuevo fin</th><th>Tipo</th><th>Estado</th>{% if is_admin %}<th>Acción</th>{% endif %}</tr></thead><tbody>{% for r in rows %}<tr><td>{{r.dni}}</td><td>{{r.trabajador or '-'}}</td><td>{{r.nuevo_inicio}}</td><td>{{r.nuevo_fin}}</td><td>{{r.tipo_contrato}}</td><td><span class="rr292-badge">{{r.estado}}</span></td>{% if is_admin %}<td><a href="{{url_for('renovacion_estado', ren_id=r.id, estado='APROBADO')}}">Aprobar</a> · <a href="{{url_for('renovacion_estado', ren_id=r.id, estado='RECHAZADO')}}">Rechazar</a></td>{% endif %}</tr>{% else %}<tr><td colspan="7" class="text-center text-muted">Sin renovaciones.</td></tr>{% endfor %}</tbody></table></div></div></div></div>'''
+    return render_page(body,rows=rows,total=total,pend=pend,aprob=aprob,is_admin=is_admin,title='Renovaciones')
+
+
+@login_required
+def renovacion_estado_292(ren_id, estado):
+    if not _is_admin_292(): return _deny_admin_292()
+    estado=estado if estado in ('APROBADO','RECHAZADO','PENDIENTE') else 'PENDIENTE'
+    execute('UPDATE renovaciones SET estado=?, actualizado_en=? WHERE id=?', (estado,now_str(),ren_id), commit=True)
+    flash('Renovación actualizada.', 'success'); return redirect(url_for('renovacion_home'))
+
+
+@login_required
+def renovacion_config_292():
+    if not _is_admin_292(): return _deny_admin_292()
+    body=_rrhh_css_292()+r'''<div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('renovacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Config. renovación</div></div><div class="rr292-body"><a class="rr292-rowlink" href="{{url_for('renovacion_exportar')}}"><i class="bi bi-file-earmark-excel"></i><div><b>Exportar renovaciones</b><br><small>Control y auditoría</small></div><i class="bi bi-chevron-right"></i></a><div class="rr292-info"><i class="bi bi-info-circle"></i><div>La renovación usa la base trabajadores y permite aprobar/rechazar antes de generar contrato.</div></div></div></div></div>'''
+    return render_page(body,title='Config. renovación')
+
+
+@login_required
+def renovacion_exportar_292():
+    _ensure_rrhh_292(); rows=rows_to_dict(execute('SELECT * FROM renovaciones ORDER BY id DESC', fetchall=True)) if _is_admin_292() else rows_to_dict(execute('SELECT * FROM renovaciones WHERE dni=? ORDER BY id DESC', (_user_dni_292(),), fetchall=True))
+    headers=['id','dni','trabajador','empresa','area','cargo','contrato_actual_inicio','contrato_actual_fin','nuevo_inicio','nuevo_fin','tipo_contrato','basico','estado','observacion','creado_por','creado_en','actualizado_en']
+    return excel_response(headers, rows, 'reporte_renovaciones.xlsx', 'RENOVACIONES')
+
+
+# ========================= CONTRATACION MEJORAS 292 =========================
+@login_required
+def contratacion_home_292():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_rrhh_292(); total_req=int(scalar('SELECT COUNT(*) AS c FROM contratacion_requerimientos') or 0); postulantes=int(scalar('SELECT COUNT(*) AS c FROM contratacion_ingresos') or 0); firmados=int(scalar('SELECT COUNT(*) AS c FROM contratacion_firmas_bio') or 0)
+    body=_rrhh_css_292()+r'''<div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><a class="cfg" href="{{url_for('contratacion_config')}}"><i class="bi bi-gear"></i> Config.</a><div class="ttl">Contratación</div></div><div class="rr292-body"><div class="rr292-kpis"><div class="rr292-kpi"><small>Req.</small><b>{{total_req}}</b></div><div class="rr292-kpi"><small>Post.</small><b>{{postulantes}}</b></div><div class="rr292-kpi"><small>Firmas</small><b>{{firmados}}</b></div></div><div class="rr292-section">Flujo</div><div class="rr292-grid3"><a class="rr292-tile" href="{{url_for('contratacion_requerimientos')}}"><i class="bi bi-clipboard2-plus"></i><span class="lbl">Requerim.</span><span class="sub">Cupos</span></a><a class="rr292-tile" href="{{url_for('contratacion_postulantes')}}"><i class="bi bi-person-lines-fill"></i><span class="lbl">Postul.</span><span class="sub">DNI</span></a><a class="rr292-tile" href="{{url_for('contratacion_etapa', etapa='medica')}}"><i class="bi bi-heart-pulse"></i><span class="lbl">Médica</span><span class="sub">Aptitud</span></a><a class="rr292-tile" href="{{url_for('contratacion_etapa', etapa='induccion')}}"><i class="bi bi-play-btn"></i><span class="lbl">Inducción</span><span class="sub">Asistencia</span></a><a class="rr292-tile" href="{{url_for('contratacion_etapa', etapa='indumentaria')}}"><i class="bi bi-bag-check"></i><span class="lbl">Indument.</span><span class="sub">EPP</span></a><a class="rr292-tile" href="{{url_for('contratacion_etapa', etapa='fotocheck')}}"><i class="bi bi-person-badge"></i><span class="lbl">Fotocheck</span><span class="sub">Carnet</span></a><a class="rr292-tile" href="{{url_for('contratacion_firma_bio')}}"><i class="bi bi-camera"></i><span class="lbl">Firma facial</span><span class="sub">Cámara/firma</span></a><a class="rr292-tile" href="{{url_for('contratacion_reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i><span class="lbl">Reportes</span><span class="sub">Control</span></a><a class="rr292-tile" href="{{url_for('contratacion_config')}}"><i class="bi bi-sliders"></i><span class="lbl">Config.</span><span class="sub">Maestros</span></a></div></div></div></div>'''
+    return render_page(body,total_req=total_req,postulantes=postulantes,firmados=firmados,title='Contratación')
+
+
+@login_required
+def contratacion_firma_bio_292():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_rrhh_292()
+    if request.method=='POST':
+        dni=limpiar_dni(request.form.get('dni')); doc=request.form.get('documento') or 'CONTRATO DE TRABAJO'; metodo=request.form.get('metodo') or 'FIRMA DIGITAL + FACIAL'; obs=request.form.get('observacion') or ''; firma_data=request.form.get('firma_data') or ''; foto_data=request.form.get('foto_data') or ''
+        if len(dni)!=8: flash('DNI inválido.', 'danger'); return redirect(url_for('contratacion_firma_bio'))
+        w=_find_worker_any_292(dni); base=os.path.join(FIRMA_DIR, 'contratacion'); os.makedirs(base, exist_ok=True)
+        def save_data(data,prefix):
+            if not data or ',' not in data: return ''
+            raw=base64.b64decode(data.split(',',1)[1]); path=os.path.join(base, f'{prefix}_{dni}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png'); open(path,'wb').write(raw); return path
+        firma_path=save_data(firma_data,'firma'); foto_path=save_data(foto_data,'rostro')
+        execute('''INSERT INTO contratacion_firmas_bio(dni,trabajador,documento,metodo,firma_path,foto_path,fecha,hora,fecha_hora,registrado_por,observacion) VALUES(?,?,?,?,?,?,?,?,?,?,?)''', (dni,w.get('trabajador'),doc,metodo,firma_path,foto_path,today_str(),datetime.now().strftime('%H:%M'),now_str(),session.get('usuario'),obs), commit=True)
+        execute("UPDATE contratacion_ingresos SET firma_estado='FIRMADO', observacion=? WHERE dni=?", (obs,dni), commit=True)
+        flash('Firma facial/digital registrada.', 'success'); return redirect(url_for('contratacion_firma_bio'))
+    firmas=rows_to_dict(execute('SELECT * FROM contratacion_firmas_bio ORDER BY id DESC LIMIT 30', fetchall=True))
+    body=_rrhh_css_292()+r'''<div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Firma facial / digital</div></div><div class="rr292-body"><form method="post" class="rr292-form" id="frmFirma292"><label>DNI trabajador</label><div class="input-group"><input name="dni" class="form-control" maxlength="8" inputmode="numeric" required placeholder="ESCANEAR O DIGITAR"><button type="button" class="btn btn-green" onclick="abrirScanner&&abrirScanner('readerFirma292','dniFirma292')"><i class="bi bi-qr-code-scan"></i></button></div><input id="dniFirma292" style="display:none"><div id="readerFirma292" class="scan-box mt-2" style="display:none"></div><label class="mt-2">Documento</label><select name="documento" class="form-select"><option>CONTRATO DE TRABAJO</option><option>RENOVACIÓN DE CONTRATO</option><option>DECLARACIÓN JURADA</option><option>POLÍTICAS / RIT</option></select><label class="mt-2">Método</label><select name="metodo" class="form-select"><option>RECONOCIMIENTO FACIAL + FIRMA DIGITAL</option><option>FIRMA DIGITAL EN PANTALLA</option><option>RECONOCIMIENTO FACIAL</option></select><label class="mt-2">Reconocimiento facial</label><video id="videoFirma292" class="rr292-video" autoplay playsinline muted></video><canvas id="fotoCanvas292" style="display:none"></canvas><img id="fotoPreview292" class="rr292-photo mt-2"><div class="row mt-2"><div class="col-6"><button type="button" class="rr292-outline" onclick="startCam292()"><i class="bi bi-camera-video"></i> Cámara</button></div><div class="col-6"><button type="button" class="rr292-outline" onclick="takePhoto292()"><i class="bi bi-camera"></i> Capturar</button></div></div><label class="mt-2">Firma en pantalla</label><canvas id="firmaCanvas292" class="rr292-canvas"></canvas><div class="row mt-2"><div class="col-6"><button type="button" class="rr292-outline" onclick="clearFirma292()">Limpiar</button></div><div class="col-6"><button class="rr292-btn"><i class="bi bi-save"></i> Guardar</button></div></div><label class="mt-2">Observación</label><input name="observacion" class="form-control" placeholder="Opcional"><input type="hidden" name="firma_data" id="firmaData292"><input type="hidden" name="foto_data" id="fotoData292"></form><div class="rr292-section">Últimas firmas</div>{% for f in firmas %}<div class="rr292-rowlink"><i class="bi bi-person-check"></i><div><b>{{f.dni}} · {{f.trabajador or '-'}}</b><br><small>{{f.documento}} · {{f.fecha_hora}}</small></div><i class="bi bi-check2-circle"></i></div>{% else %}<div class="rr292-form text-center text-muted">Sin firmas.</div>{% endfor %}</div></div></div><script>let stream292=null;async function startCam292(){try{stream292=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});document.getElementById('videoFirma292').srcObject=stream292;}catch(e){alert('Permita cámara en el navegador.');}}function takePhoto292(){const v=document.getElementById('videoFirma292'),c=document.getElementById('fotoCanvas292'),img=document.getElementById('fotoPreview292');if(!v.videoWidth){alert('Active la cámara primero.');return;}c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);let data=c.toDataURL('image/png');document.getElementById('fotoData292').value=data;img.src=data;img.style.display='block';}const canvas=document.getElementById('firmaCanvas292'),ctx=canvas.getContext('2d');function resizeFirma292(){canvas.width=canvas.clientWidth;canvas.height=170;ctx.lineWidth=3;ctx.lineCap='round';ctx.strokeStyle='#08713b';}resizeFirma292();let drawing=false;function pos(e){let r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};}canvas.addEventListener('mousedown',e=>{drawing=true;let p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);});canvas.addEventListener('mousemove',e=>{if(!drawing)return;let p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke();document.getElementById('firmaData292').value=canvas.toDataURL('image/png');});canvas.addEventListener('mouseup',()=>drawing=false);canvas.addEventListener('touchstart',e=>{drawing=true;let p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);e.preventDefault();});canvas.addEventListener('touchmove',e=>{if(!drawing)return;let p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke();document.getElementById('firmaData292').value=canvas.toDataURL('image/png');e.preventDefault();});canvas.addEventListener('touchend',()=>drawing=false);function clearFirma292(){ctx.clearRect(0,0,canvas.width,canvas.height);document.getElementById('firmaData292').value='';}</script>'''
+    return render_page(body,firmas=firmas,title='Firma facial contratación')
+
+
+@login_required
+def contratacion_config_292():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_rrhh_292(); cargados=0
+    if request.method=='POST':
+        action=request.form.get('action')
+        if action=='maestro':
+            execute('INSERT INTO contratacion_maestros(tipo,valor,estado,creado_en,creado_por) VALUES(?,?,?,?,?)', (request.form.get('tipo'), limpiar_texto(request.form.get('valor')), 'ACTIVO', now_str(), session.get('usuario')), commit=True); flash('Dato maestro guardado.', 'success'); return redirect(url_for('contratacion_config'))
+        f=request.files.get('archivo')
+        if not f or not f.filename: flash('Seleccione Excel de trabajadores.', 'danger'); return redirect(url_for('contratacion_config'))
+        try:
+            for row in _iter_excel_upload(f):
+                dni=limpiar_dni(_valor(row,['DNI','DOCUMENTO']));
+                if len(dni)!=8: continue
+                trabajador=limpiar_texto(_valor(row,['TRABAJADOR','NOMBRES','APELLIDOS Y NOMBRES'])); empresa=limpiar_texto(_valor(row,['EMPRESA'])); area=limpiar_texto(_valor(row,['AREA','ÁREA'])); cargo=limpiar_texto(_valor(row,['CARGO','PUESTO'])); actividad=limpiar_texto(_valor(row,['ACTIVIDAD','LABOR'])); planilla=limpiar_texto(_valor(row,['PLANILLA','REGIMEN','RÉGIMEN']))
+                if scalar('SELECT COUNT(*) AS c FROM trabajadores WHERE dni=?', (dni,)): execute('UPDATE trabajadores SET trabajador=?,empresa=?,area=?,cargo=?,actividad=?,planilla=?,estado=?,fecha_carga=? WHERE dni=?', (trabajador,empresa,area,cargo,actividad,planilla,'ACTIVO',today_str(),dni), commit=True)
+                else: execute('INSERT INTO trabajadores(dni,trabajador,empresa,area,cargo,actividad,planilla,estado,fecha_carga) VALUES(?,?,?,?,?,?,?,?,?)', (dni,trabajador,empresa,area,cargo,actividad,planilla,'ACTIVO',today_str()), commit=True)
+                cargados+=1
+            flash(f'Trabajadores cargados/actualizados: {cargados}.', 'success')
+        except Exception as e: flash(str(e), 'danger')
+        return redirect(url_for('contratacion_config'))
+    maestros=rows_to_dict(execute('SELECT * FROM contratacion_maestros ORDER BY tipo,valor LIMIT 120', fetchall=True))
+    body=_rrhh_css_292()+r'''<div class="phone-wrap"><div class="rr292-app"><div class="rr292-head"><a class="back" href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Config. contratación</div></div><div class="rr292-body"><form method="post" enctype="multipart/form-data" class="rr292-form"><label>Carga masiva trabajadores Excel</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="field-help mt-1">Columnas: DNI, TRABAJADOR, EMPRESA, AREA, CARGO, ACTIVIDAD, PLANILLA.</div><button class="rr292-btn mt-2"><i class="bi bi-upload"></i> Cargar trabajadores</button></form><form method="post" class="rr292-form"><input type="hidden" name="action" value="maestro"><div class="row"><div class="col-6"><label>Tipo maestro</label><select name="tipo" class="form-select"><option>EMPRESA</option><option>AREA</option><option>CARGO</option><option>ACTIVIDAD</option><option>SEDE</option><option>REGIMEN</option><option>MODALIDAD</option></select></div><div class="col-6"><label>Valor</label><input name="valor" class="form-control" required></div></div><button class="rr292-btn mt-2"><i class="bi bi-save"></i> Guardar dato maestro</button></form><div class="rr292-section">Datos maestros</div><div class="rr292-list"><table class="rr292-table"><thead><tr><th>Tipo</th><th>Valor</th><th>Estado</th></tr></thead><tbody>{% for m in maestros %}<tr><td>{{m.tipo}}</td><td>{{m.valor}}</td><td>{{m.estado}}</td></tr>{% else %}<tr><td colspan="3" class="text-center text-muted">Sin datos maestros.</td></tr>{% endfor %}</tbody></table></div></div></div></div>'''
+    return render_page(body,maestros=maestros,title='Config. contratación')
+
+
+# ========================= REGISTRO RUTAS 292 =========================
+try:
+    app.add_url_rule('/boletas/config', 'boletas_config', boletas_config_292, methods=['GET'])
+except Exception: app.view_functions['boletas_config']=boletas_config_292
+try:
+    app.add_url_rule('/vacaciones', 'vacaciones_home', vacaciones_home_292, methods=['GET','POST'])
+    app.add_url_rule('/vacaciones/config', 'vacaciones_config', vacaciones_config_292, methods=['GET','POST'])
+    app.add_url_rule('/vacaciones/exportar', 'vacaciones_exportar', vacaciones_exportar_292, methods=['GET'])
+    app.add_url_rule('/vacaciones/estado/<int:sol_id>/<estado>', 'vacaciones_estado', vacaciones_estado_292, methods=['GET'])
+except Exception as e:
+    print('Rutas vacaciones 292:', e)
+try:
+    app.add_url_rule('/renovacion', 'renovacion_home', renovacion_home_292, methods=['GET','POST'])
+    app.add_url_rule('/renovacion/config', 'renovacion_config', renovacion_config_292, methods=['GET'])
+    app.add_url_rule('/renovacion/exportar', 'renovacion_exportar', renovacion_exportar_292, methods=['GET'])
+    app.add_url_rule('/renovacion/estado/<int:ren_id>/<estado>', 'renovacion_estado', renovacion_estado_292, methods=['GET'])
+except Exception as e:
+    print('Rutas renovación 292:', e)
+try:
+    app.add_url_rule('/contratacion/firma-biometrica', 'contratacion_firma_bio', contratacion_firma_bio_292, methods=['GET','POST'])
+    app.add_url_rule('/contratacion/config', 'contratacion_config', contratacion_config_292, methods=['GET','POST'])
+except Exception as e:
+    print('Rutas contratación extra 292:', e)
+
+app.view_functions['login'] = login_292
+app.view_functions['home'] = home_292
+app.view_functions['boletas_home'] = boletas_home_292
+app.view_functions['boletas_subir'] = boletas_subir_292
+app.view_functions['boletas_listar'] = boletas_listar_292
+app.view_functions['boletas_reportes'] = boletas_reportes_292
+app.view_functions['contratacion_home'] = contratacion_home_292
+# ======================= FIN PATCH OMAR 292 =======================
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
