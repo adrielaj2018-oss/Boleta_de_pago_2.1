@@ -7347,6 +7347,114 @@ for rule, endpoint, view, methods in [
 # ======================= FIN PATCH VACACIONES OMAR 294 =======================
 
 
+# ========================= PATCH VACACIONES OMAR 295 =========================
+# Correcciones:
+# 1) Si el usuario entra al módulo con DNI/últimos 4, abre la vista USUARIO aunque la sesión general sea admin.
+# 2) Panel admin más limpio: solo Solicitudes / Pendientes / Aprobadas + filtros por rango de fechas y búsqueda.
+
+def _vac_is_admin_294():
+    # Respeta el acceso elegido en la pantalla del módulo Vacaciones.
+    # Si se ingresó como USUARIO, no debe mostrar Vacaciones Admin aunque la sesión principal sea admin.
+    if session.get('module_name') == 'vacaciones':
+        return session.get('module_role') == 'admin'
+    return session.get('rol') == 'admin'
+
+
+def _vac_admin_where_295():
+    desde = (request.args.get('desde') or today_str()).strip()
+    hasta = (request.args.get('hasta') or today_str()).strip()
+    estado = (request.args.get('estado') or '').strip().upper()
+    q = (request.args.get('q') or '').strip()
+    where, params = [], []
+    if desde:
+        where.append('fecha_inicio>=?'); params.append(desde)
+    if hasta:
+        where.append('fecha_inicio<=?'); params.append(hasta)
+    if estado:
+        where.append('UPPER(COALESCE(estado,\'\')) LIKE ?'); params.append('%' + estado + '%')
+    if q:
+        like = '%' + q.upper() + '%'
+        where.append('(UPPER(COALESCE(dni,\'\')) LIKE ? OR UPPER(COALESCE(trabajador,\'\')) LIKE ? OR UPPER(COALESCE(periodo_detalle,\'\')) LIKE ? OR UPPER(COALESCE(motivo,\'\')) LIKE ?)')
+        params += [like, like, like, like]
+    return (' WHERE ' + ' AND '.join(where)) if where else '', params, desde, hasta, estado, q
+
+
+def vacaciones_home_295():
+    _vac_ensure_294()
+    if _vac_is_admin_294():
+        where, params, desde, hasta, estado, q = _vac_admin_where_295()
+        solicitudes = rows_to_dict(execute(f'SELECT * FROM vacaciones_solicitudes {where} ORDER BY fecha_inicio DESC, id DESC LIMIT 180', tuple(params), fetchall=True))
+        total_sol = len(solicitudes)
+        pend = sum(1 for s in solicitudes if 'PEND' in (s.get('estado') or '').upper())
+        aprob = sum(1 for s in solicitudes if 'APROB' in (s.get('estado') or '').upper())
+        body = _vac_css_294() + r'''
+        <style>
+          .vac295-filter{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:12px;margin:0 0 12px;box-shadow:0 5px 12px rgba(0,0,0,.035)}
+          .vac295-filter label{font-size:10.5px;font-weight:950;color:#176a35;margin-bottom:4px}
+          .vac295-filter .form-control,.vac295-filter .form-select{height:38px!important;border-radius:9px!important;font-size:12px!important;font-weight:850}
+          .vac295-row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.vac295-row3{display:grid;grid-template-columns:1fr 100px;gap:8px;margin-top:8px}
+          .vac295-mini-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px}.vac295-mini-actions a{height:39px!important;flex-direction:row!important;font-size:12px!important}
+          .vac295-table-actions{white-space:nowrap}.vac295-table-actions a{font-weight:950;text-decoration:none;color:#08713b}.vac295-table-actions a.rech{color:#991b1b}
+        </style>
+        <div class="vac294-phone"><div class="vac294-app">
+          <div class="vac294-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><a class="cfg" href="{{url_for('vacaciones_config')}}"><i class="bi bi-gear"></i> Config.</a><div class="ttl">Vacaciones Admin</div></div>
+          <div class="vac294-body">
+            <form method="get" class="vac295-filter">
+              <div class="vac295-row2">
+                <div><label>Desde</label><input type="date" name="desde" value="{{desde}}" class="form-control"></div>
+                <div><label>Hasta</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"></div>
+              </div>
+              <div class="vac295-row3">
+                <div><label>Buscar</label><input name="q" value="{{q}}" class="form-control" placeholder="DNI / trabajador / periodo"></div>
+                <div><label>Estado</label><select name="estado" class="form-select"><option value="">Todos</option><option value="PEND" {% if estado=='PEND' %}selected{% endif %}>Pend.</option><option value="APROB" {% if estado=='APROB' %}selected{% endif %}>Aprob.</option><option value="RECH" {% if estado=='RECH' %}selected{% endif %}>Rech.</option></select></div>
+              </div>
+              <button class="vac294-btn mt-2"><i class="bi bi-search"></i> Buscar solicitudes</button>
+            </form>
+            <div class="vac294-kpis"><div class="vac294-kpi"><small>Solicitudes</small><b>{{total_sol}}</b></div><div class="vac294-kpi"><small>Pendientes</small><b>{{pend}}</b></div><div class="vac294-kpi"><small>Aprobadas</small><b>{{aprob}}</b></div></div>
+            <div class="vac295-mini-actions"><a class="vac294-btn" href="{{url_for('vacaciones_config')}}"><i class="bi bi-cloud-arrow-up"></i> Carga masiva</a><a class="vac294-outline" href="{{url_for('vacaciones_exportar')}}"><i class="bi bi-file-earmark-excel"></i> Exportar</a></div>
+            <div class="vac294-section">Solicitudes filtradas</div>
+            <div class="vac294-list"><table class="vac294-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Periodo</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{% for s in solicitudes %}<tr><td>{{s.dni}}</td><td>{{s.trabajador or '-'}}</td><td>{{s.fecha_inicio}}</td><td>{{s.fecha_fin}}</td><td>{{s.dias}}</td><td>{{s.periodo_detalle or '-'}}</td><td>{{badge(s.estado)|safe}}</td><td class="vac295-table-actions"><a href="{{url_for('vacaciones_estado', sol_id=s.id, estado='APROBADO')}}">Aprobar</a> · <a class="rech" href="{{url_for('vacaciones_estado', sol_id=s.id, estado='RECHAZADO')}}">Rechazar</a></td></tr>{% else %}<tr><td colspan="8" class="text-center text-muted">Sin solicitudes para el filtro seleccionado.</td></tr>{% endfor %}</tbody></table></div>
+          </div>
+        </div></div>'''
+        return render_page(body, solicitudes=solicitudes, total_sol=total_sol, pend=pend, aprob=aprob, desde=desde, hasta=hasta, estado=estado, q=q, badge=_vac_badge_294, title='Vacaciones Admin')
+
+    dni = _vac_user_dni_294()
+    if request.method == 'POST':
+        periodo_id = request.form.get('periodo_id') or ''
+        dias_gozar = _vac_float_294(request.form.get('dias_gozar') or request.form.get('dias'))
+        fi = _vac_parse_date_294(request.form.get('fecha_inicio'))
+        motivo = limpiar_texto(request.form.get('motivo') or 'VACACIONES', upper=True)
+        hoy_d = date.today()
+        if not periodo_id.isdigit(): flash('Seleccione el periodo con saldo que usará.', 'danger'); return redirect(url_for('vacaciones_home'))
+        if not fi: flash('Seleccione una fecha de inicio válida.', 'danger'); return redirect(url_for('vacaciones_home'))
+        if fi < hoy_d: flash('La fecha de inicio no puede ser anterior a hoy.', 'danger'); return redirect(url_for('vacaciones_home'))
+        if dias_gozar <= 0: flash('Digite los días a gozar.', 'danger'); return redirect(url_for('vacaciones_home'))
+        saldo_row = row_to_dict(execute('SELECT * FROM vacaciones_saldos WHERE id=? AND dni=?', (int(periodo_id), dni), fetchone=True))
+        if not saldo_row: flash('El periodo seleccionado no pertenece a su DNI.', 'danger'); return redirect(url_for('vacaciones_home'))
+        saldos_tmp = _vac_saldos_dni_294(dni)
+        saldo_sel = next((r for r in saldos_tmp if int(r.get('id') or 0) == int(periodo_id)), None)
+        disponible = _vac_float_294((saldo_sel or {}).get('saldo_disponible'))
+        if dias_gozar > disponible: flash(f'No puede solicitar {dias_gozar:g} día(s). Su saldo disponible del periodo es {disponible:g}.', 'danger'); return redirect(url_for('vacaciones_home'))
+        dias_cal = int(ceil(dias_gozar)); ff = date.fromordinal(fi.toordinal() + max(0, dias_cal - 1))
+        w = _vac_find_worker_294(dni); periodo_detalle = _vac_period_text_294(saldo_row)
+        execute('''INSERT INTO vacaciones_solicitudes(dni,trabajador,jefe_dni,fecha_inicio,fecha_fin,dias,dias_gozar,motivo,estado,fecha_solicitud,periodo_detalle,periodo_ids,creado_por) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''', (dni, w.get('trabajador'), saldo_row.get('jefe_dni') or '', fi.isoformat(), ff.isoformat(), dias_gozar, dias_gozar, motivo, 'PENDIENTE', now_str(), periodo_detalle, str(periodo_id), dni), commit=True)
+        flash('Solicitud de vacaciones registrada. Queda pendiente de aprobación.', 'success')
+        return redirect(url_for('vacaciones_home'))
+    saldos = _vac_saldos_dni_294(dni)
+    solicitudes = rows_to_dict(execute('SELECT * FROM vacaciones_solicitudes WHERE dni=? ORDER BY id DESC LIMIT 80', (dni,), fetchall=True))
+    total_saldo = round(sum(_vac_float_294(r.get('saldo_disponible')) for r in saldos), 2)
+    pend = sum(1 for s in solicitudes if 'PEND' in (s.get('estado') or '').upper())
+    aprob = sum(1 for s in solicitudes if 'APROB' in (s.get('estado') or '').upper())
+    body = _vac_css_294() + r'''
+    <div class="vac294-phone"><div class="vac294-app"><div class="vac294-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Mis vacaciones</div></div><div class="vac294-body"><div class="vac294-info"><i class="bi bi-info-circle-fill"></i><div>Acceso usuario: aquí solo ve su saldo y registra solicitudes. La fecha inicio debe ser desde hoy hacia adelante.</div></div><div class="vac294-kpis"><div class="vac294-kpi"><small>Saldo disp.</small><b>{{total_saldo|round(1)}}</b></div><div class="vac294-kpi"><small>Pendientes</small><b>{{pend}}</b></div><div class="vac294-kpi"><small>Aprobadas</small><b>{{aprob}}</b></div></div><div class="vac294-section">Nueva solicitud</div><form method="post" class="vac294-form" id="frmVac294"><label>Periodo con saldo</label><select name="periodo_id" id="periodoVac294" class="form-select" required><option value="">Seleccione periodo...</option>{% for s in saldos %}<option value="{{s.id}}" data-saldo="{{s.saldo_disponible}}">{{s.periodo_txt}} · Saldo {{s.saldo_disponible}}</option>{% endfor %}</select><div class="vac294-row mt-2"><div><label>Días a gozar</label><input name="dias_gozar" id="diasVac294" type="number" step="1" min="1" class="form-control" placeholder="Ej. 5" required></div><div><label>Fecha inicio</label><input name="fecha_inicio" id="inicioVac294" type="date" min="{{hoy}}" value="{{hoy}}" class="form-control" required></div></div><div class="vac294-row mt-2"><div><label>Fecha fin</label><input name="fecha_fin_mostrar" id="finVac294" type="date" class="form-control" readonly></div><div><label>Motivo</label><input name="motivo" class="form-control" value="VACACIONES"></div></div><div id="msgVac294" class="vac294-ok">La fecha fin se calcula automáticamente según los días a gozar.</div><button class="vac294-btn mt-2"><i class="bi bi-send"></i> Enviar solicitud</button></form><div class="vac294-section">Mis saldos</div>{% for s in saldos %}<div class="vac294-period"><div><b>{{s.periodo_txt}}</b><small>Ganados {{s.dias_ganados or 0}} · Gozados {{s.dias_gozados or 0}}</small></div><div class="saldo">{{s.saldo_disponible|round(1)}}<small>días</small></div></div>{% else %}<div class="vac294-card text-center text-muted">No tiene saldos cargados. Solicite a RR.HH. la carga de su saldo.</div>{% endfor %}<div class="vac294-section">Mis solicitudes</div><div class="vac294-list"><table class="vac294-table"><thead><tr><th>Inicio</th><th>Fin</th><th>Días</th><th>Periodo</th><th>Estado</th><th>Fecha solicitud</th></tr></thead><tbody>{% for s in solicitudes %}<tr><td>{{s.fecha_inicio}}</td><td>{{s.fecha_fin}}</td><td>{{s.dias}}</td><td>{{s.periodo_detalle or '-'}}</td><td>{{badge(s.estado)|safe}}</td><td>{{s.fecha_solicitud}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin solicitudes.</td></tr>{% endfor %}</tbody></table></div></div></div></div><script>function calcFinVac294(){const ini=document.getElementById('inicioVac294'),dias=document.getElementById('diasVac294'),fin=document.getElementById('finVac294'),sel=document.getElementById('periodoVac294'),msg=document.getElementById('msgVac294');if(!ini||!dias||!fin)return;let d=parseInt(dias.value||'0',10);let f=ini.value;if(!f||d<=0){fin.value='';return;}let max=parseFloat(sel.options[sel.selectedIndex]?.dataset?.saldo||'0');if(max&&d>max){msg.className='vac294-bad';msg.textContent='Los días a gozar superan el saldo disponible del periodo.';}else{msg.className='vac294-ok';msg.textContent='Fecha fin calculada automáticamente.';}let dt=new Date(f+'T00:00:00');dt.setDate(dt.getDate()+d-1);fin.value=dt.toISOString().slice(0,10);}['inicioVac294','diasVac294','periodoVac294'].forEach(id=>{let e=document.getElementById(id);if(e)e.addEventListener('input',calcFinVac294);if(e)e.addEventListener('change',calcFinVac294);});calcFinVac294();</script>'''
+    return render_page(body, saldos=saldos, solicitudes=solicitudes, total_saldo=total_saldo, pend=pend, aprob=aprob, hoy=today_str(), badge=_vac_badge_294, title='Mis vacaciones')
+
+# Overrides vacaciones 295
+app.view_functions['vacaciones_home'] = vacaciones_home_295
+# Mantiene config/estado/export usando _vac_is_admin_294 ya corregido.
+# ======================= FIN PATCH VACACIONES OMAR 295 =======================
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
