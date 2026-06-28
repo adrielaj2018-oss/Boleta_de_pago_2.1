@@ -6143,6 +6143,252 @@ except Exception as e:
 app.view_functions['home'] = home_290
 # ======================= FIN PATCH CONTRATACIÓN OMAR 290 =======================
 
+# ========================= PATCH BOLETAS OMAR 291 =========================
+# Módulo Boleta integrado al proyecto actual con interfaz clásica/miniatura.
+# Lógica adaptada desde el portal de boletas/documentos: tipos de pago, carga,
+# listado por DNI-periodo, descarga, detección por DNI en nombre de archivo y reportes.
+
+BOLETA_TIPOS_CANON_291 = [
+    ('NORMAL','Boletas normal','bi-file-earmark-text'),
+    ('CTS','Boletas CTS','bi-file-earmark-check'),
+    ('GRATIFICACIÓN','Boletas gratificación','bi-gift'),
+    ('UTILIDAD','Boletas utilidades','bi-cash-coin'),
+    ('VACACIONES','Boletas vacaciones','bi-calendar-check'),
+    ('LIQUIDACIÓN','Boletas liquidación','bi-file-earmark-medical'),
+]
+BOLETA_EXT_ALLOWED_291 = {'.pdf','.png','.jpg','.jpeg','.webp','.doc','.docx','.xls','.xlsx'}
+BOLETA_DIR_291 = os.path.join(PERSIST_DIR, 'boletas_documentos')
+BOLETA_AUTO_DIR_291 = os.path.join(PERSIST_DIR, 'BOLETAS_UPLOAD_AUTO')
+os.makedirs(BOLETA_DIR_291, exist_ok=True)
+os.makedirs(BOLETA_AUTO_DIR_291, exist_ok=True)
+
+def _boleta_init_291():
+    idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+    execute(f'''CREATE TABLE IF NOT EXISTS boleta_documentos(
+        id {idtype}, dni TEXT NOT NULL, trabajador TEXT, empresa TEXT, area TEXT, cargo TEXT,
+        tipo TEXT NOT NULL, periodo TEXT, detalle TEXT, archivo_nombre TEXT, archivo_path TEXT,
+        extension TEXT, estado TEXT DEFAULT 'CARGADO', fecha_subida TEXT, uploaded_by TEXT,
+        fecha_lectura TEXT, observacion TEXT)''', commit=True)
+
+def _bt_css_291():
+    return r'''
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}.shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:7px 8px 26px!important;background:#fff!important}.bt291-phone{max-width:390px;margin:0 auto}.bt291-app{background:#fff;border:1px solid #e4e8e4;border-radius:13px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+      .bt291-head{height:120px;background:#08713b;color:#fff;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center}.bt291-head a.back{position:absolute;left:14px;top:25px;color:#fff!important;text-decoration:none;font-size:31px;line-height:1}.bt291-head .ico{font-size:38px;line-height:1;margin-bottom:5px;color:#fff}.bt291-head .ttl{font-size:16px;font-weight:950;text-transform:uppercase;color:#fff;letter-spacing:.25px}.bt291-body{padding:15px 14px 17px;background:#fff}.bt291-section{font-size:14px;font-weight:950;color:#08713b;text-transform:uppercase;margin:4px 0 10px;letter-spacing:.25px}.bt291-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.bt291-grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.bt291-tile{height:82px;background:#08713b;border-radius:10px;color:#fff!important;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 7px 13px rgba(0,0,0,.12);padding:5px}.bt291-tile i{font-size:25px;color:#fff;margin-bottom:5px;line-height:1}.bt291-tile .lbl{font-size:11.3px;font-weight:950;line-height:1.05;color:#fff}.bt291-tile .sub{font-size:8.5px;font-weight:900;color:#eaffee;margin-top:3px;line-height:1}
+      .bt291-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 12px}.bt291-kpi{background:#10964e;color:#fff;border-radius:9px;text-align:center;padding:7px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}.bt291-kpi small{display:block;font-size:9px;font-weight:950;line-height:1.05;color:#effff3}.bt291-kpi b{display:block;font-size:20px;line-height:1.05;font-weight:950;color:#fff;margin-top:4px}.bt291-info{display:grid;grid-template-columns:20px 1fr;gap:8px;border:1px solid #b8d7ff;background:#eef6ff;border-radius:12px;padding:10px;margin-top:13px;color:#0b2e83;font-size:11px;font-weight:900;line-height:1.35}.bt291-info i{font-size:17px;color:#0b5ed7;margin-top:1px}
+      .bt291-filter{border:1px solid #e1ebe3;background:#fff;border-radius:13px;padding:11px;margin-bottom:12px;box-shadow:0 7px 16px rgba(0,0,0,.06)}.bt291-filter .row{--bs-gutter-x:.55rem;--bs-gutter-y:.55rem}.bt291-filter label,.bt291-form label{font-size:10.5px;font-weight:950;color:#176a35;margin-bottom:4px}.bt291-filter .form-control,.bt291-filter .form-select,.bt291-form .form-control,.bt291-form .form-select{height:37px!important;border-radius:9px!important;font-size:12px!important;font-weight:850}.bt291-btn{height:39px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff;font-weight:950;font-size:12.5px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}.bt291-outline{height:39px;border-radius:10px;background:#fff;border:1px solid #08713b;color:#08713b!important;font-weight:950;font-size:12px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}.bt291-form{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:12px;margin-bottom:12px}.bt291-help{font-size:10.5px;color:#4a644f;font-weight:850;line-height:1.35;margin-top:5px}.bt291-search{height:39px;border:1px solid #dfe7df;border-radius:10px;padding:8px 11px;font-size:12px;font-weight:850;width:100%;margin-bottom:10px}.bt291-tablewrap{border:1px solid #e5e7eb;border-radius:10px;overflow:auto;background:#fff;scrollbar-color:#08713b #e5e7eb}.bt291-tablewrap::-webkit-scrollbar{height:8px}.bt291-tablewrap::-webkit-scrollbar-thumb{background:#08713b;border-radius:999px}.bt291-table{width:100%;min-width:650px;border-collapse:collapse}.bt291-table th{background:#f8fafc;color:#12223b;font-size:11px;font-weight:950;padding:8px;border-bottom:1px solid #e5e7eb}.bt291-table td{font-size:11px;color:#334155;padding:8px;border-bottom:1px solid #f1f5f9;font-weight:750}.bt291-doc{display:grid;grid-template-columns:36px 1fr 28px;gap:8px;align-items:center;border:1px solid #e3e8e3;border-radius:11px;background:#fff;padding:9px 10px;margin:7px 0;text-decoration:none;color:#102a43!important;box-shadow:0 4px 10px rgba(0,0,0,.04)}.bt291-doc i{font-size:25px;color:#08713b}.bt291-doc b{font-size:12px;color:#0a1f44}.bt291-doc small{font-size:10px;color:#496455;font-weight:850;line-height:1.25}.bt291-mini{font-size:10px;font-weight:900;color:#08713b;text-transform:uppercase;margin:9px 0 6px}
+    </style>
+    '''
+
+def _bt_norm_tipo_291(v):
+    t = limpiar_texto(v or 'NORMAL')
+    t = t.replace('GRATIFICACION','GRATIFICACIÓN').replace('LIQUIDACION','LIQUIDACIÓN')
+    if t not in [x[0] for x in BOLETA_TIPOS_CANON_291]: t='NORMAL'
+    return t
+
+def _bt_safe_filename_291(name):
+    name = os.path.basename(str(name or 'archivo'))
+    name = re.sub(r'[^A-Za-z0-9_.\- ]+', '_', name).strip() or 'archivo'
+    return name[:120]
+
+def _bt_find_worker_291(dni):
+    dni = limpiar_dni(dni)
+    t = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if not t: return {'dni':dni,'trabajador':'','empresa':'','area':'','cargo':''}
+    return {'dni':dni,'trabajador':t.get('trabajador') or t.get('nombres') or '', 'empresa':t.get('empresa') or '', 'area':t.get('area') or '', 'cargo':t.get('cargo') or ''}
+
+def _bt_save_file_291(file_storage, dni, tipo, periodo):
+    raw = file_storage.filename or 'documento.pdf'
+    safe = _bt_safe_filename_291(raw)
+    ext = os.path.splitext(safe)[1].lower()
+    if ext not in BOLETA_EXT_ALLOWED_291:
+        raise ValueError('Formato no permitido. Use PDF, imagen, Word o Excel.')
+    carpeta = os.path.join(BOLETA_DIR_291, _bt_norm_tipo_291(tipo), re.sub(r'[^A-Za-z0-9_\-]+','_', periodo or today_str()))
+    os.makedirs(carpeta, exist_ok=True)
+    fname = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{limpiar_dni(dni)}_{safe}"
+    path = os.path.join(carpeta, fname)
+    file_storage.save(path)
+    return path, safe, ext
+
+def _bt_insert_doc_291(dni, tipo, periodo, detalle, observacion, path, original, ext, uploaded_by):
+    w = _bt_find_worker_291(dni)
+    execute('''INSERT INTO boleta_documentos(dni,trabajador,empresa,area,cargo,tipo,periodo,detalle,archivo_nombre,archivo_path,extension,estado,fecha_subida,uploaded_by,observacion)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            (w['dni'], w['trabajador'], w['empresa'], w['area'], w['cargo'], _bt_norm_tipo_291(tipo), periodo, detalle, original, path, ext, 'CARGADO', now_str(), uploaded_by, observacion), commit=True)
+
+def _bt_tipo_options_291(sel=''):
+    sel = _bt_norm_tipo_291(sel or 'NORMAL')
+    return ''.join([f'<option value="{t}" {"selected" if t==sel else ""}>{lbl}</option>' for t,lbl,ico in BOLETA_TIPOS_CANON_291])
+
+def _bt_query_docs_291(desde=None, hasta=None, tipo=None, buscar=None, limit=300):
+    _boleta_init_291()
+    where=[]; params=[]
+    if desde:
+        where.append('substr(fecha_subida,1,10)>=?'); params.append(desde)
+    if hasta:
+        where.append('substr(fecha_subida,1,10)<=?'); params.append(hasta)
+    if tipo:
+        where.append('tipo=?'); params.append(_bt_norm_tipo_291(tipo))
+    if buscar:
+        b = '%' + str(buscar).upper() + '%'
+        where.append('(UPPER(dni) LIKE ? OR UPPER(trabajador) LIKE ? OR UPPER(tipo) LIKE ? OR UPPER(periodo) LIKE ? OR UPPER(archivo_nombre) LIKE ?)')
+        params += [b,b,b,b,b]
+    sql='SELECT * FROM boleta_documentos'
+    if where: sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY id DESC LIMIT %d' % int(limit or 300)
+    return rows_to_dict(execute(sql, tuple(params), fetchall=True))
+
+@login_required
+def boletas_home_291():
+    _boleta_init_291()
+    total=int(scalar('SELECT COUNT(*) AS c FROM boleta_documentos') or 0)
+    cargadas_hoy=int(scalar('SELECT COUNT(*) AS c FROM boleta_documentos WHERE substr(fecha_subida,1,10)=?', (today_str(),)) or 0)
+    trabajadores=int(scalar('SELECT COUNT(DISTINCT dni) AS c FROM boleta_documentos') or 0)
+    rows=rows_to_dict(execute('SELECT tipo, COUNT(*) AS c FROM boleta_documentos GROUP BY tipo ORDER BY c DESC', fetchall=True))
+    conteos={r.get('tipo'):r.get('c') for r in rows}
+    body=_bt_css_291()+r'''
+    <div class="bt291-phone"><div class="bt291-app"><div class="bt291-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-file-earmark-text"></i></div><div class="ttl">Módulo Boletas</div></div><div class="bt291-body">
+      <div class="bt291-kpis"><div class="bt291-kpi"><small>Total</small><b>{{total}}</b></div><div class="bt291-kpi"><small>Hoy</small><b>{{cargadas_hoy}}</b></div><div class="bt291-kpi"><small>DNI</small><b>{{trabajadores}}</b></div></div>
+      <div class="bt291-section">Documentos de pago</div><div class="bt291-grid3">{% for t,lbl,ico in tipos %}<a class="bt291-tile" href="{{url_for('boletas_listar', tipo=t)}}"><i class="bi {{ico}}"></i><span class="lbl">{{t}}</span><span class="sub">{{conteos.get(t,0)}} docs.</span></a>{% endfor %}</div>
+      <div class="bt291-section" style="margin-top:16px">Operación</div><div class="bt291-grid3"><a class="bt291-tile" href="{{url_for('boletas_subir')}}"><i class="bi bi-cloud-arrow-up"></i><span class="lbl">Subir</span><span class="sub">PDF / docs</span></a><a class="bt291-tile" href="{{url_for('boletas_detectar')}}"><i class="bi bi-search"></i><span class="lbl">Detectar</span><span class="sub">PDF por DNI</span></a><a class="bt291-tile" href="{{url_for('boletas_reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i><span class="lbl">Reportes</span><span class="sub">Excel</span></a></div>
+      <div class="bt291-info"><i class="bi bi-info-circle-fill"></i><div>Tipos tomados del portal de boletas: Normal, CTS, Gratificación, Utilidad, Vacaciones y Liquidación. Cada archivo queda vinculado por DNI, periodo y tipo.</div></div>
+    </div></div></div>'''
+    return render_page(body,total=total,cargadas_hoy=cargadas_hoy,trabajadores=trabajadores,tipos=BOLETA_TIPOS_CANON_291,conteos=conteos,title='Módulo Boletas')
+
+@login_required
+def boletas_subir_291():
+    _boleta_init_291()
+    if request.method == 'POST':
+        dni=limpiar_dni(request.form.get('dni'))
+        tipo=_bt_norm_tipo_291(request.form.get('tipo'))
+        periodo=limpiar_texto(request.form.get('periodo') or datetime.now().strftime('%Y-%m'), upper=False)
+        detalle=limpiar_texto(request.form.get('detalle'), upper=False)
+        obs=limpiar_texto(request.form.get('observacion'), upper=False)
+        f=request.files.get('archivo')
+        if len(dni)!=8:
+            flash('Ingrese DNI válido de 8 dígitos.', 'danger'); return redirect(url_for('boletas_subir'))
+        if not f or not f.filename:
+            flash('Seleccione archivo de boleta/documento.', 'danger'); return redirect(url_for('boletas_subir'))
+        try:
+            path, original, ext = _bt_save_file_291(f, dni, tipo, periodo)
+            _bt_insert_doc_291(dni, tipo, periodo, detalle, obs, path, original, ext, session.get('usuario'))
+            flash('Boleta/documento cargado correctamente.', 'success')
+            return redirect(url_for('boletas_listar', tipo=tipo, buscar=dni))
+        except Exception as e:
+            flash(str(e), 'danger')
+            return redirect(url_for('boletas_subir'))
+    body=_bt_css_291()+r'''
+    <div class="bt291-phone"><div class="bt291-app"><div class="bt291-head"><a class="back" href="{{url_for('boletas_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-cloud-arrow-up"></i></div><div class="ttl">Subir boleta</div></div><div class="bt291-body"><form class="bt291-form" method="post" enctype="multipart/form-data"><div class="row"><div class="col-6"><label>DNI</label><input class="form-control" name="dni" maxlength="8" inputmode="numeric" required autofocus></div><div class="col-6"><label>Tipo</label><select class="form-select" name="tipo">{{tipo_opts|safe}}</select></div><div class="col-6"><label>Periodo</label><input class="form-control" name="periodo" value="{{periodo}}" placeholder="2026-06"></div><div class="col-6"><label>Archivo</label><input class="form-control" name="archivo" type="file" required></div><div class="col-12"><label>Detalle</label><input class="form-control" name="detalle" placeholder="Boleta mensual / CTS / grati..."></div><div class="col-12"><label>Observación</label><input class="form-control" name="observacion"></div></div><button class="bt291-btn mt-2"><i class="bi bi-upload"></i> Guardar boleta</button><div class="bt291-help">Se acepta PDF, imagen, Word o Excel. El trabajador se jala desde la base Trabajadores si existe el DNI.</div></form><a class="bt291-outline" href="{{url_for('boletas_plantilla')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla control</a></div></div></div>'''
+    return render_page(body,tipo_opts=_bt_tipo_options_291(),periodo=datetime.now().strftime('%Y-%m'),title='Subir boleta')
+
+@login_required
+def boletas_listar_291(tipo=None):
+    _boleta_init_291()
+    desde=request.args.get('desde') or ''
+    hasta=request.args.get('hasta') or ''
+    buscar=request.args.get('buscar') or ''
+    tipo = tipo or request.args.get('tipo') or ''
+    docs=_bt_query_docs_291(desde,hasta,tipo,buscar,300)
+    body=_bt_css_291()+r'''
+    <div class="bt291-phone"><div class="bt291-app"><div class="bt291-head"><a class="back" href="{{url_for('boletas_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-folder2-open"></i></div><div class="ttl">Boletas {{tipo or ''}}</div></div><div class="bt291-body"><form class="bt291-filter" method="get"><div class="row"><div class="col-6"><label>Desde</label><input type="date" name="desde" value="{{desde}}" class="form-control"></div><div class="col-6"><label>Hasta</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"></div><div class="col-12"><label>Buscar</label><input name="buscar" value="{{buscar}}" class="form-control" placeholder="DNI / trabajador / periodo"></div><div class="col-6"><button class="bt291-btn"><i class="bi bi-search"></i> Buscar</button></div><div class="col-6"><a class="bt291-outline" href="{{url_for('boletas_subir')}}"><i class="bi bi-plus-circle"></i> Subir</a></div></div></form><div class="bt291-mini">Documentos encontrados: {{docs|length}}</div>{% for d in docs %}<a class="bt291-doc" href="{{url_for('boletas_archivo', doc_id=d.id)}}" target="_blank"><i class="bi bi-file-earmark-text"></i><div><b>{{d.tipo}} · {{d.periodo or '-'}}</b><br><small>{{d.dni}} · {{d.trabajador or 'NO ENCONTRADO'}}<br>{{d.archivo_nombre}}</small></div><i class="bi bi-chevron-right"></i></a>{% else %}<div class="bt291-form text-center text-muted">Sin boletas para el filtro.</div>{% endfor %}</div></div></div>'''
+    return render_page(body,docs=docs,desde=desde,hasta=hasta,buscar=buscar,tipo=tipo,title='Boletas')
+
+@login_required
+def boletas_archivo_291(doc_id):
+    _boleta_init_291()
+    d=row_to_dict(execute('SELECT * FROM boleta_documentos WHERE id=?', (doc_id,), fetchone=True))
+    if not d or not d.get('archivo_path') or not os.path.exists(d.get('archivo_path')):
+        flash('Archivo no encontrado.', 'danger'); return redirect(url_for('boletas_home'))
+    try:
+        execute("UPDATE boleta_documentos SET fecha_lectura=? WHERE id=? AND COALESCE(fecha_lectura,'')=''", (now_str(), doc_id), commit=True)
+    except Exception:
+        pass
+    return send_file(d.get('archivo_path'), as_attachment=False, download_name=d.get('archivo_nombre') or os.path.basename(d.get('archivo_path')))
+
+@login_required
+def boletas_detectar_291():
+    _boleta_init_291()
+    registrados=omitidos=0
+    for root, dirs, files in os.walk(BOLETA_AUTO_DIR_291):
+        for fn in files:
+            ext=os.path.splitext(fn)[1].lower()
+            if ext not in BOLETA_EXT_ALLOWED_291: continue
+            m=re.search(r'(\d{8})', fn)
+            if not m:
+                omitidos+=1; continue
+            dni=m.group(1)
+            src=os.path.join(root,fn)
+            exists=scalar('SELECT COUNT(*) AS c FROM boleta_documentos WHERE archivo_path=?', (src,))
+            if exists:
+                omitidos+=1; continue
+            periodo_match=re.search(r'(20\d{2}[-_ ]?(?:0[1-9]|1[0-2]))', fn)
+            periodo=(periodo_match.group(1).replace('_','-').replace(' ','-') if periodo_match else datetime.now().strftime('%Y-%m'))
+            tipo='NORMAL'
+            up=fn.upper()
+            for cand in ['CTS','GRATIFICACION','GRATIFICACIÓN','UTILIDAD','VACACIONES','LIQUIDACION','LIQUIDACIÓN']:
+                if cand in up:
+                    tipo=_bt_norm_tipo_291(cand); break
+            _bt_insert_doc_291(dni,tipo,periodo,'Detectado automáticamente','Archivo detectado en carpeta BOLETAS_UPLOAD_AUTO',src,fn,ext,session.get('usuario'))
+            registrados+=1
+    flash(f'Detección finalizada. Registrados: {registrados}. Omitidos: {omitidos}. Carpeta: {BOLETA_AUTO_DIR_291}', 'success')
+    return redirect(url_for('boletas_home'))
+
+@login_required
+def boletas_reportes_291():
+    _boleta_init_291()
+    desde=request.args.get('desde') or today_str()
+    hasta=request.args.get('hasta') or today_str()
+    buscar=request.args.get('buscar') or ''
+    docs=_bt_query_docs_291(desde,hasta,None,buscar,250)
+    total=len(docs); leidos=sum(1 for d in docs if d.get('fecha_lectura'))
+    dni_unicos=len(set(d.get('dni') for d in docs if d.get('dni')))
+    tipos=len(set(d.get('tipo') for d in docs if d.get('tipo')))
+    body=_bt_css_291()+r'''
+    <div class="bt291-phone"><div class="bt291-app"><div class="bt291-head"><a class="back" href="{{url_for('boletas_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-file-earmark-bar-graph"></i></div><div class="ttl">Reportes boletas</div></div><div class="bt291-body"><form class="bt291-filter" method="get"><div class="row"><div class="col-6"><label>Desde</label><input type="date" name="desde" value="{{desde}}" class="form-control"></div><div class="col-6"><label>Hasta</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"></div><div class="col-8"><label>Búsqueda</label><input name="buscar" value="{{buscar}}" class="form-control" placeholder="DNI / trabajador / periodo"></div><div class="col-4 d-flex align-items-end"><button class="bt291-btn"><i class="bi bi-search"></i></button></div><div class="col-12"><a class="bt291-outline" href="{{url_for('boletas_exportar')}}?desde={{desde}}&hasta={{hasta}}&buscar={{buscar}}"><i class="bi bi-file-earmark-excel"></i> Exportar Excel</a></div></div></form><div class="bt291-kpis"><div class="bt291-kpi"><small>Total</small><b>{{total}}</b></div><div class="bt291-kpi"><small>DNI</small><b>{{dni_unicos}}</b></div><div class="bt291-kpi"><small>Leídos</small><b>{{leidos}}</b></div></div><div class="bt291-kpis"><div class="bt291-kpi"><small>Tipos</small><b>{{tipos}}</b></div><div class="bt291-kpi"><small>Desde</small><b style="font-size:12px">{{desde[5:]}}</b></div><div class="bt291-kpi"><small>Hasta</small><b style="font-size:12px">{{hasta[5:]}}</b></div></div><div class="bt291-tablewrap"><table class="bt291-table"><thead><tr><th>Fecha</th><th>DNI</th><th>Trabajador</th><th>Tipo</th><th>Periodo</th><th>Archivo</th></tr></thead><tbody>{% for d in docs %}<tr><td>{{d.fecha_subida[:10]}}</td><td>{{d.dni}}</td><td>{{d.trabajador or '-'}}</td><td>{{d.tipo}}</td><td>{{d.periodo or '-'}}</td><td>{{d.archivo_nombre}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin datos.</td></tr>{% endfor %}</tbody></table></div></div></div></div>'''
+    return render_page(body,docs=docs,desde=desde,hasta=hasta,buscar=buscar,total=total,dni_unicos=dni_unicos,leidos=leidos,tipos=tipos,title='Reportes boletas')
+
+@login_required
+def boletas_exportar_291():
+    _boleta_init_291()
+    desde=request.args.get('desde') or ''
+    hasta=request.args.get('hasta') or ''
+    buscar=request.args.get('buscar') or ''
+    rows=_bt_query_docs_291(desde,hasta,None,buscar,5000)
+    headers=['fecha_subida','dni','trabajador','empresa','area','cargo','tipo','periodo','detalle','archivo_nombre','estado','fecha_lectura','uploaded_by','observacion']
+    return excel_response(headers, rows, 'reporte_boletas.xlsx', 'BOLETAS')
+
+@login_required
+def boletas_plantilla_291():
+    wb=Workbook(); ws=wb.active; ws.title='BOLETAS'
+    headers=['DNI','TIPO','PERIODO','DETALLE','OBSERVACION','ARCHIVO']
+    ws.append(headers); ws.append(['74324033','NORMAL',datetime.now().strftime('%Y-%m'),'Boleta mensual','','BOLETA_74324033.pdf'])
+    for col in ws.columns:
+        ws.column_dimensions[col[0].column_letter].width=max(14,min(32,max(len(str(c.value or '')) for c in col)+2))
+    out=BytesIO(); wb.save(out); out.seek(0)
+    return send_file(out, as_attachment=True, download_name='plantilla_control_boletas.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+def home_291():
+    if not session.get('usuario'): return redirect(url_for('inicio'))
+    hojas = rows_to_dict(execute('SELECT * FROM hojas_tareo ORDER BY fecha DESC, id DESC LIMIT 8', fetchall=True))
+    body = """
+    <div class="desktop-grid"><div class="phone-wrap"><div class="green-hero" style="min-height:220px"><div class="green-top"><a class="text-white text-decoration-none" href="{{url_for('soporte')}}"><i class="bi bi-headset"></i> Soporte</a>{% if session.get('rol')=='admin' %}<a class="text-white text-decoration-none" href="{{url_for('configuraciones')}}"><i class="bi bi-gear"></i> Config.</a>{% else %}<span></span>{% endif %}</div><div class="avatar"><i class="bi bi-person-circle"></i></div><div class="login-name">{{ session.get('nombres','USUARIO') }}</div><div class="white-input mt-3"></div></div><div class="top-actions"><a class="tile text-decoration-none" href="{{url_for('hojas_tareo')}}"><i class="bi bi-list-check"></i>TAREO</a><a class="tile text-decoration-none" href="{{url_for('asistencia_modulo')}}"><i class="bi bi-fingerprint"></i>ASIST.</a><a class="tile text-decoration-none" href="{{url_for('documentos_firma')}}"><i class="bi bi-pen"></i>FIRMAS</a><a class="tile text-decoration-none" href="{{url_for('transporte')}}"><i class="bi bi-bus-front"></i>TRANSP.</a><a class="tile text-decoration-none" href="{{url_for('contratacion_home')}}"><i class="bi bi-person-plus"></i>CONTRAT.</a><a class="tile text-decoration-none" href="{{url_for('boletas_home')}}"><i class="bi bi-file-earmark-text"></i>BOLETA</a><a class="tile text-decoration-none" href="{{url_for('reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i>REPORTES<br>TAREO</a><a class="tile text-decoration-none" href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-repeat"></i>SINC.</a></div><div class="leaf"></div><div class="bottom-sync"><i class="bi bi-arrow-repeat"></i> Sincronizar Tablas Maestras<br>Actualizado hasta: {{ now }}</div><a href="{{url_for('logout')}}" class="bottom-out"><i class="bi bi-box-arrow-right"></i></a></div><div class="desk-panel"><h1 class="header-title">TAREO MÓVIL – GRUPO DE COSECHA</h1><div class="card-pro p-4 mb-3"><div class="d-flex justify-content-between align-items-center"><div><h4 class="fw-bold text-success mb-1">Hojas recientes</h4><div class="text-muted small">Crea una hoja y registra labores, trabajadores y avances.</div></div><a class="btn btn-green" href="{{url_for('crear_hoja')}}"><i class="bi bi-plus-lg"></i> Crear hoja</a></div></div><div class="card-pro p-3"><div class="table-responsive"><table class="table list-table"><thead><tr><th>Fecha</th><th>Grupo</th><th>Subgrupo</th><th>Labor</th><th>Responsable</th><th>Estado</th><th></th></tr></thead><tbody>{% for h in hojas %}<tr><td>{{h.fecha}}</td><td>{{h.grupo}}</td><td>{{h.subgrupo}}</td><td>{{h.labor}}</td><td>{{h.responsable}}</td><td><span class="status-pill">{{h.estado}}</span></td><td><a class="btn btn-sm btn-green" href="{{url_for('detalle_hoja', hoja_id=h.id)}}">Abrir</a></td></tr>{% else %}<tr><td colspan="7" class="text-center text-muted py-4">Sin hojas creadas.</td></tr>{% endfor %}</tbody></table></div></div></div></div>"""
+    return render_page(body, hojas=hojas, now=now_str())
+
+try:
+    app.add_url_rule('/boletas', 'boletas_home', boletas_home_291, methods=['GET'])
+    app.add_url_rule('/boletas/subir', 'boletas_subir', boletas_subir_291, methods=['GET','POST'])
+    app.add_url_rule('/boletas/listar', 'boletas_listar', boletas_listar_291, methods=['GET'])
+    app.add_url_rule('/boletas/listar/<tipo>', 'boletas_listar', boletas_listar_291, methods=['GET'])
+    app.add_url_rule('/boletas/archivo/<int:doc_id>', 'boletas_archivo', boletas_archivo_291, methods=['GET'])
+    app.add_url_rule('/boletas/detectar', 'boletas_detectar', boletas_detectar_291, methods=['GET'])
+    app.add_url_rule('/boletas/reportes', 'boletas_reportes', boletas_reportes_291, methods=['GET'])
+    app.add_url_rule('/boletas/exportar', 'boletas_exportar', boletas_exportar_291, methods=['GET'])
+    app.add_url_rule('/boletas/plantilla', 'boletas_plantilla', boletas_plantilla_291, methods=['GET'])
+except Exception as e:
+    print('Rutas boletas 291:', e)
+app.view_functions['home'] = home_291
+# ======================= FIN PATCH BOLETAS OMAR 291 =======================
+
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
