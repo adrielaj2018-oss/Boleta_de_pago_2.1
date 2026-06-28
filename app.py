@@ -7060,6 +7060,292 @@ app.view_functions['contratacion_etapa']=contratacion_etapa_293
 app.view_functions['contratacion_config']=contratacion_config_293
 # ======================= FIN PATCH OMAR 293 =======================
 
+# ========================= PATCH VACACIONES OMAR 294 =========================
+# Módulo vacaciones robusto: usuario limitado ve saldo y solicita vacaciones;
+# administrador carga trabajadores/saldos masivos, aprueba/rechaza y exporta.
+
+from math import ceil
+
+
+def _vac_css_294():
+    return """
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}
+      .shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:8px 8px 26px!important;background:#fff!important}
+      .vac294-phone{max-width:390px;margin:0 auto}.vac294-app{background:#fff;border:1px solid #e4e8e4;border-radius:13px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+      .vac294-head{height:70px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}
+      .vac294-head a.back{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:31px;line-height:1}
+      .vac294-head a.cfg{position:absolute;right:10px;top:16px;color:#fff!important;text-decoration:none;border:1px solid rgba(255,255,255,.65);border-radius:11px;padding:5px 8px;font-size:11px;font-weight:950}
+      .vac294-head .ttl{font-size:17px;font-weight:950;color:#fff;text-align:center;letter-spacing:.2px}.vac294-body{padding:13px;background:#fff}
+      .vac294-info{display:grid;grid-template-columns:20px 1fr;gap:8px;border:1px solid #b8d7ff;background:#eef6ff;border-radius:11px;padding:10px;margin-bottom:12px;color:#0b2e83;font-size:11.5px;font-weight:900;line-height:1.35}.vac294-info i{font-size:17px;margin-top:1px;color:#0b5ed7}
+      .vac294-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}.vac294-kpi{background:#10964e;color:#fff;border-radius:9px;text-align:center;padding:8px 4px;box-shadow:0 7px 13px rgba(16,150,78,.16)}.vac294-kpi small{display:block;font-size:9.4px;font-weight:950;line-height:1.05;color:#effff3}.vac294-kpi b{display:block;font-size:21px;line-height:1.05;font-weight:950;color:#fff;margin-top:4px}
+      .vac294-section{font-size:13px;font-weight:950;color:#08713b;text-transform:uppercase;margin:11px 1px 8px;letter-spacing:.15px}.vac294-form,.vac294-card{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:12px;margin-bottom:12px}.vac294-form label{font-size:11px;font-weight:950;color:#176a35;margin-bottom:4px}.vac294-form .form-control,.vac294-form .form-select{height:39px!important;border-radius:9px!important;font-size:12px!important;font-weight:850}.vac294-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .vac294-btn{height:42px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff;font-weight:950;font-size:13px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}.vac294-btn:hover{background:#065f2a;color:#fff}.vac294-outline{height:40px;border-radius:10px;background:#fff;border:1px solid #08713b;color:#08713b;font-weight:900;font-size:12px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}
+      .vac294-period{display:grid;grid-template-columns:1fr 64px;gap:7px;align-items:center;border:1px solid #e5e7eb;background:#fff;border-radius:10px;padding:9px 10px;margin:7px 0}.vac294-period b{font-size:12px;color:#0a1f44}.vac294-period small{display:block;font-size:10.5px;color:#56715b;font-weight:800}.vac294-period .saldo{text-align:center;color:#08713b;font-size:20px;font-weight:950;line-height:1}.vac294-period .saldo small{font-size:9px;color:#08713b;text-transform:uppercase}
+      .vac294-list{border:1px solid #e5e7eb;border-radius:10px;overflow:auto;background:#fff;scrollbar-color:#08713b #e5e7eb}.vac294-list::-webkit-scrollbar{height:8px}.vac294-list::-webkit-scrollbar-thumb{background:#08713b;border-radius:999px}.vac294-list::-webkit-scrollbar-track{background:#e5e7eb}.vac294-table{width:100%;min-width:580px;border-collapse:collapse}.vac294-table th{background:#f8fafc;color:#12223b;font-size:11px;font-weight:950;padding:8px;border-bottom:1px solid #e5e7eb}.vac294-table td{font-size:11px;color:#334155;padding:8px;border-bottom:1px solid #f1f5f9;font-weight:750;vertical-align:middle}
+      .vac294-badge{display:inline-block;border-radius:999px;background:#dcfce7;color:#166534;padding:4px 8px;font-size:9.5px;font-weight:950;white-space:nowrap}.vac294-badge.pend{background:#fef3c7;color:#92400e}.vac294-badge.rech{background:#fee2e2;color:#991b1b}.vac294-badge.aprob{background:#dcfce7;color:#166534}
+      .vac294-actions{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}.vac294-actions .vac294-btn,.vac294-actions .vac294-outline{height:54px;flex-direction:column;gap:2px;font-size:11px;line-height:1.1}.vac294-actions i{font-size:20px}.vac294-help{font-size:10.5px;color:#4a644f;font-weight:850;line-height:1.35;margin-top:5px}.vac294-ok{border:1px solid #bbf7d0;background:#ecfdf5;color:#065f2a;border-radius:9px;padding:8px 9px;font-size:11px;font-weight:900;line-height:1.35;margin-top:7px}.vac294-bad{border:1px solid #fecaca;background:#fee2e2;color:#991b1b;border-radius:9px;padding:8px 9px;font-size:11px;font-weight:900;line-height:1.35;margin-top:7px}
+    </style>
+    """
+
+
+def _vac_parse_date_294(v):
+    if not v: return None
+    if hasattr(v, 'date'): return v.date()
+    s = str(v).strip()
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%Y/%m/%d'):
+        try: return datetime.strptime(s[:10], fmt).date()
+        except Exception: pass
+    try: return datetime.fromisoformat(s[:10]).date()
+    except Exception: return None
+
+
+def _vac_date_iso_294(v):
+    d = _vac_parse_date_294(v)
+    return d.isoformat() if d else ''
+
+
+def _vac_float_294(v, default=0.0):
+    try:
+        if v is None or v == '': return default
+        return float(str(v).replace(',', '.'))
+    except Exception:
+        return default
+
+
+def _vac_period_text_294(r):
+    pi = r.get('periodo_inicio') or ''
+    pf = r.get('periodo_fin') or ''
+    if pi or pf: return f'{pi}/{pf}'.strip('/')
+    return r.get('periodo') or 'Periodo'
+
+
+def _vac_ensure_294():
+    _ensure_rrhh_292()
+    for ddl in [
+        'ALTER TABLE vacaciones_saldos ADD COLUMN periodo TEXT',
+        'ALTER TABLE vacaciones_saldos ADD COLUMN jefe_dni TEXT',
+        'ALTER TABLE vacaciones_saldos ADD COLUMN fecha_ingreso TEXT',
+        'ALTER TABLE vacaciones_solicitudes ADD COLUMN periodo_detalle TEXT',
+        'ALTER TABLE vacaciones_solicitudes ADD COLUMN periodo_ids TEXT',
+        'ALTER TABLE vacaciones_solicitudes ADD COLUMN fecha_jefe TEXT',
+        'ALTER TABLE vacaciones_solicitudes ADD COLUMN fecha_gh TEXT',
+        'ALTER TABLE vacaciones_solicitudes ADD COLUMN dias_gozar REAL DEFAULT 0',
+    ]:
+        try: execute(ddl, commit=True)
+        except Exception: pass
+    try:
+        execute('CREATE INDEX IF NOT EXISTS idx_vac294_saldos_dni ON vacaciones_saldos(dni)', commit=True)
+        execute('CREATE INDEX IF NOT EXISTS idx_vac294_sol_dni ON vacaciones_solicitudes(dni)', commit=True)
+    except Exception: pass
+
+
+def _vac_user_dni_294(): return limpiar_dni(session.get('dni') or session.get('usuario') or '')
+def _vac_is_admin_294(): return session.get('rol') == 'admin'
+
+
+def _vac_reserved_by_period_294(dni):
+    usados = {}
+    rows = rows_to_dict(execute("""SELECT id,dias,periodo_ids,estado FROM vacaciones_solicitudes
+                                  WHERE dni=? AND UPPER(COALESCE(estado,'')) IN ('PENDIENTE','PENDIENTE JEFE','PENDIENTE GH')""", (dni,), fetchall=True))
+    for s in rows:
+        ids = [x.strip() for x in str(s.get('periodo_ids') or '').split(',') if x.strip().isdigit()]
+        if not ids: continue
+        dias = _vac_float_294(s.get('dias') or s.get('dias_gozar'))
+        por = dias / max(1, len(ids))
+        for pid in ids: usados[int(pid)] = usados.get(int(pid), 0.0) + por
+    return usados
+
+
+def _vac_saldos_dni_294(dni):
+    rows = rows_to_dict(execute('SELECT * FROM vacaciones_saldos WHERE dni=? ORDER BY periodo_inicio DESC, periodo_fin DESC, id DESC', (dni,), fetchall=True))
+    usados = _vac_reserved_by_period_294(dni)
+    for r in rows:
+        base = _vac_float_294(r.get('saldo'))
+        usado = usados.get(int(r.get('id') or 0), 0.0)
+        r['saldo_disponible'] = max(0.0, round(base - usado, 2))
+        r['periodo_txt'] = _vac_period_text_294(r)
+    return rows
+
+
+def _vac_badge_294(estado):
+    e = (estado or 'PENDIENTE').upper()
+    cls = 'pend'
+    if 'APROB' in e: cls = 'aprob'
+    elif 'RECH' in e or 'ANUL' in e: cls = 'rech'
+    return f'<span class="vac294-badge {cls}">{h(e)}</span>'
+
+
+def _vac_find_worker_294(dni):
+    w = _find_worker_any_292(dni)
+    return w if w else {'dni': dni, 'trabajador': '', 'empresa':'', 'area':'', 'cargo':'', 'actividad':''}
+
+
+def _vac_upsert_trabajador_294(row):
+    dni = limpiar_dni(_valor(row, ['DNI','DOCUMENTO','DOC','NUMERO DOCUMENTO']))
+    if len(dni) != 8: return False
+    trabajador = limpiar_texto(_valor(row, ['TRABAJADOR','NOMBRES','NOMBRE','APELLIDOS Y NOMBRES','APELLIDOS NOMBRES']), upper=True)
+    empresa = limpiar_texto(_valor(row, ['EMPRESA']), upper=True)
+    area = limpiar_texto(_valor(row, ['AREA','ÁREA']), upper=True)
+    cargo = limpiar_texto(_valor(row, ['CARGO','PUESTO']), upper=True)
+    actividad = limpiar_texto(_valor(row, ['ACTIVIDAD','LABOR']), upper=True)
+    planilla = limpiar_texto(_valor(row, ['PLANILLA','REGIMEN','RÉGIMEN']), upper=True)
+    existe = row_to_dict(execute('SELECT id FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if existe:
+        execute("""UPDATE trabajadores SET trabajador=?, empresa=?, area=?, cargo=?, actividad=?, planilla=?, estado='ACTIVO', fecha_carga=? WHERE dni=?""", (trabajador, empresa, area, cargo, actividad, planilla, now_str(), dni), commit=True)
+    else:
+        execute("""INSERT INTO trabajadores(dni,trabajador,empresa,area,cargo,actividad,planilla,estado,fecha_carga) VALUES(?,?,?,?,?,?,?,?,?)""", (dni, trabajador, empresa, area, cargo, actividad, planilla, 'ACTIVO', now_str()), commit=True)
+    return True
+
+
+def _vac_upsert_saldo_294(row):
+    dni = limpiar_dni(_valor(row, ['DNI','DOCUMENTO','DOC','NUMERO DOCUMENTO']))
+    if len(dni) != 8: return False
+    w = _vac_find_worker_294(dni)
+    trabajador = limpiar_texto(_valor(row, ['TRABAJADOR','NOMBRES','NOMBRE','APELLIDOS Y NOMBRES']) or w.get('trabajador'), upper=True)
+    empresa = limpiar_texto(_valor(row, ['EMPRESA']) or w.get('empresa'), upper=True)
+    area = limpiar_texto(_valor(row, ['AREA','ÁREA']) or w.get('area'), upper=True)
+    jefe = limpiar_texto(_valor(row, ['JEFE','JEFE NOMBRE','RESPONSABLE']), upper=True)
+    jefe_dni = limpiar_dni(_valor(row, ['JEFE DNI','DNI JEFE']))
+    fecha_ingreso = _vac_date_iso_294(_valor(row, ['FECHA INGRESO','FECHA_INGRESO','INGRESO']))
+    pi = str(_valor(row, ['I_PERIODO','PERIODO INICIO','INICIO PERIODO','PERIODO_INICIO']) or '').strip()
+    pf = str(_valor(row, ['F_PERIODO','PERIODO FIN','FIN PERIODO','PERIODO_FIN']) or '').strip()
+    periodo = str(_valor(row, ['PERIODO']) or f'{pi}/{pf}'.strip('/')).strip()
+    saldo = _vac_float_294(_valor(row, ['SALDO','DIAS SALDO','DÍAS SALDO','DIAS DISPONIBLES','DISPONIBLE']))
+    ganados = _vac_float_294(_valor(row, ['DIAS GANADOS','DÍAS GANADOS','GANADOS']), saldo)
+    gozados = _vac_float_294(_valor(row, ['DIAS GOZADOS','DÍAS GOZADOS','GOZADOS']), max(0, ganados - saldo))
+    existe = row_to_dict(execute("SELECT id FROM vacaciones_saldos WHERE dni=? AND COALESCE(periodo_inicio,'')=? AND COALESCE(periodo_fin,'')=? LIMIT 1", (dni, pi, pf), fetchone=True))
+    if existe:
+        execute("""UPDATE vacaciones_saldos SET trabajador=?, empresa=?, area=?, jefe=?, jefe_dni=?, fecha_ingreso=?, periodo=?, dias_ganados=?, dias_gozados=?, saldo=?, fecha_carga=?, uploaded_by=? WHERE id=?""", (trabajador, empresa, area, jefe, jefe_dni, fecha_ingreso, periodo, ganados, gozados, saldo, now_str(), session.get('usuario'), existe.get('id')), commit=True)
+    else:
+        execute("""INSERT INTO vacaciones_saldos(dni,trabajador,empresa,area,jefe,jefe_dni,fecha_ingreso,periodo_inicio,periodo_fin,periodo,dias_ganados,dias_gozados,saldo,fecha_carga,uploaded_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (dni, trabajador, empresa, area, jefe, jefe_dni, fecha_ingreso, pi, pf, periodo, ganados, gozados, saldo, now_str(), session.get('usuario')), commit=True)
+    return True
+
+
+@login_required
+def vacaciones_home_294():
+    _vac_ensure_294()
+    is_admin = _vac_is_admin_294()
+    if is_admin:
+        solicitudes = rows_to_dict(execute('SELECT * FROM vacaciones_solicitudes ORDER BY id DESC LIMIT 120', fetchall=True))
+        total_saldos = int(scalar('SELECT COUNT(*) AS c FROM vacaciones_saldos') or 0)
+        total_trab = int(scalar('SELECT COUNT(*) AS c FROM trabajadores') or 0)
+        total_sol = len(solicitudes)
+        pend = sum(1 for s in solicitudes if 'PEND' in (s.get('estado') or '').upper())
+        aprob = sum(1 for s in solicitudes if 'APROB' in (s.get('estado') or '').upper())
+        body = _vac_css_294() + r'''
+        <div class="vac294-phone"><div class="vac294-app"><div class="vac294-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><a class="cfg" href="{{url_for('vacaciones_config')}}"><i class="bi bi-gear"></i> Config.</a><div class="ttl">Vacaciones Admin</div></div><div class="vac294-body"><div class="vac294-info"><i class="bi bi-info-circle-fill"></i><div>Administrador: carga trabajadores/saldos, revisa solicitudes y aprueba o rechaza. El usuario solo ve saldo y solicita vacaciones.</div></div><div class="vac294-kpis"><div class="vac294-kpi"><small>Saldos</small><b>{{total_saldos}}</b></div><div class="vac294-kpi"><small>Solicitudes</small><b>{{total_sol}}</b></div><div class="vac294-kpi"><small>Pend.</small><b>{{pend}}</b></div></div><div class="vac294-kpis"><div class="vac294-kpi"><small>Aprob.</small><b>{{aprob}}</b></div><div class="vac294-kpi"><small>Trabaj.</small><b>{{total_trab}}</b></div><div class="vac294-kpi"><small>Hoy</small><b style="font-size:13px">{{hoy[5:]}}</b></div></div><div class="vac294-actions"><a class="vac294-btn" href="{{url_for('vacaciones_config')}}"><i class="bi bi-cloud-arrow-up"></i><span>Carga masiva</span></a><a class="vac294-outline" href="{{url_for('vacaciones_exportar')}}"><i class="bi bi-file-earmark-excel"></i><span>Exportar</span></a></div><div class="vac294-section">Solicitudes por aprobar</div><div class="vac294-list"><table class="vac294-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Periodo</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{% for s in solicitudes %}<tr><td>{{s.dni}}</td><td>{{s.trabajador or '-'}}</td><td>{{s.fecha_inicio}}</td><td>{{s.fecha_fin}}</td><td>{{s.dias}}</td><td>{{s.periodo_detalle or '-'}}</td><td>{{badge(s.estado)|safe}}</td><td><a href="{{url_for('vacaciones_estado', sol_id=s.id, estado='APROBADO')}}">Aprobar</a> · <a href="{{url_for('vacaciones_estado', sol_id=s.id, estado='RECHAZADO')}}">Rechazar</a></td></tr>{% else %}<tr><td colspan="8" class="text-center text-muted">Sin solicitudes.</td></tr>{% endfor %}</tbody></table></div></div></div></div>'''
+        return render_page(body, solicitudes=solicitudes, total_saldos=total_saldos, total_trab=total_trab, total_sol=total_sol, pend=pend, aprob=aprob, hoy=today_str(), badge=_vac_badge_294, title='Vacaciones Admin')
+    dni = _vac_user_dni_294()
+    if request.method == 'POST':
+        periodo_id = request.form.get('periodo_id') or ''
+        dias_gozar = _vac_float_294(request.form.get('dias_gozar') or request.form.get('dias'))
+        fi = _vac_parse_date_294(request.form.get('fecha_inicio'))
+        motivo = limpiar_texto(request.form.get('motivo') or 'VACACIONES', upper=True)
+        hoy_d = date.today()
+        if not periodo_id.isdigit(): flash('Seleccione el periodo con saldo que usará.', 'danger'); return redirect(url_for('vacaciones_home'))
+        if not fi: flash('Seleccione una fecha de inicio válida.', 'danger'); return redirect(url_for('vacaciones_home'))
+        if fi < hoy_d: flash('La fecha de inicio no puede ser anterior a hoy.', 'danger'); return redirect(url_for('vacaciones_home'))
+        if dias_gozar <= 0: flash('Digite los días a gozar.', 'danger'); return redirect(url_for('vacaciones_home'))
+        saldo_row = row_to_dict(execute('SELECT * FROM vacaciones_saldos WHERE id=? AND dni=?', (int(periodo_id), dni), fetchone=True))
+        if not saldo_row: flash('El periodo seleccionado no pertenece a su DNI.', 'danger'); return redirect(url_for('vacaciones_home'))
+        saldos = _vac_saldos_dni_294(dni); saldo_sel = next((r for r in saldos if int(r.get('id') or 0) == int(periodo_id)), None); disponible = _vac_float_294((saldo_sel or {}).get('saldo_disponible'))
+        if dias_gozar > disponible: flash(f'No puede solicitar {dias_gozar:g} día(s). Su saldo disponible del periodo es {disponible:g}.', 'danger'); return redirect(url_for('vacaciones_home'))
+        dias_cal = int(ceil(dias_gozar)); ff = date.fromordinal(fi.toordinal() + max(0, dias_cal - 1))
+        w = _vac_find_worker_294(dni); periodo_detalle = _vac_period_text_294(saldo_row)
+        execute("""INSERT INTO vacaciones_solicitudes(dni,trabajador,jefe_dni,fecha_inicio,fecha_fin,dias,dias_gozar,motivo,estado,fecha_solicitud,periodo_detalle,periodo_ids,creado_por) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", (dni, w.get('trabajador'), saldo_row.get('jefe_dni') or '', fi.isoformat(), ff.isoformat(), dias_gozar, dias_gozar, motivo, 'PENDIENTE', now_str(), periodo_detalle, str(periodo_id), dni), commit=True)
+        flash('Solicitud de vacaciones registrada. Queda pendiente de aprobación.', 'success')
+        return redirect(url_for('vacaciones_home'))
+    saldos = _vac_saldos_dni_294(dni)
+    solicitudes = rows_to_dict(execute('SELECT * FROM vacaciones_solicitudes WHERE dni=? ORDER BY id DESC LIMIT 80', (dni,), fetchall=True))
+    total_saldo = round(sum(_vac_float_294(r.get('saldo_disponible')) for r in saldos), 2)
+    pend = sum(1 for s in solicitudes if 'PEND' in (s.get('estado') or '').upper()); aprob = sum(1 for s in solicitudes if 'APROB' in (s.get('estado') or '').upper())
+    body = _vac_css_294() + r'''
+    <div class="vac294-phone"><div class="vac294-app"><div class="vac294-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Mis vacaciones</div></div><div class="vac294-body"><div class="vac294-info"><i class="bi bi-info-circle-fill"></i><div>Acceso usuario: solo puede ver su saldo y solicitar vacaciones. No puede cargar trabajadores ni saldos.</div></div><div class="vac294-kpis"><div class="vac294-kpi"><small>Saldo disp.</small><b>{{total_saldo|round(1)}}</b></div><div class="vac294-kpi"><small>Pend.</small><b>{{pend}}</b></div><div class="vac294-kpi"><small>Aprob.</small><b>{{aprob}}</b></div></div><div class="vac294-section">Solicitar vacaciones</div><form method="post" class="vac294-form" id="frmVac294"><label>Periodo con saldo</label><select name="periodo_id" id="periodoVac294" class="form-select" required><option value="">Seleccione periodo...</option>{% for s in saldos %}<option value="{{s.id}}" data-saldo="{{s.saldo_disponible}}">{{s.periodo_txt}} · Saldo {{s.saldo_disponible}}</option>{% endfor %}</select><div class="vac294-row mt-2"><div><label>Días a gozar</label><input name="dias_gozar" id="diasVac294" type="number" step="1" min="1" class="form-control" placeholder="Ej. 5" required></div><div><label>Fecha inicio</label><input name="fecha_inicio" id="inicioVac294" type="date" min="{{hoy}}" value="{{hoy}}" class="form-control" required></div></div><div class="vac294-row mt-2"><div><label>Fecha fin</label><input name="fecha_fin_mostrar" id="finVac294" type="date" class="form-control" readonly></div><div><label>Motivo</label><input name="motivo" class="form-control" value="VACACIONES"></div></div><div id="msgVac294" class="vac294-ok">La fecha fin se calcula automáticamente según los días a gozar.</div><button class="vac294-btn mt-2"><i class="bi bi-send"></i> Enviar solicitud</button></form><div class="vac294-section">Mis saldos</div>{% for s in saldos %}<div class="vac294-period"><div><b>{{s.periodo_txt}}</b><small>Ganados {{s.dias_ganados or 0}} · Gozados {{s.dias_gozados or 0}}</small></div><div class="saldo">{{s.saldo_disponible|round(1)}}<small>días</small></div></div>{% else %}<div class="vac294-card text-center text-muted">No tiene saldos cargados. Solicite a RR.HH. la carga de su saldo.</div>{% endfor %}<div class="vac294-section">Mis solicitudes</div><div class="vac294-list"><table class="vac294-table"><thead><tr><th>Inicio</th><th>Fin</th><th>Días</th><th>Periodo</th><th>Estado</th><th>Fecha solicitud</th></tr></thead><tbody>{% for s in solicitudes %}<tr><td>{{s.fecha_inicio}}</td><td>{{s.fecha_fin}}</td><td>{{s.dias}}</td><td>{{s.periodo_detalle or '-'}}</td><td>{{badge(s.estado)|safe}}</td><td>{{s.fecha_solicitud}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin solicitudes.</td></tr>{% endfor %}</tbody></table></div></div></div></div><script>function calcFinVac294(){const ini=document.getElementById('inicioVac294'),dias=document.getElementById('diasVac294'),fin=document.getElementById('finVac294'),sel=document.getElementById('periodoVac294'),msg=document.getElementById('msgVac294');if(!ini||!dias||!fin)return;let d=parseInt(dias.value||'0',10);let f=ini.value;if(!f||d<=0){fin.value='';return;}let max=parseFloat(sel.options[sel.selectedIndex]?.dataset?.saldo||'0');if(max&&d>max){msg.className='vac294-bad';msg.textContent='Los días a gozar superan el saldo disponible del periodo.';}else{msg.className='vac294-ok';msg.textContent='Fecha fin calculada automáticamente.';}let dt=new Date(f+'T00:00:00');dt.setDate(dt.getDate()+d-1);fin.value=dt.toISOString().slice(0,10);}['inicioVac294','diasVac294','periodoVac294'].forEach(id=>{let e=document.getElementById(id);if(e)e.addEventListener('input',calcFinVac294);if(e)e.addEventListener('change',calcFinVac294);});calcFinVac294();</script>'''
+    return render_page(body, saldos=saldos, solicitudes=solicitudes, total_saldo=total_saldo, pend=pend, aprob=aprob, hoy=today_str(), badge=_vac_badge_294, title='Mis vacaciones')
+
+
+@login_required
+def vacaciones_estado_294(sol_id, estado):
+    _vac_ensure_294()
+    if not _vac_is_admin_294(): return _deny_admin_292()
+    estado = (estado or '').upper()
+    if estado not in ('APROBADO','RECHAZADO','ANULADO'): estado = 'PENDIENTE'
+    sol = row_to_dict(execute('SELECT * FROM vacaciones_solicitudes WHERE id=?', (sol_id,), fetchone=True))
+    if not sol: flash('Solicitud no encontrada.', 'danger'); return redirect(url_for('vacaciones_home'))
+    old = (sol.get('estado') or '').upper()
+    if estado == 'APROBADO' and 'APROB' not in old:
+        dias_rest = _vac_float_294(sol.get('dias') or sol.get('dias_gozar'))
+        ids = [x.strip() for x in str(sol.get('periodo_ids') or '').split(',') if x.strip().isdigit()]
+        for pid in ids:
+            if dias_rest <= 0: break
+            saldo = row_to_dict(execute('SELECT * FROM vacaciones_saldos WHERE id=?', (int(pid),), fetchone=True))
+            if not saldo: continue
+            disp = _vac_float_294(saldo.get('saldo')); usar = min(disp, dias_rest)
+            execute('UPDATE vacaciones_saldos SET dias_gozados=COALESCE(dias_gozados,0)+?, saldo=MAX(COALESCE(saldo,0)-?,0) WHERE id=?', (usar, usar, int(pid)), commit=True)
+            dias_rest -= usar
+    execute('UPDATE vacaciones_solicitudes SET estado=?, comentario_gh=?, fecha_gh=? WHERE id=?', (estado, f'Actualizado por {session.get("usuario")} {now_str()}', now_str(), sol_id), commit=True)
+    flash('Estado actualizado.', 'success'); return redirect(url_for('vacaciones_home'))
+
+
+@login_required
+def vacaciones_config_294():
+    _vac_ensure_294()
+    if not _vac_is_admin_294(): return _deny_admin_292()
+    if request.method == 'POST':
+        action = request.form.get('action') or 'saldos'; f = request.files.get('archivo')
+        if not f or not f.filename: flash('Seleccione un Excel.', 'danger'); return redirect(url_for('vacaciones_config'))
+        ok = bad = 0
+        try:
+            for row in _iter_excel_upload(f):
+                res = _vac_upsert_trabajador_294(row) if action == 'trabajadores' else _vac_upsert_saldo_294(row)
+                if res: ok += 1
+                else: bad += 1
+            flash(f'Carga completada. Correctos: {ok}. Omitidos/error: {bad}.', 'success')
+        except Exception as e: flash(f'Error leyendo Excel: {e}', 'danger')
+        return redirect(url_for('vacaciones_config'))
+    ult_saldos = rows_to_dict(execute('SELECT * FROM vacaciones_saldos ORDER BY id DESC LIMIT 50', fetchall=True))
+    body = _vac_css_294() + r'''
+    <div class="vac294-phone"><div class="vac294-app"><div class="vac294-head"><a class="back" href="{{url_for('vacaciones_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Config. vacaciones</div></div><div class="vac294-body"><div class="vac294-info"><i class="bi bi-info-circle-fill"></i><div>Configuración solo administrador: primero puede cargar trabajadores y luego cargar saldos vacacionales por DNI.</div></div><form method="post" enctype="multipart/form-data" class="vac294-form"><input type="hidden" name="action" value="trabajadores"><label><i class="bi bi-people"></i> Carga masiva de trabajadores</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="vac294-help">Columnas: DNI, TRABAJADOR, EMPRESA, AREA, CARGO, ACTIVIDAD, PLANILLA.</div><div class="vac294-row mt-2"><button class="vac294-btn"><i class="bi bi-upload"></i> Cargar trabajadores</button><a class="vac294-outline" href="{{url_for('vacaciones_plantilla_trabajadores')}}"><i class="bi bi-file-earmark-excel"></i> Plantilla</a></div></form><form method="post" enctype="multipart/form-data" class="vac294-form"><input type="hidden" name="action" value="saldos"><label><i class="bi bi-calendar-check"></i> Carga masiva de saldos</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="vac294-help">Columnas: DNI, TRABAJADOR, I_PERIODO, F_PERIODO, DIAS GANADOS, DIAS GOZADOS, SALDO, JEFE DNI.</div><div class="vac294-row mt-2"><button class="vac294-btn"><i class="bi bi-upload"></i> Cargar saldos</button><a class="vac294-outline" href="{{url_for('vacaciones_plantilla_saldos')}}"><i class="bi bi-file-earmark-excel"></i> Plantilla</a></div></form><div class="vac294-actions"><a class="vac294-outline" href="{{url_for('vacaciones_exportar')}}"><i class="bi bi-download"></i><span>Exportar solicitudes</span></a><a class="vac294-outline" href="{{url_for('vacaciones_home')}}"><i class="bi bi-check2-square"></i><span>Aprobaciones</span></a></div><div class="vac294-section">Últimos saldos cargados</div><div class="vac294-list"><table class="vac294-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Periodo</th><th>Ganados</th><th>Gozados</th><th>Saldo</th></tr></thead><tbody>{% for s in ult_saldos %}<tr><td>{{s.dni}}</td><td>{{s.trabajador or '-'}}</td><td>{{s.periodo or (s.periodo_inicio ~ '/' ~ s.periodo_fin)}}</td><td>{{s.dias_ganados}}</td><td>{{s.dias_gozados}}</td><td>{{s.saldo}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin saldos cargados.</td></tr>{% endfor %}</tbody></table></div></div></div></div>'''
+    return render_page(body, ult_saldos=ult_saldos, title='Config. vacaciones')
+
+
+@login_required
+def vacaciones_plantilla_trabajadores_294():
+    if not _vac_is_admin_294(): return _deny_admin_292()
+    headers = ['DNI','TRABAJADOR','EMPRESA','AREA','CARGO','ACTIVIDAD','PLANILLA']
+    rows = [{'DNI':'74324033','TRABAJADOR':'JOSE GARCIA','EMPRESA':'AQUANQA','AREA':'COSECHA','CARGO':'OPERARIO','ACTIVIDAD':'ARANDANO','PLANILLA':'AGRARIO'}]
+    return excel_response(headers, rows, 'plantilla_trabajadores_vacaciones.xlsx', 'TRABAJADORES')
+
+@login_required
+def vacaciones_plantilla_saldos_294():
+    if not _vac_is_admin_294(): return _deny_admin_292()
+    headers = ['DNI','TRABAJADOR','EMPRESA','AREA','FECHA INGRESO','I_PERIODO','F_PERIODO','DIAS GANADOS','DIAS GOZADOS','SALDO','JEFE DNI']
+    rows = [{'DNI':'74324033','TRABAJADOR':'JOSE GARCIA','EMPRESA':'AQUANQA','AREA':'COSECHA','FECHA INGRESO':'2025-01-01','I_PERIODO':'2025','F_PERIODO':'2026','DIAS GANADOS':30,'DIAS GOZADOS':0,'SALDO':30,'JEFE DNI':''}]
+    return excel_response(headers, rows, 'plantilla_saldos_vacaciones.xlsx', 'SALDOS')
+
+@login_required
+def vacaciones_exportar_294():
+    _vac_ensure_294()
+    rows = rows_to_dict(execute('SELECT * FROM vacaciones_solicitudes ORDER BY id DESC', fetchall=True)) if _vac_is_admin_294() else rows_to_dict(execute('SELECT * FROM vacaciones_solicitudes WHERE dni=? ORDER BY id DESC', (_vac_user_dni_294(),), fetchall=True))
+    headers = ['id','dni','trabajador','fecha_inicio','fecha_fin','dias','periodo_detalle','motivo','estado','fecha_solicitud','comentario_gh']
+    return excel_response(headers, rows, 'reporte_vacaciones.xlsx', 'VACACIONES')
+
+for rule, endpoint, view, methods in [
+    ('/vacaciones', 'vacaciones_home', vacaciones_home_294, ['GET','POST']),
+    ('/vacaciones/config', 'vacaciones_config', vacaciones_config_294, ['GET','POST']),
+    ('/vacaciones/exportar', 'vacaciones_exportar', vacaciones_exportar_294, ['GET']),
+    ('/vacaciones/estado/<int:sol_id>/<estado>', 'vacaciones_estado', vacaciones_estado_294, ['GET']),
+    ('/vacaciones/plantilla/trabajadores', 'vacaciones_plantilla_trabajadores', vacaciones_plantilla_trabajadores_294, ['GET']),
+    ('/vacaciones/plantilla/saldos', 'vacaciones_plantilla_saldos', vacaciones_plantilla_saldos_294, ['GET']),
+]:
+    try:
+        app.add_url_rule(rule, endpoint, view, methods=methods)
+    except Exception:
+        app.view_functions[endpoint] = view
+
+# ======================= FIN PATCH VACACIONES OMAR 294 =======================
+
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
