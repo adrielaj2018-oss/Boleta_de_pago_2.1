@@ -7454,6 +7454,305 @@ app.view_functions['vacaciones_home'] = vacaciones_home_295
 # Mantiene config/estado/export usando _vac_is_admin_294 ya corregido.
 # ======================= FIN PATCH VACACIONES OMAR 295 =======================
 
+# ========================= PATCH BOLETAS OMAR 296 =========================
+# Correcciones:
+# 1) Si el trabajador entra con DNI / últimos 4 al módulo Boleta, abre vista USUARIO.
+# 2) Usuario solo ve sus boletas. Para avanzar debe firmar/confirmar huella la boleta pendiente.
+# 3) Se agrega gráfica lineal de boletas por periodo.
+# 4) En admin se quitan KPIs "Hoy" y "DNI"; quedan Total/Firmadas/Pendientes.
+
+
+def _boleta_ensure_296():
+    _boleta_init_291()
+    idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+    execute('''CREATE TABLE IF NOT EXISTS boleta_firmas(
+        id {idtype}, doc_id INTEGER, dni TEXT, tipo_confirmacion TEXT,
+        firma_data TEXT, huella_dedo TEXT, fecha_hora TEXT, ip TEXT, user_agent TEXT
+    )'''.format(idtype=idtype), commit=True)
+    try:
+        execute('CREATE INDEX IF NOT EXISTS idx_boleta_firmas_doc_dni ON boleta_firmas(doc_id,dni)', commit=True)
+    except Exception:
+        pass
+
+
+def _boleta_user_dni_296():
+    return limpiar_dni(session.get('dni') or session.get('usuario') or '')
+
+
+def _boleta_is_admin_context_296():
+    if session.get('module_name') == 'boleta':
+        return session.get('module_role') == 'admin'
+    return _is_admin_292()
+
+
+def _boleta_signed_296(doc_id, dni):
+    return int(scalar('SELECT COUNT(*) AS c FROM boleta_firmas WHERE doc_id=? AND dni=?', (int(doc_id), limpiar_dni(dni))) or 0) > 0
+
+
+def _boleta_user_docs_296(dni):
+    _boleta_ensure_296()
+    docs = rows_to_dict(execute('''SELECT * FROM boleta_documentos
+                                   WHERE dni=?
+                                   ORDER BY COALESCE(periodo,''), fecha_subida, id''', (limpiar_dni(dni),), fetchall=True))
+    prev_unsigned = False
+    for idx, d in enumerate(docs, 1):
+        signed = _boleta_signed_296(d.get('id'), dni)
+        d['orden'] = idx
+        d['firmada'] = signed
+        d['bloqueada'] = bool(prev_unsigned)
+        if not signed:
+            prev_unsigned = True
+    return docs
+
+
+def _boleta_first_pending_before_296(doc_id, dni):
+    docs = _boleta_user_docs_296(dni)
+    for d in docs:
+        if int(d.get('id')) == int(doc_id):
+            return None if not d.get('bloqueada') else next((x for x in docs if not x.get('firmada')), None)
+        if not d.get('firmada'):
+            return d
+    return None
+
+
+def _boleta_chart_svg_296(docs):
+    conteo = {}
+    for d in docs:
+        p = (d.get('periodo') or 'SIN PERIODO').strip() or 'SIN PERIODO'
+        conteo[p] = conteo.get(p, 0) + 1
+    items = sorted(conteo.items(), key=lambda x: x[0])
+    if not items:
+        return '''
+        <svg viewBox="0 0 330 130" class="bt296-chart" role="img">
+          <rect x="0" y="0" width="330" height="130" rx="14" fill="#fbfffc"/>
+          <text x="165" y="70" text-anchor="middle" fill="#64748b" font-size="12" font-weight="800">Sin boletas cargadas</text>
+        </svg>'''
+    maxv = max(v for _, v in items) or 1
+    n = len(items)
+    pts = []
+    circles = []
+    labels = []
+    for i, (p, v) in enumerate(items):
+        x = 34 + (262 * i / max(1, n-1))
+        y = 95 - (68 * v / maxv)
+        pts.append(f'{x:.1f},{y:.1f}')
+        circles.append(f"<circle cx='{x:.1f}' cy='{y:.1f}' r='4.5' fill='#08713b'/><text x='{x:.1f}' y='{y-9:.1f}' text-anchor='middle' fill='#08713b' font-size='11' font-weight='900'>{int(v)}</text>")
+        if i == 0 or i == n-1 or n <= 4:
+            labels.append(f"<text x='{x:.1f}' y='114' text-anchor='middle' fill='#475569' font-size='9' font-weight='800'>{h(p[-7:])}</text>")
+    poly = ' '.join(pts)
+    return f'''
+    <svg viewBox="0 0 330 130" class="bt296-chart" role="img">
+      <rect x="0" y="0" width="330" height="130" rx="14" fill="#fbfffc"/>
+      <line x1="28" y1="96" x2="304" y2="96" stroke="#dbe7df" stroke-width="2"/>
+      <line x1="28" y1="22" x2="28" y2="96" stroke="#dbe7df" stroke-width="2"/>
+      <polyline points="{poly}" fill="none" stroke="#08713b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      {''.join(circles)}{''.join(labels)}
+    </svg>'''
+
+
+def _boleta_css_296():
+    return _bt_css_291() + r'''
+    <style>
+      .bt296-head{height:92px!important;background:#25773a!important}.bt296-head .ttl{text-transform:none!important;font-size:18px!important}.bt296-body{padding:13px!important}
+      .bt296-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}.bt296-kpi{background:#10964e;color:#fff;border-radius:9px;text-align:center;padding:8px 4px;box-shadow:0 7px 13px rgba(16,150,78,.16)}.bt296-kpi small{display:block;font-size:9.5px;font-weight:950;line-height:1.05}.bt296-kpi b{display:block;font-size:21px;line-height:1.05;font-weight:950;margin-top:4px;color:#fff}
+      .bt296-card{border:1px solid #d7eadc;background:#fff;border-radius:13px;padding:11px;margin-bottom:12px;box-shadow:0 6px 14px rgba(0,0,0,.045)}.bt296-card-title{font-size:13px;font-weight:950;color:#08713b;text-transform:uppercase;margin-bottom:8px}
+      .bt296-doc{display:grid;grid-template-columns:34px 1fr 88px;gap:8px;align-items:center;border:1px solid #e3e8e3;border-radius:11px;background:#fff;padding:9px 9px;margin:7px 0;text-decoration:none;color:#102a43!important;box-shadow:0 4px 10px rgba(0,0,0,.04)}.bt296-doc.lock{opacity:.58;background:#f8fafc}.bt296-doc i{font-size:23px;color:#08713b}.bt296-doc b{font-size:12px;color:#0a1f44}.bt296-doc small{font-size:10px;color:#496455;font-weight:850;line-height:1.25}.bt296-state{font-size:9px;font-weight:950;border-radius:999px;padding:4px 6px;text-align:center}.bt296-state.ok{background:#dcfce7;color:#166534}.bt296-state.pend{background:#fef3c7;color:#92400e}.bt296-state.lock{background:#e5e7eb;color:#475569}
+      .bt296-chart{width:100%;height:auto;display:block;border:1px solid #d7eadc;border-radius:14px;background:#fbfffc}.bt296-help{display:grid;grid-template-columns:20px 1fr;gap:8px;border:1px solid #b8d7ff;background:#eef6ff;border-radius:12px;padding:10px;color:#0b2e83;font-size:11px;font-weight:900;line-height:1.35;margin:10px 0}.bt296-help i{font-size:17px;color:#0b5ed7}
+      .bt296-signbox{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:12px;margin-bottom:12px}.bt296-signbox label{font-size:11px;font-weight:950;color:#176a35;margin-bottom:4px}.bt296-canvas{height:170px;border:2px dashed #86c995;border-radius:12px;background:#fff;width:100%;touch-action:none}.bt296-finger{height:52px;border-radius:12px;background:#fff;border:1px solid #08713b;color:#08713b;font-weight:950;display:flex;align-items:center;justify-content:center;gap:8px}.bt296-finger.active{background:#ecfdf5;border-color:#16a34a;color:#166534}.bt296-note{font-size:10.5px;color:#4a644f;font-weight:850;line-height:1.35;margin-top:5px}
+    </style>
+    '''
+
+
+def _module_targets_293():
+    # Override 296: Boleta usuario abre pantalla propia; no panel admin.
+    return {
+        'tareo':('Tareo','bi-list-check','hojas_tareo','hojas_tareo'),
+        'asistencia':('Asistencia','bi-fingerprint','asistencia_modulo','asistencia_modulo'),
+        'transporte':('Transporte','bi-bus-front','transporte','transporte_mobile_home'),
+        'contratacion':('Contratación','bi-person-plus','contratacion_home','contratacion_usuario_home'),
+        'boleta':('Boleta','bi-file-earmark-text','boletas_home','boletas_usuario_home'),
+        'vacaciones':('Vacaciones','bi-calendar-check','vacaciones_home','vacaciones_home'),
+        'renovacion':('Renovación','bi-arrow-repeat','renovacion_home','renovacion_home')
+    }
+
+
+def boletas_home_296():
+    _boleta_ensure_296()
+    if session.get('module_name') == 'boleta' and session.get('module_role') == 'usuario':
+        return redirect(url_for('boletas_usuario_home'))
+    if not _boleta_is_admin_context_296():
+        return redirect(url_for('boletas_usuario_home'))
+    total = int(scalar('SELECT COUNT(*) AS c FROM boleta_documentos') or 0)
+    firmadas = int(scalar('SELECT COUNT(DISTINCT doc_id) AS c FROM boleta_firmas') or 0)
+    pendientes = max(0, total - firmadas)
+    rows = rows_to_dict(execute('SELECT tipo, COUNT(*) AS c FROM boleta_documentos GROUP BY tipo ORDER BY c DESC', fetchall=True))
+    conteos = {r.get('tipo'): r.get('c') for r in rows}
+    body = _boleta_css_296() + r'''
+    <div class="bt291-phone"><div class="bt291-app">
+      <div class="bt291-head bt296-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Módulo Boletas</div></div>
+      <div class="bt291-body bt296-body">
+        <div class="bt296-kpis"><div class="bt296-kpi"><small>Total</small><b>{{total}}</b></div><div class="bt296-kpi"><small>Firmadas</small><b>{{firmadas}}</b></div><div class="bt296-kpi"><small>Pendientes</small><b>{{pendientes}}</b></div></div>
+        <div class="bt296-help"><i class="bi bi-info-circle-fill"></i><div>Administrador: carga masiva de PDFs por DNI. Usuario: solo visualiza sus boletas y firma/huella antes de continuar.</div></div>
+        <div class="bt291-section">Documentos de pago</div>
+        <div class="bt291-grid3">{% for t,lbl,ico in tipos %}<a class="bt291-tile" href="{{url_for('boletas_listar', tipo=t)}}"><i class="bi {{ico}}"></i><span class="lbl">{{t}}</span><span class="sub">{{conteos.get(t,0)}} docs.</span></a>{% endfor %}</div>
+        <div class="bt291-section" style="margin-top:16px">Operación</div>
+        <div class="bt291-grid3"><a class="bt291-tile" href="{{url_for('boletas_subir')}}"><i class="bi bi-cloud-arrow-up"></i><span class="lbl">Carga masiva</span><span class="sub">PDF por DNI</span></a><a class="bt291-tile" href="{{url_for('boletas_detectar')}}"><i class="bi bi-search"></i><span class="lbl">Detectar</span><span class="sub">Carpeta PDF</span></a><a class="bt291-tile" href="{{url_for('boletas_reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i><span class="lbl">Reportes</span><span class="sub">Excel</span></a></div>
+      </div>
+    </div></div>'''
+    return render_page(body,total=total,firmadas=firmadas,pendientes=pendientes,tipos=BOLETA_TIPOS_CANON_291,conteos=conteos,title='Módulo Boletas')
+
+
+def boletas_usuario_home_296():
+    _boleta_ensure_296()
+    dni = _boleta_user_dni_296()
+    if len(dni) != 8:
+        flash('Ingrese como usuario con DNI para ver sus boletas.', 'danger')
+        return redirect(url_for('modulo_acceso', modulo='boleta'))
+    docs = _boleta_user_docs_296(dni)
+    total = len(docs)
+    firmadas = sum(1 for d in docs if d.get('firmada'))
+    pendientes = max(0, total - firmadas)
+    chart_svg = _boleta_chart_svg_296(docs)
+    body = _boleta_css_296() + r'''
+    <div class="bt291-phone"><div class="bt291-app">
+      <div class="bt291-head bt296-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Mis boletas</div></div>
+      <div class="bt291-body bt296-body">
+        <div class="bt296-help"><i class="bi bi-shield-check"></i><div>Para revisar tus boletas en orden, debes firmar o confirmar huella la boleta pendiente antes de abrir la siguiente.</div></div>
+        <div class="bt296-kpis"><div class="bt296-kpi"><small>Boletas</small><b>{{total}}</b></div><div class="bt296-kpi"><small>Firmadas</small><b>{{firmadas}}</b></div><div class="bt296-kpi"><small>Pendientes</small><b>{{pendientes}}</b></div></div>
+        <div class="bt296-card"><div class="bt296-card-title">Evolución por periodo</div>{{chart_svg|safe}}</div>
+        <div class="bt291-section">Mis documentos</div>
+        {% for d in docs %}
+          {% if d.bloqueada %}
+            <div class="bt296-doc lock"><i class="bi bi-lock"></i><div><b>{{d.tipo}} · {{d.periodo or '-'}}</b><br><small>{{d.archivo_nombre}}<br>Firme la boleta anterior para desbloquear.</small></div><span class="bt296-state lock">Bloqueada</span></div>
+          {% elif d.firmada %}
+            <a class="bt296-doc" href="{{url_for('boletas_usuario_ver', doc_id=d.id)}}" target="_blank"><i class="bi bi-file-earmark-check"></i><div><b>{{d.tipo}} · {{d.periodo or '-'}}</b><br><small>{{d.archivo_nombre}}<br>Documento firmado / liberado.</small></div><span class="bt296-state ok">Ver PDF</span></a>
+          {% else %}
+            <a class="bt296-doc" href="{{url_for('boletas_firmar', doc_id=d.id)}}"><i class="bi bi-pen"></i><div><b>{{d.tipo}} · {{d.periodo or '-'}}</b><br><small>{{d.archivo_nombre}}<br>Pendiente de firma/huella.</small></div><span class="bt296-state pend">Firmar</span></a>
+          {% endif %}
+        {% else %}
+          <div class="bt291-form text-center text-muted">No tiene boletas cargadas para su DNI.</div>
+        {% endfor %}
+      </div>
+    </div></div>'''
+    return render_page(body, docs=docs, total=total, firmadas=firmadas, pendientes=pendientes, chart_svg=chart_svg, title='Mis boletas')
+
+
+def boletas_firmar_296(doc_id):
+    _boleta_ensure_296()
+    dni = _boleta_user_dni_296()
+    d = row_to_dict(execute('SELECT * FROM boleta_documentos WHERE id=? AND dni=?', (int(doc_id), dni), fetchone=True))
+    if not d:
+        flash('Boleta no encontrada para su DNI.', 'danger')
+        return redirect(url_for('boletas_usuario_home'))
+    previo = _boleta_first_pending_before_296(doc_id, dni)
+    if previo and int(previo.get('id')) != int(doc_id):
+        flash('Primero debe firmar la boleta anterior.', 'warning')
+        return redirect(url_for('boletas_firmar', doc_id=previo.get('id')))
+    if request.method == 'POST':
+        firma = request.form.get('firma_data') or ''
+        huella = request.form.get('huella_dedo') or ''
+        if not firma and not huella:
+            flash('Registre firma en pantalla o confirme huella.', 'danger')
+            return redirect(url_for('boletas_firmar', doc_id=doc_id))
+        if not _boleta_signed_296(doc_id, dni):
+            ua = (request.headers.get('User-Agent') or '')[:250]
+            ip = (request.headers.get('X-Forwarded-For') or request.remote_addr or '')[:80]
+            execute('''INSERT INTO boleta_firmas(doc_id,dni,tipo_confirmacion,firma_data,huella_dedo,fecha_hora,ip,user_agent)
+                       VALUES(?,?,?,?,?,?,?,?)''', (int(doc_id), dni, 'FIRMA/HUELLA', firma[:200000], huella[:80], now_str(), ip, ua), commit=True)
+        try:
+            execute("UPDATE boleta_documentos SET fecha_lectura=? WHERE id=? AND COALESCE(fecha_lectura,'')=''", (now_str(), int(doc_id)), commit=True)
+        except Exception:
+            pass
+        flash('Boleta firmada. Ya puede visualizarla.', 'success')
+        return redirect(url_for('boletas_usuario_ver', doc_id=doc_id))
+    body = _boleta_css_296() + r'''
+    <div class="bt291-phone"><div class="bt291-app">
+      <div class="bt291-head bt296-head"><a class="back" href="{{url_for('boletas_usuario_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Firmar boleta</div></div>
+      <div class="bt291-body bt296-body">
+        <div class="bt296-help"><i class="bi bi-info-circle-fill"></i><div>Firme o confirme huella para liberar la visualización de esta boleta. Luego podrá continuar con la siguiente.</div></div>
+        <div class="bt296-card"><b>{{d.tipo}} · {{d.periodo or '-'}}</b><br><small>{{d.archivo_nombre}}</small></div>
+        <form method="post" class="bt296-signbox" id="frmFirmaBol296">
+          <label>Firma en pantalla</label>
+          <canvas id="canvasBol296" class="bt296-canvas"></canvas>
+          <input type="hidden" name="firma_data" id="firmaDataBol296">
+          <input type="hidden" name="huella_dedo" id="huellaBol296">
+          <div class="row g-2 mt-2">
+            <div class="col-6"><button type="button" class="bt291-outline" onclick="limpiarFirmaBol296()"><i class="bi bi-eraser"></i> Limpiar</button></div>
+            <div class="col-6"><button type="button" id="btnHuellaBol296" class="bt296-finger" onclick="confirmarHuellaBol296()"><i class="bi bi-fingerprint"></i> Huella</button></div>
+          </div>
+          <div class="bt296-note">La huella aquí queda como confirmación del trabajador desde su sesión. Para huella biométrica real se requiere integración con dispositivo compatible.</div>
+          <button class="bt291-btn mt-2" type="submit"><i class="bi bi-check-circle"></i> Guardar firma y ver boleta</button>
+        </form>
+      </div>
+    </div></div>
+    <script>
+    (function(){
+      const c=document.getElementById('canvasBol296'), data=document.getElementById('firmaDataBol296'); if(!c)return; const ctx=c.getContext('2d'); let draw=false;
+      function resize(){const r=c.getBoundingClientRect(); c.width=Math.max(300, r.width*2); c.height=Math.max(150, r.height*2); ctx.scale(2,2); ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.strokeStyle='#08713b';}
+      resize(); window.addEventListener('resize', resize);
+      function pos(e){const r=c.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left,y:t.clientY-r.top};}
+      function start(e){draw=true; const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); e.preventDefault();}
+      function move(e){if(!draw)return; const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); data.value=c.toDataURL('image/png'); e.preventDefault();}
+      function end(){draw=false; data.value=c.toDataURL('image/png');}
+      c.addEventListener('mousedown',start); c.addEventListener('mousemove',move); window.addEventListener('mouseup',end); c.addEventListener('touchstart',start,{passive:false}); c.addEventListener('touchmove',move,{passive:false}); c.addEventListener('touchend',end);
+    })();
+    function limpiarFirmaBol296(){const c=document.getElementById('canvasBol296'), d=document.getElementById('firmaDataBol296'); if(c){const ctx=c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height);} if(d)d.value='';}
+    function confirmarHuellaBol296(){const h=document.getElementById('huellaBol296'), b=document.getElementById('btnHuellaBol296'); h.value='HUELLA_CONFIRMADA_'+new Date().toISOString(); b.classList.add('active'); b.innerHTML='<i class="bi bi-fingerprint"></i> Huella OK';}
+    </script>'''
+    return render_page(body, d=d, title='Firmar boleta')
+
+
+def boletas_usuario_ver_296(doc_id):
+    _boleta_ensure_296()
+    dni = _boleta_user_dni_296()
+    d = row_to_dict(execute('SELECT * FROM boleta_documentos WHERE id=? AND dni=?', (int(doc_id), dni), fetchone=True))
+    if not d:
+        flash('Boleta no encontrada para su DNI.', 'danger')
+        return redirect(url_for('boletas_usuario_home'))
+    previo = _boleta_first_pending_before_296(doc_id, dni)
+    if previo and int(previo.get('id')) != int(doc_id):
+        flash('Primero debe firmar la boleta anterior.', 'warning')
+        return redirect(url_for('boletas_firmar', doc_id=previo.get('id')))
+    if not _boleta_signed_296(doc_id, dni):
+        return redirect(url_for('boletas_firmar', doc_id=doc_id))
+    if not d.get('archivo_path') or not os.path.exists(d.get('archivo_path')):
+        flash('Archivo no encontrado.', 'danger')
+        return redirect(url_for('boletas_usuario_home'))
+    return send_file(d.get('archivo_path'), as_attachment=False, download_name=d.get('archivo_nombre') or os.path.basename(d.get('archivo_path')))
+
+
+def boletas_archivo_296(doc_id):
+    _boleta_ensure_296()
+    d = row_to_dict(execute('SELECT * FROM boleta_documentos WHERE id=?', (int(doc_id),), fetchone=True))
+    if not d or not d.get('archivo_path') or not os.path.exists(d.get('archivo_path')):
+        flash('Archivo no encontrado.', 'danger')
+        return redirect(url_for('boletas_home'))
+    if not _boleta_is_admin_context_296():
+        dni = _boleta_user_dni_296()
+        if limpiar_dni(d.get('dni')) != dni:
+            flash('No puede ver boletas de otro trabajador.', 'danger')
+            return redirect(url_for('boletas_usuario_home'))
+        return redirect(url_for('boletas_usuario_ver', doc_id=doc_id))
+    return send_file(d.get('archivo_path'), as_attachment=False, download_name=d.get('archivo_nombre') or os.path.basename(d.get('archivo_path')))
+
+
+try:
+    app.add_url_rule('/boletas/mis-boletas', 'boletas_usuario_home', boletas_usuario_home_296, methods=['GET'])
+except Exception:
+    app.view_functions['boletas_usuario_home'] = boletas_usuario_home_296
+try:
+    app.add_url_rule('/boletas/firmar/<int:doc_id>', 'boletas_firmar', boletas_firmar_296, methods=['GET','POST'])
+except Exception:
+    app.view_functions['boletas_firmar'] = boletas_firmar_296
+try:
+    app.add_url_rule('/boletas/usuario/ver/<int:doc_id>', 'boletas_usuario_ver', boletas_usuario_ver_296, methods=['GET'])
+except Exception:
+    app.view_functions['boletas_usuario_ver'] = boletas_usuario_ver_296
+
+app.view_functions['boletas_home'] = boletas_home_296
+app.view_functions['boletas_archivo'] = boletas_archivo_296
+# ======================= FIN PATCH BOLETAS OMAR 296 =======================
+
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
