@@ -7753,6 +7753,397 @@ app.view_functions['boletas_home'] = boletas_home_296
 app.view_functions['boletas_archivo'] = boletas_archivo_296
 # ======================= FIN PATCH BOLETAS OMAR 296 =======================
 
+# ========================= PATCH BOLETAS OMAR 297 =========================
+# Nuevo flujo:
+# - ADMIN: solo carga masiva de PDFs y reporta por trabajador visualizadas/aprobadas/rechazadas/pendientes.
+# - USUARIO: solo visualiza sus boletas por rango de fechas, gráfica lineal y responde una por una.
+# - Se eliminan los cuadros por tipo de documento y KPIs de Desde/Hasta/DNI.
+
+def _boleta_ensure_297():
+    _boleta_ensure_296()
+    execute('''CREATE TABLE IF NOT EXISTS boleta_respuestas(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_id INTEGER,
+        dni TEXT,
+        decision TEXT,
+        observacion TEXT,
+        firma_data TEXT,
+        fecha_hora TEXT,
+        ip TEXT,
+        user_agent TEXT
+    )''', commit=True)
+    try:
+        execute('CREATE INDEX IF NOT EXISTS idx_boleta_resp_doc_dni ON boleta_respuestas(doc_id,dni)', commit=True)
+        execute('CREATE INDEX IF NOT EXISTS idx_boleta_resp_dni ON boleta_respuestas(dni)', commit=True)
+    except Exception:
+        pass
+
+
+def _boleta_css_297():
+    return r'''
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}
+      .shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:6px 8px 26px!important;background:#fff!important}
+      .b297-phone{max-width:390px;margin:0 auto}.b297-app{background:#fff;border:1px solid #e4e8e4;border-radius:13px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+      .b297-head{height:86px;background:#25773a;color:#fff;position:relative;display:flex;align-items:center;justify-content:center;text-align:center}.b297-head .back{position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:31px;color:#fff!important;text-decoration:none;line-height:1}.b297-head .cfg{position:absolute;right:10px;top:14px;color:#fff!important;text-decoration:none;font-size:12px;font-weight:950;border:1px solid rgba(255,255,255,.65);border-radius:12px;padding:5px 8px}.b297-head .ttl{font-size:17px;font-weight:950;color:#fff;line-height:1.12}.b297-head .ico{font-size:28px;margin-bottom:2px;color:#fff}.b297-body{padding:13px 13px 16px;background:#fff}
+      .b297-info{display:grid;grid-template-columns:22px 1fr;gap:8px;border:1px solid #b8d7ff;background:#eef6ff;border-radius:12px;padding:10px 11px;color:#0b2e83;font-size:11.2px;font-weight:900;line-height:1.35;margin-bottom:12px}.b297-info i{font-size:18px;color:#0b5ed7;margin-top:1px}.b297-section{font-size:14px;font-weight:950;color:#08713b;text-transform:uppercase;margin:10px 0 9px;letter-spacing:.2px}.b297-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:9px 0 12px}.b297-kpis.two{grid-template-columns:repeat(2,1fr)}.b297-kpi{background:#10964e;color:#fff;border-radius:9px;text-align:center;padding:8px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}.b297-kpi small{display:block;font-size:9.7px;font-weight:950;line-height:1.05;color:#effff3}.b297-kpi b{display:block;font-size:22px;line-height:1.05;font-weight:950;color:#fff;margin-top:4px}
+      .b297-form{border:1px solid #d7eadc;background:#fbfffc;border-radius:13px;padding:12px;margin-bottom:12px}.b297-form label{font-size:11px;font-weight:950;color:#176a35;margin-bottom:4px}.b297-form .form-control,.b297-form .form-select{height:38px!important;border-radius:9px!important;font-size:12px!important;font-weight:850}.b297-form textarea.form-control{height:66px!important}.b297-form .row{--bs-gutter-x:.55rem;--bs-gutter-y:.55rem}.b297-btn{height:40px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff!important;font-weight:950;font-size:13px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}.b297-outline{height:40px;border-radius:10px;background:#fff;border:1px solid #08713b;color:#08713b!important;font-weight:950;font-size:13px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}.b297-btn.danger{background:#b91c1c;border-color:#b91c1c}.b297-btn.warn{background:#f59e0b;border-color:#f59e0b;color:#111!important}.b297-help{font-size:10.7px;color:#4a644f;font-weight:850;line-height:1.35;margin-top:6px}
+      .b297-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}.b297-row{display:grid;grid-template-columns:33px 1fr auto;gap:8px;align-items:center;background:#fff;border:1px solid #dfe7df;border-radius:11px;padding:10px;text-decoration:none;color:#0f172a!important;margin:7px 0;box-shadow:0 4px 10px rgba(0,0,0,.04)}.b297-row i{font-size:22px;color:#08713b}.b297-row b{font-size:12.5px;color:#0f172a}.b297-row small{font-size:10.5px;color:#475569;font-weight:850;line-height:1.25}.b297-row.lock{opacity:.68;background:#f8fafc}.b297-badge{display:inline-flex;align-items:center;border-radius:999px;padding:5px 8px;font-size:9.5px;font-weight:950;white-space:nowrap}.b297-badge.ok{background:#dcfce7;color:#166534}.b297-badge.bad{background:#fee2e2;color:#991b1b}.b297-badge.pend{background:#fef3c7;color:#92400e}.b297-badge.lock{background:#e5e7eb;color:#374151}.b297-badge.view{background:#dbeafe;color:#1e40af}
+      .b297-tablewrap{border:1px solid #e5e7eb;border-radius:10px;overflow:auto;background:#fff;scrollbar-color:#08713b #e5e7eb}.b297-tablewrap::-webkit-scrollbar{height:8px}.b297-tablewrap::-webkit-scrollbar-thumb{background:#08713b;border-radius:999px}.b297-tablewrap::-webkit-scrollbar-track{background:#e5e7eb}.b297-table{width:100%;min-width:620px;border-collapse:collapse}.b297-table th{background:#f8fafc;color:#12223b;font-size:11px;font-weight:950;padding:8px;border-bottom:1px solid #e5e7eb}.b297-table td{font-size:11px;color:#334155;padding:8px;border-bottom:1px solid #f1f5f9;font-weight:750}.b297-chart{background:#fff;border:1px solid #dfe7df;border-radius:12px;padding:10px;margin:10px 0 12px}.b297-pdf{width:100%;height:420px;border:1px solid #dfe7df;border-radius:12px;background:#f8fafc}.b297-canvas{width:100%;height:145px;border:2px dashed #86c795;border-radius:13px;background:white;touch-action:none}.b297-mini{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:10px;color:#1f3b2a;font-size:12px;font-weight:900;line-height:1.35;margin:8px 0 12px}
+    </style>
+    '''
+
+
+def _boleta_response_297(doc_id, dni):
+    return row_to_dict(execute('''SELECT * FROM boleta_respuestas WHERE doc_id=? AND dni=? ORDER BY id DESC LIMIT 1''', (int(doc_id), limpiar_dni(dni)), fetchone=True))
+
+
+def _boleta_user_docs_297(dni, desde='', hasta=''):
+    _boleta_ensure_297()
+    dni=limpiar_dni(dni)
+    sql='SELECT * FROM boleta_documentos WHERE dni=?'
+    params=[dni]
+    if desde:
+        sql += ' AND substr(fecha_subida,1,10)>=?'
+        params.append(desde)
+    if hasta:
+        sql += ' AND substr(fecha_subida,1,10)<=?'
+        params.append(hasta)
+    sql += " ORDER BY COALESCE(periodo,''), fecha_subida, id"
+    docs=rows_to_dict(execute(sql, tuple(params), fetchall=True))
+    locked=False
+    for d in docs:
+        resp=_boleta_response_297(d.get('id'), dni)
+        d['decision']=resp.get('decision') if resp else ''
+        d['decision_fecha']=resp.get('fecha_hora') if resp else ''
+        d['decision_obs']=resp.get('observacion') if resp else ''
+        d['bloqueado']=locked and not resp
+        if not resp:
+            locked=True
+    return docs
+
+
+def _boleta_first_pending_before_297(doc_id, dni, desde='', hasta=''):
+    for d in _boleta_user_docs_297(dni, desde, hasta):
+        if int(d.get('id')) == int(doc_id):
+            return None
+        if not d.get('decision'):
+            return d
+    return None
+
+
+def _boleta_admin_docs_297(desde='', hasta='', buscar=''):
+    _boleta_ensure_297()
+    sql='''SELECT d.*, r.decision AS decision, r.fecha_hora AS decision_fecha, r.observacion AS decision_obs
+           FROM boleta_documentos d
+           LEFT JOIN (
+              SELECT br.* FROM boleta_respuestas br
+              INNER JOIN (SELECT doc_id,dni,MAX(id) AS max_id FROM boleta_respuestas GROUP BY doc_id,dni) x ON x.max_id=br.id
+           ) r ON r.doc_id=d.id AND r.dni=d.dni
+           WHERE 1=1'''
+    params=[]
+    if desde:
+        sql += ' AND substr(d.fecha_subida,1,10)>=?'; params.append(desde)
+    if hasta:
+        sql += ' AND substr(d.fecha_subida,1,10)<=?'; params.append(hasta)
+    if buscar:
+        like=f'%{buscar}%'
+        sql += ''' AND (d.dni LIKE ? OR COALESCE(d.trabajador,'') LIKE ? OR COALESCE(d.periodo,'') LIKE ? OR COALESCE(d.tipo,'') LIKE ? OR COALESCE(d.archivo_nombre,'') LIKE ?)'''
+        params += [like, like, like, like, like]
+    sql += ' ORDER BY d.fecha_subida DESC, d.id DESC'
+    return rows_to_dict(execute(sql, tuple(params), fetchall=True))
+
+
+def _boleta_metrics_297(rows):
+    total=len(rows)
+    visualizadas=sum(1 for r in rows if r.get('fecha_lectura'))
+    aprobadas=sum(1 for r in rows if (r.get('decision') or '').upper()=='APROBADO')
+    rechazadas=sum(1 for r in rows if (r.get('decision') or '').upper()=='RECHAZADO')
+    pendientes=max(0,total-aprobadas-rechazadas)
+    trabajadores=len(set(r.get('dni') for r in rows if r.get('dni')))
+    return dict(total=total, visualizadas=visualizadas, aprobadas=aprobadas, rechazadas=rechazadas, pendientes=pendientes, trabajadores=trabajadores)
+
+
+def _boleta_worker_summary_297(rows):
+    agg={}
+    for r in rows:
+        dni=r.get('dni') or '-'
+        a=agg.setdefault(dni, dict(dni=dni, trabajador=r.get('trabajador') or '-', total=0, visualizadas=0, aprobadas=0, rechazadas=0, pendientes=0, ult_periodo=''))
+        a['trabajador']=r.get('trabajador') or a['trabajador']
+        a['total']+=1
+        if r.get('fecha_lectura'): a['visualizadas']+=1
+        dec=(r.get('decision') or '').upper()
+        if dec=='APROBADO': a['aprobadas']+=1
+        elif dec=='RECHAZADO': a['rechazadas']+=1
+        else: a['pendientes']+=1
+        if (r.get('periodo') or '') > (a.get('ult_periodo') or ''):
+            a['ult_periodo']=r.get('periodo') or ''
+    return sorted(agg.values(), key=lambda x:(-x['pendientes'], -x['total'], x['dni']))
+
+
+def _boleta_line_svg_297(docs):
+    counts={}
+    for d in docs:
+        p=d.get('periodo') or (d.get('fecha_subida') or '')[:7] or '-'
+        counts[p]=counts.get(p,0)+1
+    items=sorted(counts.items())[-8:]
+    if not items:
+        return '''<svg viewBox="0 0 330 105" width="100%" height="105"><rect width="330" height="105" rx="12" fill="#ffffff"/><text x="165" y="57" text-anchor="middle" fill="#64748b" font-size="12" font-weight="800">Sin boletas en el rango</text></svg>'''
+    maxv=max(v for _,v in items) or 1
+    left=34; top=12; w=270; h=62
+    pts=[]
+    for i,(p,v) in enumerate(items):
+        x=left+(w*(i/(max(1,len(items)-1))))
+        y=top+h-(h*(v/maxv))
+        pts.append((x,y,p,v))
+    poly=' '.join(f'{x:.1f},{y:.1f}' for x,y,_,_ in pts)
+    circles=''.join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#08713b"/><text x="{x:.1f}" y="{y-7:.1f}" text-anchor="middle" font-size="10" fill="#08713b" font-weight="900">{v}</text><text x="{x:.1f}" y="94" text-anchor="middle" font-size="9" fill="#475569" font-weight="800">{p[-5:]}</text>' for x,y,p,v in pts)
+    return f'''<svg viewBox="0 0 330 105" width="100%" height="105"><rect width="330" height="105" rx="12" fill="#ffffff"/><line x1="{left}" y1="{top+h}" x2="{left+w}" y2="{top+h}" stroke="#dfe7df"/><polyline points="{poly}" fill="none" stroke="#08713b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>{circles}</svg>'''
+
+
+def boletas_home_297():
+    _boleta_ensure_297()
+    if session.get('module_name')=='boleta' and session.get('module_role')=='usuario':
+        return redirect(url_for('boletas_usuario_home'))
+    if not _boleta_is_admin_context_296():
+        return redirect(url_for('boletas_usuario_home'))
+    rows=_boleta_admin_docs_297()
+    m=_boleta_metrics_297(rows)
+    body=_boleta_css_297()+r'''
+    <div class="b297-phone"><div class="b297-app">
+      <div class="b297-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><a class="cfg" href="{{url_for('boletas_config')}}"><i class="bi bi-gear"></i> Config.</a><div><div class="ttl">Boletas Admin</div></div></div>
+      <div class="b297-body">
+        <div class="b297-info"><i class="bi bi-info-circle-fill"></i><div>Administrador: carga PDFs masivos por DNI y controla cuántos trabajadores visualizaron, aprobaron, rechazaron o mantienen pendiente cada boleta.</div></div>
+        <div class="b297-kpis"><div class="b297-kpi"><small>Total PDF</small><b>{{m.total}}</b></div><div class="b297-kpi"><small>Visualizadas</small><b>{{m.visualizadas}}</b></div><div class="b297-kpi"><small>Trabaj.</small><b>{{m.trabajadores}}</b></div></div>
+        <div class="b297-kpis"><div class="b297-kpi"><small>Aprobadas</small><b>{{m.aprobadas}}</b></div><div class="b297-kpi"><small>Rechazadas</small><b>{{m.rechazadas}}</b></div><div class="b297-kpi"><small>Pendientes</small><b>{{m.pendientes}}</b></div></div>
+        <div class="b297-actions"><a class="b297-btn" href="{{url_for('boletas_subir')}}"><i class="bi bi-cloud-arrow-up"></i> Carga masiva</a><a class="b297-outline" href="{{url_for('boletas_reportes')}}"><i class="bi bi-bar-chart"></i> Reportes</a></div>
+        <div class="b297-section">Control por trabajador</div>
+        <div class="b297-tablewrap"><table class="b297-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Total</th><th>Vistas</th><th>Aprob.</th><th>Rech.</th><th>Pend.</th><th>Últ. periodo</th></tr></thead><tbody>{% for r in resumen %}<tr><td>{{r.dni}}</td><td>{{r.trabajador}}</td><td>{{r.total}}</td><td>{{r.visualizadas}}</td><td>{{r.aprobadas}}</td><td>{{r.rechazadas}}</td><td>{{r.pendientes}}</td><td>{{r.ult_periodo}}</td></tr>{% else %}<tr><td colspan="8" class="text-center text-muted">Sin boletas cargadas.</td></tr>{% endfor %}</tbody></table></div>
+      </div>
+    </div></div>'''
+    return render_page(body, m=m, resumen=_boleta_worker_summary_297(rows), title='Boletas Admin')
+
+
+def boletas_subir_297():
+    if not _is_admin_292(): return _deny_admin_292()
+    _boleta_ensure_297()
+    if request.method=='POST':
+        tipo=_bt_norm_tipo_291(request.form.get('tipo'))
+        periodo_default=limpiar_texto(request.form.get('periodo') or datetime.now().strftime('%Y-%m'), upper=False)
+        detalle=limpiar_texto(request.form.get('detalle') or 'Carga masiva PDF', upper=False)
+        obs=limpiar_texto(request.form.get('observacion'), upper=False)
+        files=request.files.getlist('archivos') or request.files.getlist('archivo')
+        ok=bad=0; errores=[]
+        for f in files:
+            if not f or not f.filename: continue
+            original=f.filename
+            if not original.lower().endswith('.pdf'):
+                bad+=1; errores.append(f'{original}: no es PDF'); continue
+            dni=limpiar_dni(original)
+            if len(dni)!=8:
+                bad+=1; errores.append(f'{original}: nombre sin DNI de 8 dígitos'); continue
+            try:
+                periodo=_bt_parse_period_293(original, periodo_default)
+                path, original_saved, ext = _bt_save_file_291(f, dni, tipo, periodo)
+                _bt_insert_doc_291(dni,tipo,periodo,detalle,obs,path,original_saved,ext,session.get('usuario'))
+                ok+=1
+            except Exception as e:
+                bad+=1; errores.append(f'{original}: {e}')
+        flash(f'Carga masiva finalizada. Correctos: {ok}. Observados: {bad}.', 'success' if ok else 'danger')
+        if errores: flash(' | '.join(errores[:5]), 'warning')
+        return redirect(url_for('boletas_reportes'))
+    body=_boleta_css_297()+r'''
+    <div class="b297-phone"><div class="b297-app">
+      <div class="b297-head"><a class="back" href="{{url_for('boletas_home')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl">Carga masiva PDF</div></div></div>
+      <div class="b297-body">
+        <div class="b297-info"><i class="bi bi-info-circle-fill"></i><div>Seleccione varios PDFs. Cada archivo debe contener el DNI en el nombre. Ejemplo: <b>BOLETA_74324033_2026-06.pdf</b>.</div></div>
+        <form class="b297-form" method="post" enctype="multipart/form-data"><div class="row"><div class="col-6"><label>Tipo default</label><select class="form-select" name="tipo">{{tipo_opts|safe}}</select></div><div class="col-6"><label>Periodo default</label><input class="form-control" name="periodo" value="{{periodo}}"></div><div class="col-12"><label>PDFs masivos</label><input class="form-control" name="archivos" type="file" accept="application/pdf,.pdf" multiple required></div><div class="col-12"><label>Detalle</label><input class="form-control" name="detalle" placeholder="Boleta mensual / CTS / Gratificación"></div><div class="col-12"><label>Observación</label><input class="form-control" name="observacion" placeholder="Opcional"></div></div><button class="b297-btn mt-2"><i class="bi bi-upload"></i> Cargar PDFs</button></form>
+        <a class="b297-outline" href="{{url_for('boletas_plantilla')}}"><i class="bi bi-file-earmark-excel"></i> Plantilla control</a>
+      </div>
+    </div></div>'''
+    return render_page(body, tipo_opts=_bt_tipo_options_291(), periodo=datetime.now().strftime('%Y-%m'), title='Carga masiva boletas')
+
+
+def boletas_usuario_home_297():
+    _boleta_ensure_297()
+    dni=_boleta_user_dni_296()
+    if len(dni)!=8:
+        flash('Ingrese como usuario con DNI para ver sus boletas.', 'danger')
+        return redirect(url_for('modulo_acceso', modulo='boleta'))
+    desde=request.args.get('desde') or ''
+    hasta=request.args.get('hasta') or ''
+    docs=_boleta_user_docs_297(dni, desde, hasta)
+    total=len(docs); aprobadas=sum(1 for d in docs if (d.get('decision') or '').upper()=='APROBADO'); rechazadas=sum(1 for d in docs if (d.get('decision') or '').upper()=='RECHAZADO'); pendientes=max(0,total-aprobadas-rechazadas)
+    body=_boleta_css_297()+r'''
+    <div class="b297-phone"><div class="b297-app">
+      <div class="b297-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl">Mis boletas</div></div></div>
+      <div class="b297-body">
+        <div class="b297-info"><i class="bi bi-shield-check"></i><div>Visualice sus boletas por rango de fechas. Para avanzar a la siguiente boleta debe aprobar o rechazar la anterior.</div></div>
+        <form method="get" class="b297-form"><div class="row"><div class="col-6"><label>Desde</label><input type="date" name="desde" value="{{desde}}" class="form-control"></div><div class="col-6"><label>Hasta</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"></div><div class="col-12"><button class="b297-btn"><i class="bi bi-search"></i> Filtrar</button></div></div></form>
+        <div class="b297-kpis"><div class="b297-kpi"><small>Boletas</small><b>{{total}}</b></div><div class="b297-kpi"><small>Aprobadas</small><b>{{aprobadas}}</b></div><div class="b297-kpi"><small>Pendientes</small><b>{{pendientes}}</b></div></div>
+        <div class="b297-chart">{{chart_svg|safe}}</div>
+        <div class="b297-section">Boletas por aprobar</div>
+        {% for d in docs %}
+          {% if d.bloqueado %}
+            <div class="b297-row lock"><i class="bi bi-lock"></i><div><b>{{d.tipo}} · {{d.periodo or '-'}}</b><br><small>{{d.archivo_nombre}}<br>Debe responder la boleta anterior.</small></div><span class="b297-badge lock">Bloqueada</span></div>
+          {% elif d.decision %}
+            <a class="b297-row" href="{{url_for('boletas_usuario_ver', doc_id=d.id)}}" target="_blank"><i class="bi bi-file-earmark-check"></i><div><b>{{d.tipo}} · {{d.periodo or '-'}}</b><br><small>{{d.archivo_nombre}}<br>{{d.decision_fecha or ''}}</small></div><span class="b297-badge {{'ok' if d.decision=='APROBADO' else 'bad'}}">{{d.decision}}</span></a>
+          {% else %}
+            <a class="b297-row" href="{{url_for('boletas_firmar', doc_id=d.id)}}"><i class="bi bi-eye"></i><div><b>{{d.tipo}} · {{d.periodo or '-'}}</b><br><small>{{d.archivo_nombre}}<br>Revisar, firmar y responder.</small></div><span class="b297-badge pend">Responder</span></a>
+          {% endif %}
+        {% else %}
+          <div class="b297-mini text-center text-muted">No tiene boletas cargadas en este rango.</div>
+        {% endfor %}
+      </div>
+    </div></div>'''
+    return render_page(body, docs=docs, total=total, aprobadas=aprobadas, rechazadas=rechazadas, pendientes=pendientes, desde=desde, hasta=hasta, chart_svg=_boleta_line_svg_297(docs), title='Mis boletas')
+
+
+def boletas_usuario_pdf_297(doc_id):
+    _boleta_ensure_297()
+    dni=_boleta_user_dni_296()
+    d=row_to_dict(execute('SELECT * FROM boleta_documentos WHERE id=? AND dni=?', (int(doc_id), dni), fetchone=True))
+    if not d:
+        flash('Boleta no encontrada para su DNI.', 'danger')
+        return redirect(url_for('boletas_usuario_home'))
+    previo=_boleta_first_pending_before_297(doc_id, dni)
+    if previo:
+        flash('Primero debe responder la boleta anterior.', 'warning')
+        return redirect(url_for('boletas_firmar', doc_id=previo.get('id')))
+    path=d.get('archivo_path')
+    if not path or not os.path.exists(path):
+        flash('Archivo no encontrado en servidor.', 'danger')
+        return redirect(url_for('boletas_usuario_home'))
+    execute("UPDATE boleta_documentos SET fecha_lectura=? WHERE id=? AND COALESCE(fecha_lectura,'')=''", (now_str(), int(doc_id)), commit=True)
+    return send_file(path, as_attachment=False, download_name=d.get('archivo_nombre') or os.path.basename(path))
+
+
+def boletas_firmar_297(doc_id):
+    _boleta_ensure_297()
+    dni=_boleta_user_dni_296()
+    d=row_to_dict(execute('SELECT * FROM boleta_documentos WHERE id=? AND dni=?', (int(doc_id), dni), fetchone=True))
+    if not d:
+        flash('Boleta no encontrada para su DNI.', 'danger')
+        return redirect(url_for('boletas_usuario_home'))
+    previo=_boleta_first_pending_before_297(doc_id, dni)
+    if previo:
+        flash('Primero debe responder la boleta anterior.', 'warning')
+        return redirect(url_for('boletas_firmar', doc_id=previo.get('id')))
+    resp=_boleta_response_297(doc_id, dni)
+    if request.method=='POST':
+        decision=(request.form.get('decision') or '').upper().strip()
+        if decision not in ('APROBADO','RECHAZADO'):
+            flash('Seleccione aprobar o rechazar.', 'danger')
+            return redirect(url_for('boletas_firmar', doc_id=doc_id))
+        obs=limpiar_texto(request.form.get('observacion'), upper=False)
+        firma_data=request.form.get('firma_data') or ''
+        if decision=='RECHAZADO' and not obs:
+            flash('Para rechazar debe ingresar una observación.', 'danger')
+            return redirect(url_for('boletas_firmar', doc_id=doc_id))
+        if not resp:
+            execute('''INSERT INTO boleta_respuestas(doc_id,dni,decision,observacion,firma_data,fecha_hora,ip,user_agent)
+                       VALUES(?,?,?,?,?,?,?,?)''', (int(doc_id), dni, decision, obs, firma_data, now_str(), request.remote_addr or '', request.headers.get('User-Agent','')[:250]), commit=True)
+        else:
+            execute('''UPDATE boleta_respuestas SET decision=?, observacion=?, firma_data=?, fecha_hora=?, ip=?, user_agent=? WHERE id=?''', (decision, obs, firma_data, now_str(), request.remote_addr or '', request.headers.get('User-Agent','')[:250], resp.get('id')), commit=True)
+        if not _boleta_signed_296(doc_id, dni):
+            execute('''INSERT INTO boleta_firmas(doc_id,dni,tipo_confirmacion,firma_data,huella_dedo,fecha_hora,ip,user_agent)
+                       VALUES(?,?,?,?,?,?,?,?)''', (int(doc_id), dni, 'FIRMA/HUELLA - '+decision, firma_data, 'CONFIRMACION DIGITAL', now_str(), request.remote_addr or '', request.headers.get('User-Agent','')[:250]), commit=True)
+        execute("UPDATE boleta_documentos SET fecha_lectura=? WHERE id=? AND COALESCE(fecha_lectura,'')=''", (now_str(), int(doc_id)), commit=True)
+        flash('Respuesta registrada: '+decision, 'success')
+        return redirect(url_for('boletas_usuario_home'))
+    body=_boleta_css_297()+r'''
+    <div class="b297-phone"><div class="b297-app">
+      <div class="b297-head"><a class="back" href="{{url_for('boletas_usuario_home')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl">Revisar boleta</div></div></div>
+      <div class="b297-body">
+        <div class="b297-info"><i class="bi bi-info-circle-fill"></i><div>Revise el PDF. Luego firme y marque <b>Aprobar</b> o <b>Rechazar</b>. Si rechaza, escriba el motivo.</div></div>
+        <div class="b297-mini"><b>{{d.tipo}} · {{d.periodo or '-'}}</b><br>{{d.archivo_nombre}}</div>
+        <iframe class="b297-pdf" src="{{url_for('boletas_usuario_pdf', doc_id=d.id)}}"></iframe>
+        <form method="post" id="frmResp297" class="b297-form mt-2">
+          <label>Firma / huella de conformidad</label>
+          <canvas id="firmaCanvas297" class="b297-canvas"></canvas>
+          <input type="hidden" name="firma_data" id="firmaData297">
+          <div class="b297-actions"><button type="button" class="b297-outline" onclick="clearFirma297()">Limpiar</button><button type="button" class="b297-outline" onclick="firmarHuella297()"><i class="bi bi-fingerprint"></i> Huella</button></div>
+          <label class="mt-2">Observación / motivo de rechazo</label><textarea name="observacion" class="form-control" placeholder="Opcional si aprueba. Obligatorio si rechaza.">{{resp.observacion if resp else ''}}</textarea>
+          <div class="b297-actions"><button class="b297-btn" name="decision" value="APROBADO"><i class="bi bi-check-circle"></i> Aprobar</button><button class="b297-btn danger" name="decision" value="RECHAZADO"><i class="bi bi-x-circle"></i> Rechazar</button></div>
+        </form>
+      </div>
+    </div></div>
+    <script>
+      const canvas=document.getElementById('firmaCanvas297'),ctx=canvas.getContext('2d');function resize297(){canvas.width=canvas.clientWidth;canvas.height=145;ctx.lineWidth=3;ctx.lineCap='round';ctx.strokeStyle='#08713b';}resize297();let drawing=false;function pos297(e){let r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};}function save297(){document.getElementById('firmaData297').value=canvas.toDataURL('image/png');}canvas.addEventListener('mousedown',e=>{drawing=true;let p=pos297(e);ctx.beginPath();ctx.moveTo(p.x,p.y);});canvas.addEventListener('mousemove',e=>{if(!drawing)return;let p=pos297(e);ctx.lineTo(p.x,p.y);ctx.stroke();save297();});canvas.addEventListener('mouseup',()=>drawing=false);canvas.addEventListener('mouseleave',()=>drawing=false);canvas.addEventListener('touchstart',e=>{drawing=true;let p=pos297(e);ctx.beginPath();ctx.moveTo(p.x,p.y);e.preventDefault();});canvas.addEventListener('touchmove',e=>{if(!drawing)return;let p=pos297(e);ctx.lineTo(p.x,p.y);ctx.stroke();save297();e.preventDefault();});canvas.addEventListener('touchend',()=>drawing=false);function clearFirma297(){ctx.clearRect(0,0,canvas.width,canvas.height);document.getElementById('firmaData297').value='';}function firmarHuella297(){ctx.clearRect(0,0,canvas.width,canvas.height);ctx.font='42px Arial';ctx.fillStyle='#08713b';ctx.textAlign='center';ctx.fillText('☝',canvas.width/2,80);ctx.font='13px Arial';ctx.fillText('Confirmación digital / huella',canvas.width/2,112);save297();}
+    </script>'''
+    return render_page(body, d=d, resp=resp, title='Revisar boleta')
+
+
+def boletas_usuario_ver_297(doc_id):
+    _boleta_ensure_297()
+    dni=_boleta_user_dni_296()
+    if not _boleta_response_297(doc_id, dni):
+        return redirect(url_for('boletas_firmar', doc_id=doc_id))
+    return boletas_usuario_pdf_297(doc_id)
+
+
+def boletas_archivo_297(doc_id):
+    _boleta_ensure_297()
+    if _boleta_is_admin_context_296():
+        d=row_to_dict(execute('SELECT * FROM boleta_documentos WHERE id=?', (int(doc_id),), fetchone=True))
+        if not d or not os.path.exists(d.get('archivo_path') or ''):
+            flash('Archivo no encontrado.', 'danger'); return redirect(url_for('boletas_home'))
+        return send_file(d.get('archivo_path'), as_attachment=False, download_name=d.get('archivo_nombre') or os.path.basename(d.get('archivo_path')))
+    return boletas_usuario_ver_297(doc_id)
+
+
+def boletas_reportes_297():
+    if not _is_admin_292(): return _deny_admin_292()
+    _boleta_ensure_297()
+    desde=request.args.get('desde') or ''
+    hasta=request.args.get('hasta') or ''
+    buscar=request.args.get('buscar') or ''
+    rows=_boleta_admin_docs_297(desde,hasta,buscar)
+    m=_boleta_metrics_297(rows)
+    resumen=_boleta_worker_summary_297(rows)
+    body=_boleta_css_297()+r'''
+    <div class="b297-phone"><div class="b297-app">
+      <div class="b297-head"><a class="back" href="{{url_for('boletas_home')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ico"><i class="bi bi-file-earmark-bar-graph"></i></div><div class="ttl">Reportes boletas</div></div></div>
+      <div class="b297-body">
+        <form class="b297-form" method="get"><div class="row"><div class="col-6"><label>Desde</label><input type="date" name="desde" value="{{desde}}" class="form-control"></div><div class="col-6"><label>Hasta</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"></div><div class="col-8"><label>Búsqueda</label><input name="buscar" value="{{buscar}}" class="form-control" placeholder="DNI / trabajador / periodo"></div><div class="col-4 d-flex align-items-end"><button class="b297-btn"><i class="bi bi-search"></i></button></div><div class="col-12"><a class="b297-outline" href="{{url_for('boletas_exportar')}}?desde={{desde}}&hasta={{hasta}}&buscar={{buscar}}"><i class="bi bi-file-earmark-excel"></i> Exportar Excel</a></div></div></form>
+        <div class="b297-kpis"><div class="b297-kpi"><small>Total</small><b>{{m.total}}</b></div><div class="b297-kpi"><small>Vistas</small><b>{{m.visualizadas}}</b></div><div class="b297-kpi"><small>Pend.</small><b>{{m.pendientes}}</b></div></div>
+        <div class="b297-kpis"><div class="b297-kpi"><small>Aprob.</small><b>{{m.aprobadas}}</b></div><div class="b297-kpi"><small>Rech.</small><b>{{m.rechazadas}}</b></div><div class="b297-kpi"><small>Trabaj.</small><b>{{m.trabajadores}}</b></div></div>
+        <div class="b297-section">Resumen por trabajador</div>
+        <div class="b297-tablewrap"><table class="b297-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Total</th><th>Vistas</th><th>Aprob.</th><th>Rech.</th><th>Pend.</th><th>Últ. periodo</th></tr></thead><tbody>{% for r in resumen %}<tr><td>{{r.dni}}</td><td>{{r.trabajador}}</td><td>{{r.total}}</td><td>{{r.visualizadas}}</td><td>{{r.aprobadas}}</td><td>{{r.rechazadas}}</td><td>{{r.pendientes}}</td><td>{{r.ult_periodo}}</td></tr>{% else %}<tr><td colspan="8" class="text-center text-muted">Sin datos.</td></tr>{% endfor %}</tbody></table></div>
+        <div class="b297-section">Detalle</div>
+        <div class="b297-tablewrap"><table class="b297-table"><thead><tr><th>Fecha</th><th>DNI</th><th>Trabajador</th><th>Tipo</th><th>Periodo</th><th>Estado</th><th>Respuesta</th></tr></thead><tbody>{% for d in rows %}<tr><td>{{d.fecha_subida[:10]}}</td><td>{{d.dni}}</td><td>{{d.trabajador or '-'}}</td><td>{{d.tipo}}</td><td>{{d.periodo or '-'}}</td><td>{{'VISTA' if d.fecha_lectura else 'NO VISTA'}}</td><td>{{d.decision or 'PENDIENTE'}}</td></tr>{% else %}<tr><td colspan="7" class="text-center text-muted">Sin datos.</td></tr>{% endfor %}</tbody></table></div>
+      </div>
+    </div></div>'''
+    return render_page(body, rows=rows, resumen=resumen, m=m, desde=desde, hasta=hasta, buscar=buscar, title='Reportes boletas')
+
+
+def boletas_exportar_297():
+    if not _is_admin_292(): return _deny_admin_292()
+    _boleta_ensure_297()
+    desde=request.args.get('desde') or ''
+    hasta=request.args.get('hasta') or ''
+    buscar=request.args.get('buscar') or ''
+    rows=_boleta_admin_docs_297(desde,hasta,buscar)
+    headers=['fecha_subida','dni','trabajador','empresa','area','cargo','tipo','periodo','detalle','archivo_nombre','fecha_lectura','decision','decision_fecha','decision_obs','uploaded_by','observacion']
+    return excel_response(headers, rows, 'reporte_control_boletas.xlsx', 'BOLETAS')
+
+
+try:
+    app.add_url_rule('/boletas/usuario/pdf/<int:doc_id>', 'boletas_usuario_pdf', boletas_usuario_pdf_297, methods=['GET'])
+except Exception:
+    app.view_functions['boletas_usuario_pdf']=boletas_usuario_pdf_297
+
+# Overrides finales 297
+app.view_functions['boletas_home']=boletas_home_297
+app.view_functions['boletas_subir']=boletas_subir_297
+app.view_functions['boletas_usuario_home']=boletas_usuario_home_297
+app.view_functions['boletas_firmar']=boletas_firmar_297
+app.view_functions['boletas_usuario_ver']=boletas_usuario_ver_297
+app.view_functions['boletas_archivo']=boletas_archivo_297
+app.view_functions['boletas_reportes']=boletas_reportes_297
+app.view_functions['boletas_exportar']=boletas_exportar_297
+# ======================= FIN PATCH BOLETAS OMAR 297 =======================
+
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
