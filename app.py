@@ -8399,6 +8399,322 @@ app.view_functions['boletas_listar']=boletas_tipo_298
 # ======================= FIN PATCH BOLETAS OMAR 298 =======================
 
 
+# ========================= PATCH BOLETAS OMAR 300 =========================
+# Implementación final tipo maqueta aprobada:
+# - Usuario: al ingresar a NORMAL/CTS/etc. ve SOLO ese tipo, con filtro, KPIs,
+#   gráfica lineal y lista para ver/firmar/revisar.
+# - Administrador: al ingresar a un tipo ve dashboard operativo con tabs por tipo,
+#   carga masiva, exportación, filtros, KPIs, gráfico y control por trabajador.
+
+
+def _b300_pct(n, d):
+    try:
+        d = float(d or 0)
+        return round((float(n or 0) / d) * 100, 1) if d else 0
+    except Exception:
+        return 0
+
+
+def _b300_estado_label(estado):
+    e = (estado or 'PENDIENTE').upper()
+    if e == 'APROBADA':
+        return 'FIRMADA'
+    if e == 'RECHAZADA':
+        return 'RECHAZADA'
+    if e == 'OBSERVADA':
+        return 'OBSERVADA'
+    return 'PENDIENTE FIRMA'
+
+
+def _b300_estado_cls(estado):
+    e = (estado or 'PENDIENTE').upper()
+    if e == 'APROBADA': return 'ok'
+    if e == 'RECHAZADA': return 'bad'
+    if e == 'OBSERVADA': return 'obs'
+    return 'pend'
+
+
+def _b300_estado_icon(estado):
+    e=(estado or 'PENDIENTE').upper()
+    if e == 'APROBADA': return 'bi-check-circle-fill'
+    if e == 'RECHAZADA': return 'bi-exclamation-triangle-fill'
+    if e == 'OBSERVADA': return 'bi-exclamation-circle-fill'
+    return 'bi-clock-fill'
+
+
+def _b300_periodo(d):
+    return (d.get('periodo') or (d.get('fecha_subida') or '')[:7] or '-').strip()
+
+
+def _b300_fecha_doc(d):
+    return (d.get('fecha_subida') or '')[:10] or '-'
+
+
+def _b300_month_label(p):
+    p = str(p or '')
+    meses = {'01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Oct','11':'Nov','12':'Dic'}
+    m = ''
+    if len(p) >= 7 and p[4] == '-':
+        m = p[5:7]
+    elif len(p) >= 2:
+        m = p[-2:]
+    return meses.get(m, p[-5:] or '-')
+
+
+def _b300_user_chart(docs, tipo='NORMAL'):
+    counts = {}
+    for d in docs:
+        p = _b300_periodo(d)
+        counts[p] = counts.get(p, 0) + 1
+    items = sorted(counts.items())[-6:]
+    if not items:
+        return '''<div class="b300-chart"><div class="b300-chart-title">Evolución de boletas</div><svg viewBox="0 0 330 140"><rect width="330" height="140" rx="14" fill="#fff"/><text x="165" y="74" text-anchor="middle" fill="#64748b" font-size="12" font-weight="800">Sin boletas en este tipo</text></svg></div>'''
+    maxv = max(v for _, v in items) or 1
+    left, right, top, bottom = 42, 303, 25, 102
+    n = len(items)
+    pts=[]
+    labels=[]
+    grid=[]
+    for gy, val in [(bottom,0),(bottom-(bottom-top)*.33, round(maxv*.33)),(bottom-(bottom-top)*.66, round(maxv*.66)),(top,maxv)]:
+        grid.append(f'<line x1="{left}" y1="{gy:.1f}" x2="{right}" y2="{gy:.1f}" stroke="#e5e7eb" stroke-dasharray="4 4"/><text x="18" y="{gy+4:.1f}" fill="#64748b" font-size="10" font-weight="800">{val}</text>')
+    for i,(p,v) in enumerate(items):
+        x = left + (right-left)*(i/(n-1 if n>1 else 1))
+        y = bottom - (bottom-top)*(v/maxv)
+        pts.append((x,y,v,p))
+        labels.append(f'<text x="{x:.1f}" y="124" text-anchor="middle" fill="#64748b" font-size="10" font-weight="900">{_b300_month_label(p)}</text>')
+    poly = ' '.join([f'{x:.1f},{y:.1f}' for x,y,_,_ in pts])
+    area = f'{left},{bottom} ' + poly + f' {pts[-1][0]:.1f},{bottom}'
+    circles = ''.join([f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.2" fill="#08713b"/><text x="{x:.1f}" y="{y-8:.1f}" text-anchor="middle" fill="#08713b" font-size="10" font-weight="950">{v}</text>' for x,y,v,p in pts])
+    return f'''<div class="b300-chart"><div class="b300-chart-title">Evolución de boletas</div><svg viewBox="0 0 330 140"><rect width="330" height="140" rx="14" fill="#fff"/>{''.join(grid)}<polyline points="{poly}" fill="none" stroke="#08713b" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><polygon points="{area}" fill="#08713b" opacity=".10"/>{circles}{''.join(labels)}</svg></div>'''
+
+
+def _b300_admin_chart(tipo, desde='', hasta='', buscar=''):
+    docs = _bol_admin_docs_tipo_298(tipo, desde, hasta, buscar, 5000)
+    data = {}
+    for d in docs:
+        p = _b300_periodo(d)
+        e = (d.get('respuesta_estado') or 'PENDIENTE').upper()
+        data.setdefault(p, {'APROBADA':0,'PENDIENTE':0,'RECHAZADA':0,'OBSERVADA':0})
+        if e not in data[p]: e = 'PENDIENTE'
+        data[p][e] += 1
+    items = sorted(data.items())[-6:]
+    if not items:
+        return '''<div class="b300-admin-chart"><div class="b300-admin-chart-head"><b>Estado por periodo</b><span>Últimos 6 meses</span></div><svg viewBox="0 0 340 150"><rect width="340" height="150" rx="14" fill="#fff"/><text x="170" y="82" text-anchor="middle" fill="#64748b" font-size="12" font-weight="800">Sin datos para graficar</text></svg></div>'''
+    maxv = max(max(v.values()) for _,v in items) or 1
+    left, right, top, bottom = 38, 314, 30, 112
+    n=len(items); group_w=(right-left)/(n if n else 1); bar_w=max(4, min(9, group_w/6))
+    colors={'APROBADA':'#10964e','PENDIENTE':'#f59e0b','RECHAZADA':'#ef4444','OBSERVADA':'#8b5cf6'}
+    bars=[]; labels=[]; grid=[]
+    for j in range(4):
+        val = round(maxv*j/3)
+        y = bottom - (bottom-top)*j/3
+        grid.append(f'<line x1="{left}" y1="{y:.1f}" x2="{right}" y2="{y:.1f}" stroke="#e5e7eb" stroke-dasharray="4 4"/><text x="14" y="{y+4:.1f}" fill="#64748b" font-size="9" font-weight="800">{val}</text>')
+    keys=['APROBADA','PENDIENTE','RECHAZADA','OBSERVADA']
+    for i,(p,vals) in enumerate(items):
+        base_x = left + i*group_w + group_w*.25
+        for kidx,k in enumerate(keys):
+            v=vals.get(k,0)
+            h=(bottom-top)*(v/maxv)
+            x=base_x+kidx*(bar_w+3)
+            y=bottom-h
+            bars.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" rx="2" fill="{colors[k]}"/>')
+        labels.append(f'<text x="{left+i*group_w+group_w/2:.1f}" y="134" text-anchor="middle" fill="#64748b" font-size="9" font-weight="900">{_b300_month_label(p)}</text>')
+    legend='''<span><i style="background:#10964e"></i>Aprobadas</span><span><i style="background:#f59e0b"></i>Pendientes</span><span><i style="background:#ef4444"></i>Rechazadas</span><span><i style="background:#8b5cf6"></i>Observadas</span>'''
+    return f'''<div class="b300-admin-chart"><div class="b300-admin-chart-head"><b>Estado por periodo</b><span>Últimos 6 meses</span></div><div class="b300-legend">{legend}</div><svg viewBox="0 0 340 150"><rect width="340" height="150" rx="14" fill="#fff"/>{''.join(grid)}{''.join(bars)}{''.join(labels)}</svg></div>'''
+
+
+def _b300_admin_rows(rows):
+    out=[]
+    for r in rows:
+        r=dict(r)
+        total=int(r.get('total') or 0)
+        r['pct_vistas']=_b300_pct(r.get('vistas'), total)
+        r['pct_aprobadas']=_b300_pct(r.get('aprobadas'), total)
+        r['pct_pendientes']=_b300_pct(r.get('pendientes'), total)
+        r['pct_rechazadas']=_b300_pct(r.get('rechazadas'), total)
+        r['pct_progreso']=_b300_pct(r.get('aprobadas'), total)
+        nombre=(r.get('trabajador') or r.get('dni') or 'TR').strip()
+        partes=[p for p in nombre.split() if p]
+        ini=''.join([p[0] for p in partes[:2]]).upper() or 'TR'
+        r['ini']=ini[:2]
+        out.append(r)
+    return out
+
+
+def _b300_css():
+    return r'''
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}.shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:7px 8px 26px!important;background:#fff!important}.b300-phone{max-width:390px;margin:0 auto}.b300-app{background:#fff;border:1px solid #e4e8e4;border-radius:13px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+      .b300-head{height:86px;background:#08713b;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}.b300-head.big{height:98px}.b300-head .back{position:absolute;left:15px;color:#fff!important;font-size:32px;text-decoration:none;line-height:1}.b300-head .ttl{font-size:18px;font-weight:950;color:#fff;text-align:center;text-transform:uppercase;letter-spacing:.25px}.b300-head .config{position:absolute;right:11px;top:21px;border:1px solid rgba(255,255,255,.75);color:#fff!important;text-decoration:none;border-radius:12px;padding:6px 9px;font-size:11px;font-weight:950;background:rgba(255,255,255,.08)}.b300-body{padding:12px 12px 16px;background:#fff}.b300-card{border:1px solid #dbeade;background:#fff;border-radius:13px;padding:12px;margin-bottom:12px;box-shadow:0 5px 14px rgba(0,0,0,.04)}.b300-card label{font-size:11px;font-weight:950;color:#08713b;margin-bottom:5px}.b300-card .form-control{height:39px!important;border-radius:10px!important;border:1px solid #dfe7df!important;font-size:12.5px!important;font-weight:850!important}.b300-btn{height:39px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff!important;font-weight:950;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;width:100%}.b300-outline{height:39px;border-radius:10px;background:#fff;border:1px solid #08713b;color:#08713b!important;font-weight:950;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;width:100%}
+      .b300-worker{display:grid;grid-template-columns:56px 1fr;gap:11px;align-items:center}.b300-avatar{width:52px;height:52px;border-radius:999px;background:#dcfce7;color:#08713b;display:grid;place-items:center;font-size:27px}.b300-worker b{font-size:16px;color:#08713b;font-weight:950}.b300-worker small{font-size:12px;color:#64748b;font-weight:650}.b300-kpis3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}.b300-kpis4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 10px}.b300-kpi{background:#10964e;color:#fff;border-radius:9px;text-align:center;padding:8px 4px;box-shadow:0 7px 13px rgba(16,150,78,.16)}.b300-kpi small{display:block;font-size:9px;font-weight:950;color:#effff3;line-height:1.05}.b300-kpi b{display:block;font-size:22px;line-height:1.05;font-weight:950;color:#fff;margin-top:4px}.b300-kpi em{display:block;font-size:9px;font-style:normal;font-weight:900;color:#eaffee;margin-top:2px}.b300-kpi.light{background:#fff;color:#0f5132;border:1px solid #d7eadc;text-align:left;padding:10px 12px}.b300-kpi.light b{color:#0f172a;font-size:18px}.b300-kpi.light small{color:#08713b}.b300-kpi.light.bad i{color:#ef4444}.b300-kpi.light.obs i{color:#f59e0b}.b300-kpi.light i{float:right;font-size:24px;opacity:.9}
+      .b300-chart,.b300-admin-chart{border:1px solid #dbeade;background:#fff;border-radius:13px;padding:10px;margin-bottom:12px;box-shadow:0 5px 14px rgba(0,0,0,.04)}.b300-chart-title{font-size:13px;font-weight:950;color:#08713b;margin-bottom:4px}.b300-chart svg,.b300-admin-chart svg{width:100%;height:auto;display:block}.b300-section{display:flex;align-items:center;gap:8px;margin:6px 0 9px}.b300-section:before{content:'';width:4px;height:22px;background:#08713b;border-radius:999px}.b300-section b{font-size:17px;color:#0f172a;font-weight:950}.b300-doc{display:grid;grid-template-columns:55px 1fr 92px;gap:8px;align-items:center;border:1px solid #e3e8e3;border-radius:12px;background:#fff;padding:10px;margin:7px 0;text-decoration:none;color:#102a43!important;box-shadow:0 4px 10px rgba(0,0,0,.04)}.b300-doc.lock{opacity:.55;background:#f8fafc}.b300-pdfico{width:45px;height:50px;border-radius:10px;background:#ecfdf5;color:#08713b;display:grid;place-items:center;font-size:14px;font-weight:950;border:1px solid #d7eadc}.b300-pdfico i{font-size:22px;display:block;line-height:.9}.b300-doc b{font-size:15px;color:#0a1f44}.b300-doc .fname{font-size:11px;color:#334155;font-weight:700;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}.b300-doc .date{font-size:10.5px;color:#64748b;font-weight:800;display:block;margin-top:3px}.b300-badge{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:5px 8px;font-size:9px;font-weight:950;white-space:nowrap}.b300-badge.ok{background:#dcfce7;color:#166534}.b300-badge.pend{background:#ffedd5;color:#c2410c}.b300-badge.bad{background:#fee2e2;color:#b91c1c}.b300-badge.obs{background:#fef3c7;color:#92400e}.b300-doc-note{font-size:10px;color:#64748b;font-weight:850;display:block;margin-top:5px}.b300-doc-note.ok{color:#166534}.b300-action{height:36px;border-radius:9px;border:1px solid #d1d5db;background:#fff;color:#0f172a!important;font-size:11.5px;font-weight:900;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px}.b300-action.primary{background:#08713b;border-color:#08713b;color:#fff!important}.b300-action.warn{background:#fff;border-color:#d1d5db;color:#0f172a!important}
+      .b300-tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px;scrollbar-width:none}.b300-tabs::-webkit-scrollbar{display:none}.b300-tab{flex:0 0 auto;min-width:74px;height:36px;border:1px solid #dfe7df;background:#fff;color:#08713b!important;text-decoration:none;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:950}.b300-tab.active{background:#08713b;color:#fff!important;outline:3px solid #9be070}.b300-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}.b300-admin-chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}.b300-admin-chart-head b{font-size:13px;color:#08713b;font-weight:950}.b300-admin-chart-head span{border:1px solid #dfe7df;border-radius:9px;padding:5px 8px;font-size:10px;font-weight:850;color:#0f172a;background:#fff}.b300-legend{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center;font-size:9px;color:#334155;font-weight:800;margin-bottom:4px}.b300-legend span{display:inline-flex;align-items:center;gap:4px}.b300-legend i{width:9px;height:9px;border-radius:999px;display:inline-block}.b300-workers{border:1px solid #dbeade;background:#fff;border-radius:13px;padding:10px;margin-bottom:12px}.b300-workers-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.b300-workers-head b{font-size:13px;color:#08713b;font-weight:950}.b300-workers-head a{border:1px solid #d7eadc;border-radius:9px;padding:6px 9px;color:#08713b!important;text-decoration:none;font-size:10px;font-weight:950}.b300-row{display:grid;grid-template-columns:42px 1fr 49px;gap:8px;align-items:center;border:1px solid #edf2ee;border-radius:11px;padding:8px;margin:6px 0}.b300-initial{width:36px;height:36px;border-radius:999px;background:#08713b;color:#fff;display:grid;place-items:center;font-size:12px;font-weight:950;position:relative}.b300-initial:after{content:'';width:9px;height:9px;border-radius:999px;background:#22c55e;border:2px solid #fff;position:absolute;right:-1px;bottom:1px}.b300-row b{font-size:11.5px;color:#0f172a}.b300-row small{font-size:9px;color:#64748b;font-weight:750}.b300-rownums{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:5px}.b300-rownums span{font-size:9px;font-weight:950;color:#08713b}.b300-rownums em{display:block;font-size:8px;color:#64748b;font-style:normal;font-weight:800}.b300-progress{height:7px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:4px}.b300-progress i{display:block;height:100%;background:#22c55e}.b300-empty{border:1px solid #dbeade;border-radius:13px;background:#fbfffc;text-align:center;color:#64748b;padding:28px 12px;font-size:13px;font-weight:850}.b300-summary{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center;border:1px solid #dbeade;border-radius:13px;background:#fbfffc;padding:10px}.b300-summary .ico{width:54px;height:54px;background:#08713b;color:#fff;border-radius:12px;display:grid;place-items:center;font-size:30px}.b300-summary b{font-size:18px;color:#0f172a}.b300-summary small{display:block;color:#334155;font-size:11px;font-weight:750}.b300-mini-info{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.b300-mini-info div{font-size:10px;color:#08713b;font-weight:900;border-left:1px solid #dbeade;padding-left:7px}.b300-mini-info span{display:block;color:#0f172a;font-weight:750;margin-top:2px}
+      @media(max-width:420px){.b300-phone{max-width:100%}.b300-doc{grid-template-columns:50px 1fr 88px}.b300-kpis4{grid-template-columns:repeat(2,1fr)}.b300-actions{grid-template-columns:1fr}.b300-doc .fname{max-width:135px}}
+    </style>
+    '''
+
+
+def _b300_tabs_html(tipo):
+    parts=[]
+    for t,lbl,ico in BOLETA_TIPOS_CANON_291:
+        short = 'GRATI.' if t == 'GRATIFICACIÓN' else t
+        cls = ' active' if t == tipo else ''
+        parts.append(f'<a class="b300-tab{cls}" href="{url_for("boletas_tipo", tipo=t)}">{short}</a>')
+    return ''.join(parts)
+
+
+def boletas_home_300():
+    _boleta_ensure_297()
+    if session.get('module_name') == 'boleta' and session.get('module_role') == 'usuario':
+        return redirect(url_for('boletas_usuario_home'))
+    if not _boleta_is_admin_context_296():
+        return redirect(url_for('boletas_usuario_home'))
+    return redirect(url_for('boletas_tipo', tipo='NORMAL'))
+
+
+def boletas_usuario_home_300():
+    _boleta_ensure_297()
+    dni = _boleta_user_dni_296()
+    if not dni:
+        flash('Ingrese como usuario con DNI para ver sus boletas.', 'danger')
+        return redirect(url_for('modulo_acceso', modulo='boleta'))
+    conteos = _bol_tipo_conteos_298(dni)
+    body = _bol_css_298() + r'''
+    <div class="bt291-phone"><div class="bt291-app">
+      <div class="bol297-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Mis boletas</div></div>
+      <div class="bol297-body">
+        <span class="bol298-pill"><i class="bi bi-person-badge"></i> {{session.get('nombres') or dni}} · {{dni}}</span>
+        <div class="bol297-help"><i class="bi bi-shield-check"></i><div>Seleccione el tipo de boleta. Dentro de cada tipo podrá visualizar, firmar/aprobar, rechazar u observar sus documentos.</div></div>
+        <div class="bol298-minihead"><b>Documentos de pago</b></div>
+        <div class="bol298-typegrid">{% for t,lbl,ico in tipos %}<a class="bol298-tile" href="{{url_for('boletas_tipo', tipo=t)}}"><i class="bi {{ico}}"></i><span class="lbl">{{t}}</span><span class="sub">{{conteos.get(t,0)}} docs.</span></a>{% endfor %}</div>
+      </div>
+    </div></div>'''
+    return render_page(body, dni=dni, tipos=BOLETA_TIPOS_CANON_291, conteos=conteos, title='Mis boletas')
+
+
+def boletas_tipo_300(tipo=None):
+    _boleta_ensure_297()
+    tipo = _bt_norm_tipo_291(tipo or request.args.get('tipo') or 'NORMAL')
+    desde = request.args.get('desde') or ''
+    hasta = request.args.get('hasta') or ''
+    buscar = limpiar_texto(request.args.get('buscar') or '', upper=False)
+
+    if _boleta_is_admin_context_296():
+        stats = _bol_tipo_stats_298(tipo=tipo, desde=desde, hasta=hasta, buscar=buscar)
+        rows = _b300_admin_rows(_bol_admin_rows_tipo_298(tipo, desde, hasta, buscar))
+        chart = _b300_admin_chart(tipo, desde, hasta, buscar)
+        tabs = _b300_tabs_html(tipo)
+        total = stats.get('total', 0)
+        vista_pct = _b300_pct(stats.get('vistas'), total)
+        aprob_pct = _b300_pct(stats.get('aprobadas'), total)
+        pend_pct = _b300_pct(stats.get('pendientes'), total)
+        rech_pct = _b300_pct(stats.get('rechazadas'), total)
+        obs_pct = _b300_pct(stats.get('observadas'), total)
+        body = _b300_css() + r'''
+        <div class="b300-phone"><div class="b300-app">
+          <div class="b300-head big"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Boletas Admin</div><a class="config" href="{{url_for('boletas_config')}}"><i class="bi bi-gear"></i> Config.</a></div>
+          <div class="b300-body">
+            <div class="b300-tabs">{{tabs|safe}}</div>
+            <div class="b300-actions">
+              <a class="b300-btn" href="{{url_for('boletas_subir')}}"><i class="bi bi-cloud-arrow-up"></i><span>Cargar PDFs masivos<br><small style="font-size:9px;color:#eaffee">Seleccionar archivos</small></span></a>
+              <a class="b300-outline" href="{{url_for('boletas_exportar')}}?desde={{desde}}&hasta={{hasta}}&buscar={{tipo}}"><i class="bi bi-table"></i><span>Exportar control<br><small style="font-size:9px">Excel / CSV</small></span></a>
+            </div>
+            <form class="b300-card" method="get">
+              <div class="row g-2">
+                <div class="col-6"><label>Desde</label><input type="date" name="desde" value="{{desde}}" class="form-control"></div>
+                <div class="col-6"><label>Hasta</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"></div>
+                <div class="col-9"><label>Buscar</label><input name="buscar" value="{{buscar}}" class="form-control" placeholder="DNI / trabajador / periodo"></div>
+                <div class="col-3 d-flex align-items-end"><button class="b300-btn"><i class="bi bi-search"></i></button></div>
+              </div>
+            </form>
+            <div class="b300-kpis4">
+              <div class="b300-kpi"><small>Total</small><b>{{stats.total}}</b><em>Boletas</em></div>
+              <div class="b300-kpi"><small>Vistas</small><b>{{stats.vistas}}</b><em>{{vista_pct}}%</em></div>
+              <div class="b300-kpi"><small>Aprobadas</small><b>{{stats.aprobadas}}</b><em>{{aprob_pct}}%</em></div>
+              <div class="b300-kpi"><small>Pendientes</small><b>{{stats.pendientes}}</b><em>{{pend_pct}}%</em></div>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col-6"><div class="b300-kpi light bad"><i class="bi bi-x-circle"></i><small>Rechazadas</small><b>{{stats.rechazadas}}</b><em>{{rech_pct}}%</em></div></div>
+              <div class="col-6"><div class="b300-kpi light obs"><i class="bi bi-exclamation-circle"></i><small>Observadas</small><b>{{stats.observadas}}</b><em>{{obs_pct}}%</em></div></div>
+            </div>
+            {{chart|safe}}
+            <div class="b300-workers">
+              <div class="b300-workers-head"><b>Control por trabajador</b><a href="{{url_for('boletas_exportar')}}?desde={{desde}}&hasta={{hasta}}&buscar={{tipo}}"><i class="bi bi-download"></i> Exportar tabla</a></div>
+              {% for r in rows[:30] %}
+              <div class="b300-row">
+                <div class="b300-initial">{{r.ini}}</div>
+                <div>
+                  <b>{{r.trabajador or 'SIN NOMBRE'}}</b><br><small>{{r.dni}}</small>
+                  <div class="b300-rownums"><span>{{r.total}}<em>Total</em></span><span>{{r.vistas}}<em>Vistas</em></span><span>{{r.aprobadas}}<em>Aprob.</em></span><span>{{r.pendientes}}<em>Pend.</em></span></div>
+                  <div class="b300-rownums"><span style="color:#ef4444">{{r.rechazadas}}<em>Rech.</em></span><span style="color:#f59e0b">{{r.observadas}}<em>Obs.</em></span><span>{{r.pct_aprobadas}}%<em>Aprob.</em></span><span>{{r.pct_vistas}}%<em>Vistas</em></span></div>
+                </div>
+                <div><small>Progreso</small><div class="b300-progress"><i style="width:{{r.pct_progreso}}%"></i></div><small>{{r.pct_progreso}}%</small></div>
+              </div>
+              {% else %}<div class="b300-empty">Sin trabajadores en este tipo.</div>{% endfor %}
+            </div>
+            <div class="b300-summary"><div class="ico"><i class="bi bi-file-earmark-text"></i></div><div><small>Tipo seleccionado</small><b>{{tipo}}</b><small>Boletas por tipo de pago</small><div class="b300-mini-info"><div>Periodo actual<span>{{desde or 'Todos'}} al {{hasta or 'Todos'}}</span></div><div>Usuario<span>Administrador</span></div></div></div></div>
+          </div>
+        </div></div>'''
+        return render_page(body, tipo=tipo, tabs=tabs, stats=stats, rows=rows, desde=desde, hasta=hasta, buscar=buscar, chart=chart, vista_pct=vista_pct, aprob_pct=aprob_pct, pend_pct=pend_pct, rech_pct=rech_pct, obs_pct=obs_pct, title=f'Boletas {tipo} Admin')
+
+    dni = _boleta_user_dni_296()
+    if not dni:
+        flash('Ingrese como usuario con DNI para ver sus boletas.', 'danger')
+        return redirect(url_for('modulo_acceso', modulo='boleta'))
+    docs = _bol_tipo_docs_usuario_298(dni, tipo, desde, hasta, buscar)
+    stats = _bol_tipo_stats_298(tipo=tipo, dni=dni, desde=desde, hasta=hasta, buscar=buscar)
+    chart = _b300_user_chart(docs, tipo)
+    body = _b300_css() + r'''
+    <div class="b300-phone"><div class="b300-app">
+      <div class="b300-head big"><a class="back" href="{{url_for('boletas_usuario_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Boletas {{tipo}}</div></div>
+      <div class="b300-body">
+        <div class="b300-card b300-worker"><div class="b300-avatar"><i class="bi bi-person-fill"></i></div><div><b>{{session.get('nombres') or 'TRABAJADOR'}} · {{dni}}</b><br><small>Revise y firme cada boleta para continuar</small></div></div>
+        <form class="b300-card" method="get">
+          <div class="row g-2">
+            <div class="col-6"><label>Desde</label><input type="date" name="desde" value="{{desde}}" class="form-control"></div>
+            <div class="col-6"><label>Hasta</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"></div>
+            <div class="col-9"><label>Buscar periodo / archivo</label><input name="buscar" value="{{buscar}}" class="form-control" placeholder="Ej. 2026-03 o boleta_2026-03.pdf"></div>
+            <div class="col-3 d-flex align-items-end"><button class="b300-btn"><i class="bi bi-search"></i></button></div>
+          </div>
+        </form>
+        <div class="b300-kpis3"><div class="b300-kpi"><small>Total</small><b>{{stats.total}}</b></div><div class="b300-kpi"><small>Firmadas</small><b>{{stats.aprobadas}}</b></div><div class="b300-kpi"><small>Pendientes</small><b>{{stats.pendientes}}</b></div></div>
+        {{chart|safe}}
+        <div class="b300-section"><b>Mis boletas {{tipo}}</b></div>
+        {% for d in docs %}
+          {% set estado = d.respuesta_estado or 'PENDIENTE' %}
+          <div class="b300-doc {% if d.bloqueada %}lock{% endif %}">
+            <div class="b300-pdfico"><div><i class="bi bi-file-earmark"></i><br>PDF</div></div>
+            <div><b>{{d.periodo or '-'}}</b><span class="fname">{{d.archivo_nombre}}</span><span class="date"><i class="bi bi-calendar3"></i> {{fecha_doc(d)}}</span>
+              {% if d.bloqueada %}<span class="b300-doc-note">Debe responder la boleta anterior de {{tipo}}.</span>
+              {% elif d.respondida %}<span class="b300-doc-note {% if estado=='APROBADA' %}ok{% endif %}"><i class="bi {{estado_icon(estado)}}"></i> {{estado_label(estado)}}{% if d.respuesta_fecha %} · {{(d.respuesta_fecha or '')[:10]}}{% endif %}</span>
+              {% else %}<span class="b300-doc-note"><i class="bi bi-pen"></i> Firma requerida</span>{% endif %}
+            </div>
+            <div>
+              {% if d.bloqueada %}<span class="b300-badge pend"><i class="bi bi-lock"></i> Bloqueada</span>
+              {% elif not d.respondida %}<span class="b300-badge pend"><i class="bi bi-clock"></i> Pendiente</span><a class="b300-action primary mt-1" href="{{url_for('boletas_revisar', doc_id=d.id)}}"><i class="bi bi-pen"></i> Ver y firmar</a>
+              {% elif estado=='APROBADA' %}<span class="b300-badge ok"><i class="bi bi-check-circle-fill"></i> Firmada</span><a class="b300-action mt-1" href="{{url_for('boletas_usuario_ver', doc_id=d.id)}}" target="_blank"><i class="bi bi-file-earmark"></i> Ver PDF</a>
+              {% else %}<span class="b300-badge {{estado_cls(estado)}}"><i class="bi {{estado_icon(estado)}}"></i> {{estado_label(estado)}}</span><a class="b300-action warn mt-1" href="{{url_for('boletas_revisar', doc_id=d.id)}}"><i class="bi bi-eye"></i> Revisar</a>{% endif %}
+            </div>
+          </div>
+        {% else %}<div class="b300-empty">No tiene boletas {{tipo}} para este filtro.</div>{% endfor %}
+      </div>
+    </div></div>'''
+    return render_page(body, dni=dni, tipo=tipo, docs=docs, stats=stats, desde=desde, hasta=hasta, buscar=buscar, chart=chart, fecha_doc=_b300_fecha_doc, estado_label=_b300_estado_label, estado_cls=_b300_estado_cls, estado_icon=_b300_estado_icon, title=f'Boletas {tipo}')
+
+
+def boletas_reportes_300():
+    return redirect(url_for('boletas_tipo', tipo='NORMAL'))
+
+
+# Overrides finales 300
+app.view_functions['boletas_home'] = boletas_home_300
+app.view_functions['boletas_usuario_home'] = boletas_usuario_home_300
+app.view_functions['boletas_tipo'] = boletas_tipo_300
+app.view_functions['boletas_listar'] = boletas_tipo_300
+app.view_functions['boletas_reportes'] = boletas_reportes_300
+# ======================= FIN PATCH BOLETAS OMAR 300 =======================
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
