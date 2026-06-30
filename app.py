@@ -8715,6 +8715,705 @@ app.view_functions['boletas_reportes'] = boletas_reportes_300
 # ======================= FIN PATCH BOLETAS OMAR 300 =======================
 
 
+# ========================= PATCH BOLETAS OMAR 302 =========================
+# Ajustes finales solicitados:
+# 1) Mostrar nombre real del trabajador en Mis boletas y en el detalle del tipo.
+# 2) Carga masiva acepta archivos DNI.pdf; el administrador elige tipo y periodo.
+# 3) Vista miniatura/compacta.
+# 4) Filtro de periodo por meses Ene-Dic o semanas 1-63.
+
+B302_MESES = [
+    ('01','Enero'), ('02','Febrero'), ('03','Marzo'), ('04','Abril'), ('05','Mayo'), ('06','Junio'),
+    ('07','Julio'), ('08','Agosto'), ('09','Septiembre'), ('10','Octubre'), ('11','Noviembre'), ('12','Diciembre')
+]
+
+
+def _b302_tipo_label(tipo):
+    t = _bt_norm_tipo_291(tipo or 'NORMAL')
+    return 'GRATI.' if t == 'GRATIFICACIÓN' else t
+
+
+def _b302_worker(dni):
+    dni = limpiar_dni(dni)
+    w = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    nombre = ''
+    if w:
+        nombre = (w.get('trabajador') or w.get('nombres') or w.get('nombre') or '').strip()
+    if not nombre:
+        sn = str(session.get('nombres') or '').strip()
+        nombre = '' if sn == dni else sn
+    return {
+        'dni': dni,
+        'nombre': nombre or 'TRABAJADOR',
+        'empresa': (w or {}).get('empresa') if w else '',
+        'area': (w or {}).get('area') if w else '',
+        'cargo': (w or {}).get('cargo') if w else ''
+    }
+
+
+def _b302_enrich_name(dni, current=''):
+    cur = (current or '').strip()
+    if cur and cur != limpiar_dni(dni):
+        return cur
+    return _b302_worker(dni).get('nombre') or cur or 'TRABAJADOR'
+
+
+def _b302_periodo_valor(anio=None, modo=None, mes=None, semana=None):
+    anio = str(anio or request.values.get('anio') or datetime.now().strftime('%Y')).strip()
+    modo = (modo or request.values.get('periodo_modo') or request.values.get('modo_periodo') or 'MES').upper()
+    if modo == 'SEMANA':
+        try:
+            sw = int(semana or request.values.get('semana') or 1)
+        except Exception:
+            sw = 1
+        sw = max(1, min(63, sw))
+        return f'{anio}-S{sw:02d}'
+    mes = str(mes or request.values.get('mes') or datetime.now().strftime('%m')).strip().zfill(2)
+    if mes not in [m for m, n in B302_MESES]:
+        mes = datetime.now().strftime('%m')
+    return f'{anio}-{mes}'
+
+
+def _b302_periodo_label(periodo):
+    p = str(periodo or '').strip()
+    m = re.match(r'^(20\d{2})-(\d{2})$', p)
+    if m:
+        name = dict(B302_MESES).get(m.group(2), m.group(2))
+        return f'{name} {m.group(1)}'
+    s = re.match(r'^(20\d{2})-S(\d{2})$', p)
+    if s:
+        return f'Semana {int(s.group(2))} · {s.group(1)}'
+    return p or 'Sin periodo'
+
+
+def _b302_period_filter_from_args():
+    usar = (request.args.get('usar_periodo') or '1') != '0'
+    if not usar:
+        return ''
+    return _b302_periodo_valor()
+
+
+def _b302_period_controls(periodo_actual='', prefix=''):
+    nowy = datetime.now().strftime('%Y')
+    p = str(periodo_actual or _b302_period_filter_from_args() or _b302_periodo_valor())
+    modo = 'SEMANA' if re.search(r'-S\d{2}$', p) else 'MES'
+    anio = (re.match(r'^(20\d{2})', p) or [None, nowy])[1]
+    mes_sel = (re.match(r'^20\d{2}-(\d{2})$', p) or [None, datetime.now().strftime('%m')])[1]
+    sem_sel = int((re.match(r'^20\d{2}-S(\d{2})$', p) or [None, '1'])[1])
+    mes_opts = ''.join([f'<option value="{m}" {"selected" if m==mes_sel else ""}>{n}</option>' for m,n in B302_MESES])
+    sem_opts = ''.join([f'<option value="{i}" {"selected" if i==sem_sel else ""}>Semana {i:02d}</option>' for i in range(1,64)])
+    years = [str(int(nowy)+d) for d in range(-2,3)]
+    if anio not in years:
+        years.insert(0, anio)
+    year_opts = ''.join([f'<option value="{y}" {"selected" if y==anio else ""}>{y}</option>' for y in years])
+    uid = re.sub(r'\W+','',prefix or 'b302')
+    return f'''
+    <div class="b302-period-box">
+      <div><label>Año</label><select name="anio" class="form-select">{year_opts}</select></div>
+      <div><label>Periodo</label><select name="periodo_modo" id="{uid}Modo" class="form-select" onchange="b302TogglePeriodo('{uid}')"><option value="MES" {'selected' if modo=='MES' else ''}>Mes</option><option value="SEMANA" {'selected' if modo=='SEMANA' else ''}>Semana</option></select></div>
+      <div id="{uid}Mes" style="display:{'block' if modo=='MES' else 'none'}"><label>Mes</label><select name="mes" class="form-select">{mes_opts}</select></div>
+      <div id="{uid}Semana" style="display:{'block' if modo=='SEMANA' else 'none'}"><label>Semana</label><select name="semana" class="form-select">{sem_opts}</select></div>
+    </div>'''
+
+
+def _b302_filter_docs_usuario(dni, tipo, desde='', hasta='', buscar='', periodo=''):
+    docs = _bol_tipo_docs_usuario_298(dni, tipo, desde, hasta, buscar)
+    if periodo:
+        docs = [d for d in docs if str(d.get('periodo') or '') == str(periodo)]
+        pendiente = False
+        for idx, d in enumerate(docs, 1):
+            estado = (d.get('respuesta_estado') or '').upper()
+            d['orden'] = idx
+            d['respondida'] = bool(estado and estado != 'PENDIENTE')
+            d['respuesta_estado'] = estado or 'PENDIENTE'
+            d['bloqueada'] = bool(pendiente)
+            if not d['respondida']:
+                pendiente = True
+    for d in docs:
+        d['trabajador'] = _b302_enrich_name(d.get('dni'), d.get('trabajador'))
+    return docs
+
+
+def _b302_stats_from_docs(docs):
+    total = len(docs)
+    vistas = sum(1 for d in docs if d.get('fecha_lectura'))
+    aprob = sum(1 for d in docs if (d.get('respuesta_estado') or '').upper() == 'APROBADA')
+    rech = sum(1 for d in docs if (d.get('respuesta_estado') or '').upper() == 'RECHAZADA')
+    obs = sum(1 for d in docs if (d.get('respuesta_estado') or '').upper() == 'OBSERVADA')
+    pend = sum(1 for d in docs if not (d.get('respuesta_estado') or '').strip() or (d.get('respuesta_estado') or '').upper() == 'PENDIENTE')
+    return {'total':total,'vistas':vistas,'aprobadas':aprob,'rechazadas':rech,'observadas':obs,'pendientes':pend,'trabajadores':len(set(d.get('dni') for d in docs))}
+
+
+def _b302_admin_where(tipo='', desde='', hasta='', buscar='', periodo=''):
+    where=['1=1']; params=[]
+    if tipo:
+        where.append("UPPER(COALESCE(d.tipo,''))=?"); params.append(_bt_norm_tipo_291(tipo).upper())
+    if periodo:
+        where.append("COALESCE(d.periodo,'')=?"); params.append(periodo)
+    if desde:
+        where.append("substr(COALESCE(d.fecha_subida,''),1,10)>=?"); params.append(desde)
+    if hasta:
+        where.append("substr(COALESCE(d.fecha_subida,''),1,10)<=?"); params.append(hasta)
+    if buscar:
+        s='%'+str(buscar).upper().strip()+'%'
+        where.append("(UPPER(COALESCE(d.dni,'')) LIKE ? OR UPPER(COALESCE(d.trabajador,'')) LIKE ? OR UPPER(COALESCE(d.periodo,'')) LIKE ? OR UPPER(COALESCE(d.archivo_nombre,'')) LIKE ?)")
+        params += [s,s,s,s]
+    return where, params
+
+
+def _b302_admin_docs(tipo='', desde='', hasta='', buscar='', periodo='', limit=800):
+    _boleta_ensure_297()
+    where, params = _b302_admin_where(tipo, desde, hasta, buscar, periodo)
+    sql = '''SELECT d.*, COALESCE(r.estado,'PENDIENTE') AS respuesta_estado, r.comentario AS respuesta_comentario, r.fecha_hora AS respuesta_fecha
+             FROM boleta_documentos d
+             LEFT JOIN boleta_respuestas r ON r.doc_id=d.id AND r.dni=d.dni
+             WHERE ''' + ' AND '.join(where) + ''' ORDER BY d.fecha_subida DESC, d.id DESC LIMIT ?'''
+    params.append(int(limit))
+    rows = rows_to_dict(execute(sql, tuple(params), fetchall=True))
+    for r in rows:
+        r['trabajador'] = _b302_enrich_name(r.get('dni'), r.get('trabajador'))
+    return rows
+
+
+def _b302_admin_stats(tipo='', desde='', hasta='', buscar='', periodo=''):
+    docs = _b302_admin_docs(tipo, desde, hasta, buscar, periodo, 5000)
+    return _b302_stats_from_docs(docs)
+
+
+def _b302_admin_rows(tipo='', desde='', hasta='', buscar='', periodo=''):
+    docs = _b302_admin_docs(tipo, desde, hasta, buscar, periodo, 5000)
+    acc = {}
+    for d in docs:
+        dni = limpiar_dni(d.get('dni'))
+        if not dni: continue
+        a = acc.setdefault(dni, {'dni':dni,'trabajador':_b302_enrich_name(dni,d.get('trabajador')),'total':0,'vistas':0,'aprobadas':0,'rechazadas':0,'observadas':0,'pendientes':0})
+        a['total'] += 1
+        if d.get('fecha_lectura'): a['vistas'] += 1
+        e = (d.get('respuesta_estado') or 'PENDIENTE').upper()
+        if e == 'APROBADA': a['aprobadas'] += 1
+        elif e == 'RECHAZADA': a['rechazadas'] += 1
+        elif e == 'OBSERVADA': a['observadas'] += 1
+        else: a['pendientes'] += 1
+    return _b300_admin_rows(list(acc.values()))
+
+
+def _b302_css():
+    return _b300_css() + r'''
+    <style>
+      .b300-phone{max-width:390px!important;margin:0 auto!important}.b300-head{min-height:78px!important;padding:14px 12px!important}.b300-head.big{min-height:82px!important}.b300-head .ttl{font-size:17px!important}.b300-head .back{font-size:31px!important}.b300-head .config{font-size:10px!important;padding:6px 9px!important}
+      .b300-body{padding:10px 10px 13px!important}.b300-card{padding:9px!important;border-radius:12px!important;margin-bottom:9px!important}.b300-card label{font-size:10.5px!important;margin-bottom:3px!important}.b300-card .form-control,.b300-card .form-select{height:36px!important;font-size:12px!important;border-radius:9px!important;padding:6px 9px!important}.b300-btn,.b300-outline{min-height:39px!important;border-radius:9px!important;font-size:12px!important}.b300-kpis3,.b300-kpis4{gap:7px!important;margin-bottom:8px!important}.b300-kpi{padding:7px 4px!important;border-radius:8px!important}.b300-kpi small{font-size:8.5px!important}.b300-kpi b{font-size:20px!important}.b300-chart,.b300-admin-chart{padding:8px!important;margin-bottom:9px!important;border-radius:12px!important}.b300-section{margin:5px 0 7px!important}.b300-section b{font-size:15px!important}.b300-doc{grid-template-columns:45px 1fr 82px!important;gap:7px!important;padding:8px!important;margin:6px 0!important;border-radius:10px!important}.b300-pdfico{width:39px!important;height:44px!important;font-size:12px!important}.b300-pdfico i{font-size:18px!important}.b300-doc b{font-size:13px!important}.b300-doc .fname{font-size:10px!important;max-width:125px!important}.b300-doc .date,.b300-doc-note{font-size:9px!important}.b300-badge{font-size:8px!important;padding:4px 6px!important}.b300-action{height:31px!important;font-size:10px!important;border-radius:8px!important}.b300-worker{grid-template-columns:46px 1fr!important}.b300-avatar{width:42px!important;height:42px!important;font-size:22px!important}.b300-worker b{font-size:13.5px!important}.b300-worker small{font-size:10.5px!important}.b300-tabs{gap:6px!important}.b300-tab{min-width:66px!important;height:32px!important;font-size:10px!important;border-radius:9px!important}.b300-actions{gap:7px!important;margin-bottom:8px!important}.b300-workers{padding:8px!important}.b300-workers-head b{font-size:12px!important}.b300-row{grid-template-columns:34px 1fr 42px!important;padding:6px!important;gap:6px!important}.b300-initial{width:30px!important;height:30px!important;font-size:10px!important}.b300-rownums{gap:3px!important}.b300-rownums span{font-size:8px!important}.b300-rownums em{font-size:7px!important}.b300-summary{display:none!important}
+      .b302-period-box{display:grid;grid-template-columns:72px 78px 1fr;gap:7px;margin:2px 0 7px}.b302-period-box label{font-size:10px!important;color:#08713b;font-weight:950}.b302-period-box .form-select{height:36px!important;font-size:11px!important;border-radius:9px!important}.b302-upload-help{border:1px solid #b8d7ff;background:#eef6ff;color:#0b2e83;border-radius:10px;padding:9px 10px;font-size:11px;font-weight:900;line-height:1.35;margin-bottom:10px}.b302-upload-card{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:10px}.b302-upload-card label{font-size:10.5px;font-weight:950;color:#08713b}.b302-upload-card .form-control,.b302-upload-card .form-select{height:36px!important;font-size:12px!important;border-radius:9px!important}.b302-note{font-size:10px;color:#64748b;font-weight:800;line-height:1.25;margin-top:4px}.b302-period-title{font-size:11px;font-weight:950;color:#08713b;margin:4px 0 6px}.b302-clear{font-size:10px;color:#08713b!important;text-decoration:none;font-weight:900}
+      @media(max-width:420px){.b300-body{padding:9px!important}.b300-doc{grid-template-columns:42px 1fr 78px!important}.b302-period-box{grid-template-columns:1fr 1fr}.b302-period-box>div:nth-child(3),.b302-period-box>div:nth-child(4){grid-column:1/3}.b300-actions{grid-template-columns:1fr!important}}
+    </style>
+    <script>
+      function b302TogglePeriodo(uid){
+        const m=document.getElementById(uid+'Modo'), mes=document.getElementById(uid+'Mes'), sem=document.getElementById(uid+'Semana');
+        if(!m||!mes||!sem)return; const isS=m.value==='SEMANA'; mes.style.display=isS?'none':'block'; sem.style.display=isS?'block':'none';
+      }
+    </script>
+    '''
+
+
+def boletas_subir_302():
+    if not _is_admin_292():
+        return _deny_admin_292()
+    _boleta_ensure_297()
+    if request.method == 'POST':
+        tipo = _bt_norm_tipo_291(request.form.get('tipo'))
+        periodo = _b302_periodo_valor(request.form.get('anio'), request.form.get('periodo_modo'), request.form.get('mes'), request.form.get('semana'))
+        detalle = limpiar_texto(request.form.get('detalle') or f'Boleta {tipo} · {_b302_periodo_label(periodo)}', upper=False)
+        obs = limpiar_texto(request.form.get('observacion'), upper=False)
+        files = request.files.getlist('archivos') or request.files.getlist('archivo')
+        ok = bad = 0; errores = []
+        for f in files:
+            if not f or not f.filename:
+                continue
+            original = f.filename
+            if not original.lower().endswith('.pdf'):
+                bad += 1; errores.append(f'{original}: no es PDF'); continue
+            # Formato principal esperado: DNI.pdf. También admite cualquier nombre con 8 dígitos.
+            dni = limpiar_dni(os.path.splitext(os.path.basename(original))[0])
+            if len(dni) != 8:
+                dni = limpiar_dni(original)
+            if len(dni) != 8:
+                bad += 1; errores.append(f'{original}: nombre debe contener DNI de 8 dígitos'); continue
+            try:
+                path, original_saved, ext = _bt_save_file_291(f, dni, tipo, periodo)
+                _bt_insert_doc_291(dni, tipo, periodo, detalle, obs, path, original_saved, ext, session.get('usuario'))
+                ok += 1
+            except Exception as e:
+                bad += 1; errores.append(f'{original}: {e}')
+        flash(f'Carga masiva finalizada. Correctos: {ok}. Observados: {bad}. Periodo: {_b302_periodo_label(periodo)}.', 'success' if ok else 'danger')
+        if errores:
+            flash(' | '.join(errores[:5]), 'warning')
+        return redirect(url_for('boletas_tipo', tipo=tipo, periodo_modo=request.form.get('periodo_modo') or 'MES', anio=request.form.get('anio') or datetime.now().strftime('%Y'), mes=request.form.get('mes') or datetime.now().strftime('%m'), semana=request.form.get('semana') or '1'))
+    periodo = _b302_periodo_valor()
+    body = _b302_css() + r'''
+    <div class="b300-phone"><div class="b300-app">
+      <div class="b300-head big"><a class="back" href="{{url_for('boletas_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Carga masiva PDF</div></div>
+      <div class="b300-body">
+        <div class="b302-upload-help"><i class="bi bi-info-circle-fill"></i> Primero seleccione <b>tipo</b> y <b>periodo</b>. Luego suba PDFs con nombre simple: <b>74324033.pdf</b>. El sistema guarda esa boleta para el trabajador, tipo y periodo elegidos.</div>
+        <form class="b302-upload-card" method="post" enctype="multipart/form-data">
+          <div class="row g-2">
+            <div class="col-12"><label>Tipo de boleta</label><select class="form-select" name="tipo">{{tipo_opts|safe}}</select></div>
+            <div class="col-12"><div class="b302-period-title">Periodo de la boleta</div>{{period_controls|safe}}</div>
+            <div class="col-12"><label>PDFs masivos</label><input class="form-control" name="archivos" type="file" accept="application/pdf,.pdf" multiple required><div class="b302-note">Ejemplos válidos: 74324033.pdf, BOLETA_74324033.pdf. El periodo ya lo define arriba.</div></div>
+            <div class="col-12"><label>Detalle</label><input class="form-control" name="detalle" placeholder="Opcional"></div>
+            <div class="col-12"><label>Observación</label><input class="form-control" name="observacion" placeholder="Opcional"></div>
+          </div>
+          <button class="b300-btn mt-2"><i class="bi bi-cloud-arrow-up"></i> Cargar PDFs masivos</button>
+        </form>
+        <a class="b300-outline mt-2" href="{{url_for('boletas_plantilla')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla control</a>
+      </div>
+    </div></div>'''
+    return render_page(body, tipo_opts=_bt_tipo_options_291(), period_controls=_b302_period_controls(periodo, 'upload302'), title='Carga masiva boletas')
+
+
+def boletas_usuario_home_302():
+    _boleta_ensure_297()
+    dni = _boleta_user_dni_296()
+    if not dni:
+        flash('Ingrese como usuario con DNI para ver sus boletas.', 'danger')
+        return redirect(url_for('modulo_acceso', modulo='boleta'))
+    worker = _b302_worker(dni)
+    conteos = _bol_tipo_conteos_298(dni)
+    body = _b302_css() + r'''
+    <div class="bt291-phone"><div class="bt291-app">
+      <div class="bol297-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Mis boletas</div></div>
+      <div class="bol297-body">
+        <span class="bol298-pill"><i class="bi bi-person-badge"></i> {{worker.nombre}} · {{worker.dni}}</span>
+        <div class="bol297-help"><i class="bi bi-shield-check"></i><div>Seleccione el tipo de boleta. Dentro de cada tipo podrá visualizar, firmar/aprobar, rechazar u observar sus documentos.</div></div>
+        <div class="bol298-minihead"><b>Documentos de pago</b></div>
+        <div class="bol298-typegrid">{% for t,lbl,ico in tipos %}<a class="bol298-tile" href="{{url_for('boletas_tipo', tipo=t)}}"><i class="bi {{ico}}"></i><span class="lbl">{{t}}</span><span class="sub">{{conteos.get(t,0)}} docs.</span></a>{% endfor %}</div>
+      </div>
+    </div></div>'''
+    return render_page(body, worker=worker, tipos=BOLETA_TIPOS_CANON_291, conteos=conteos, title='Mis boletas')
+
+
+def boletas_tipo_302(tipo=None):
+    _boleta_ensure_297()
+    tipo = _bt_norm_tipo_291(tipo or request.args.get('tipo') or 'NORMAL')
+    desde = request.args.get('desde') or ''
+    hasta = request.args.get('hasta') or ''
+    buscar = limpiar_texto(request.args.get('buscar') or '', upper=False)
+    periodo = _b302_period_filter_from_args()
+    period_controls = _b302_period_controls(periodo, 'tipo302')
+
+    if _boleta_is_admin_context_296():
+        stats = _b302_admin_stats(tipo=tipo, desde=desde, hasta=hasta, buscar=buscar, periodo=periodo)
+        rows = _b302_admin_rows(tipo, desde, hasta, buscar, periodo)
+        docs = _b302_admin_docs(tipo, desde, hasta, buscar, periodo, 1000)
+        chart = _b300_admin_chart(tipo, desde, hasta, buscar) if not periodo else _b300_admin_chart(tipo, '', '', periodo)
+        tabs = _b300_tabs_html(tipo)
+        total = stats.get('total', 0)
+        vista_pct = _b300_pct(stats.get('vistas'), total)
+        aprob_pct = _b300_pct(stats.get('aprobadas'), total)
+        pend_pct = _b300_pct(stats.get('pendientes'), total)
+        rech_pct = _b300_pct(stats.get('rechazadas'), total)
+        obs_pct = _b300_pct(stats.get('observadas'), total)
+        body = _b302_css() + r'''
+        <div class="b300-phone"><div class="b300-app">
+          <div class="b300-head big"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Boletas Admin</div><a class="config" href="{{url_for('boletas_config')}}"><i class="bi bi-gear"></i> Config.</a></div>
+          <div class="b300-body">
+            <div class="b300-tabs">{{tabs|safe}}</div>
+            <div class="b300-actions"><a class="b300-btn" href="{{url_for('boletas_subir')}}"><i class="bi bi-cloud-arrow-up"></i><span>Cargar PDFs<br><small style="font-size:9px;color:#eaffee">DNI.pdf</small></span></a><a class="b300-outline" href="{{url_for('boletas_exportar')}}?buscar={{tipo}}"><i class="bi bi-table"></i><span>Exportar<br><small style="font-size:9px">Excel</small></span></a></div>
+            <form class="b300-card" method="get">
+              {{period_controls|safe}}
+              <div class="row g-2"><div class="col-6"><label>Desde carga</label><input type="date" name="desde" value="{{desde}}" class="form-control"></div><div class="col-6"><label>Hasta carga</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"></div><div class="col-9"><label>Buscar</label><input name="buscar" value="{{buscar}}" class="form-control" placeholder="DNI / trabajador / archivo"></div><div class="col-3 d-flex align-items-end"><button class="b300-btn"><i class="bi bi-search"></i></button></div></div>
+              <div class="b302-note">Periodo filtrado: <b>{{periodo_label}}</b> · <a class="b302-clear" href="{{url_for('boletas_tipo', tipo=tipo, usar_periodo=0)}}">ver todos</a></div>
+            </form>
+            <div class="b300-kpis4"><div class="b300-kpi"><small>Total</small><b>{{stats.total}}</b><em>Boletas</em></div><div class="b300-kpi"><small>Vistas</small><b>{{stats.vistas}}</b><em>{{vista_pct}}%</em></div><div class="b300-kpi"><small>Aprob.</small><b>{{stats.aprobadas}}</b><em>{{aprob_pct}}%</em></div><div class="b300-kpi"><small>Pend.</small><b>{{stats.pendientes}}</b><em>{{pend_pct}}%</em></div></div>
+            <div class="row g-2 mb-2"><div class="col-6"><div class="b300-kpi light bad"><i class="bi bi-x-circle"></i><small>Rechazadas</small><b>{{stats.rechazadas}}</b><em>{{rech_pct}}%</em></div></div><div class="col-6"><div class="b300-kpi light obs"><i class="bi bi-exclamation-circle"></i><small>Observadas</small><b>{{stats.observadas}}</b><em>{{obs_pct}}%</em></div></div></div>
+            {{chart|safe}}
+            <div class="b300-workers"><div class="b300-workers-head"><b>Control por trabajador</b><a href="{{url_for('boletas_exportar')}}?buscar={{tipo}}"><i class="bi bi-download"></i> Exportar</a></div>{% for r in rows[:30] %}<div class="b300-row"><div class="b300-initial">{{r.ini}}</div><div><b>{{r.trabajador or 'SIN NOMBRE'}}</b><br><small>{{r.dni}}</small><div class="b300-rownums"><span>{{r.total}}<em>Total</em></span><span>{{r.vistas}}<em>Vistas</em></span><span>{{r.aprobadas}}<em>Aprob.</em></span><span>{{r.pendientes}}<em>Pend.</em></span></div><div class="b300-rownums"><span style="color:#ef4444">{{r.rechazadas}}<em>Rech.</em></span><span style="color:#f59e0b">{{r.observadas}}<em>Obs.</em></span><span>{{r.pct_aprobadas}}%<em>Aprob.</em></span><span>{{r.pct_vistas}}%<em>Vistas</em></span></div></div><div><small>Progreso</small><div class="b300-progress"><i style="width:{{r.pct_progreso}}%"></i></div><small>{{r.pct_progreso}}%</small></div></div>{% else %}<div class="b300-empty">Sin trabajadores para este filtro.</div>{% endfor %}</div>
+          </div>
+        </div></div>'''
+        return render_page(body, tipo=tipo, tabs=tabs, stats=stats, rows=rows, docs=docs, desde=desde, hasta=hasta, buscar=buscar, periodo=periodo, periodo_label=_b302_periodo_label(periodo), period_controls=period_controls, chart=chart, vista_pct=vista_pct, aprob_pct=aprob_pct, pend_pct=pend_pct, rech_pct=rech_pct, obs_pct=obs_pct, title=f'Boletas {tipo} Admin')
+
+    dni = _boleta_user_dni_296()
+    if not dni:
+        flash('Ingrese como usuario con DNI para ver sus boletas.', 'danger')
+        return redirect(url_for('modulo_acceso', modulo='boleta'))
+    worker = _b302_worker(dni)
+    docs = _b302_filter_docs_usuario(dni, tipo, desde, hasta, buscar, periodo)
+    stats = _b302_stats_from_docs(docs)
+    chart = _b300_user_chart(docs, tipo)
+    body = _b302_css() + r'''
+    <div class="b300-phone"><div class="b300-app">
+      <div class="b300-head big"><a class="back" href="{{url_for('boletas_usuario_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Boletas {{tipo}}</div></div>
+      <div class="b300-body">
+        <div class="b300-card b300-worker"><div class="b300-avatar"><i class="bi bi-person-fill"></i></div><div><b>{{worker.nombre}} · {{worker.dni}}</b><br><small>Revise y firme cada boleta para continuar</small></div></div>
+        <form class="b300-card" method="get">
+          {{period_controls|safe}}
+          <div class="row g-2"><div class="col-9"><label>Buscar archivo</label><input name="buscar" value="{{buscar}}" class="form-control" placeholder="Ej. 74324033.pdf"></div><div class="col-3 d-flex align-items-end"><button class="b300-btn"><i class="bi bi-search"></i></button></div></div>
+          <div class="b302-note">Periodo filtrado: <b>{{periodo_label}}</b> · <a class="b302-clear" href="{{url_for('boletas_tipo', tipo=tipo, usar_periodo=0)}}">ver todos</a></div>
+        </form>
+        <div class="b300-kpis3"><div class="b300-kpi"><small>Total</small><b>{{stats.total}}</b></div><div class="b300-kpi"><small>Firmadas</small><b>{{stats.aprobadas}}</b></div><div class="b300-kpi"><small>Pendientes</small><b>{{stats.pendientes}}</b></div></div>
+        {{chart|safe}}
+        <div class="b300-section"><b>Mis boletas {{tipo}}</b></div>
+        {% for d in docs %}
+          {% set estado = d.respuesta_estado or 'PENDIENTE' %}
+          <div class="b300-doc {% if d.bloqueada %}lock{% endif %}"><div class="b300-pdfico"><div><i class="bi bi-file-earmark"></i><br>PDF</div></div><div><b>{{periodo_label_doc(d.periodo)}}</b><span class="fname">{{d.archivo_nombre}}</span><span class="date"><i class="bi bi-calendar3"></i> {{fecha_doc(d)}}</span>{% if d.bloqueada %}<span class="b300-doc-note">Debe responder la boleta anterior de {{tipo}}.</span>{% elif d.respondida %}<span class="b300-doc-note {% if estado=='APROBADA' %}ok{% endif %}"><i class="bi {{estado_icon(estado)}}"></i> {{estado_label(estado)}}{% if d.respuesta_fecha %} · {{(d.respuesta_fecha or '')[:10]}}{% endif %}</span>{% else %}<span class="b300-doc-note"><i class="bi bi-pen"></i> Firma requerida</span>{% endif %}</div><div>{% if d.bloqueada %}<span class="b300-badge pend"><i class="bi bi-lock"></i> Bloqueada</span>{% elif not d.respondida %}<span class="b300-badge pend"><i class="bi bi-clock"></i> Pendiente</span><a class="b300-action primary mt-1" href="{{url_for('boletas_revisar', doc_id=d.id)}}"><i class="bi bi-pen"></i> Ver y firmar</a>{% elif estado=='APROBADA' %}<span class="b300-badge ok"><i class="bi bi-check-circle-fill"></i> Firmada</span><a class="b300-action mt-1" href="{{url_for('boletas_usuario_ver', doc_id=d.id)}}" target="_blank"><i class="bi bi-file-earmark"></i> Ver PDF</a>{% else %}<span class="b300-badge {{estado_cls(estado)}}"><i class="bi {{estado_icon(estado)}}"></i> {{estado_label(estado)}}</span><a class="b300-action warn mt-1" href="{{url_for('boletas_revisar', doc_id=d.id)}}"><i class="bi bi-eye"></i> Revisar</a>{% endif %}</div></div>
+        {% else %}<div class="b300-empty">No tiene boletas {{tipo}} para {{periodo_label}}.</div>{% endfor %}
+      </div>
+    </div></div>'''
+    return render_page(body, worker=worker, dni=dni, tipo=tipo, docs=docs, stats=stats, desde=desde, hasta=hasta, buscar=buscar, periodo=periodo, periodo_label=_b302_periodo_label(periodo), period_controls=period_controls, chart=chart, fecha_doc=_b300_fecha_doc, periodo_label_doc=_b302_periodo_label, estado_label=_b300_estado_label, estado_cls=_b300_estado_cls, estado_icon=_b300_estado_icon, title=f'Boletas {tipo}')
+
+
+def boletas_config_302():
+    if not _is_admin_292():
+        return _deny_admin_292()
+    body = _b302_css()+r'''<div class="b300-phone"><div class="b300-app"><div class="b300-head"><a class="back" href="{{url_for('boletas_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Config. Boletas</div></div><div class="b300-body"><a class="b300-doc" href="{{url_for('boletas_subir')}}"><div class="b300-pdfico"><i class="bi bi-cloud-arrow-up"></i></div><div><b>Carga masiva PDF</b><span class="fname">Archivos tipo DNI.pdf por tipo y periodo</span></div><i class="bi bi-chevron-right"></i></a><a class="b300-doc" href="{{url_for('boletas_detectar')}}"><div class="b300-pdfico"><i class="bi bi-search"></i></div><div><b>Detección automática</b><span class="fname">Carpeta BOLETAS_UPLOAD_AUTO</span></div><i class="bi bi-chevron-right"></i></a><a class="b300-doc" href="{{url_for('boletas_plantilla')}}"><div class="b300-pdfico"><i class="bi bi-file-earmark-excel"></i></div><div><b>Plantilla control</b><span class="fname">Excel de seguimiento</span></div><i class="bi bi-chevron-right"></i></a></div></div></div>'''
+    return render_page(body, title='Config. Boletas')
+
+
+def boletas_revisar_302(doc_id):
+    # Usa el motor existente de firma/revisión, pero al terminar vuelve al tipo de boleta correcto.
+    if request.method == 'POST':
+        _boleta_ensure_297()
+        dni = _boleta_user_dni_296()
+        d = row_to_dict(execute('SELECT * FROM boleta_documentos WHERE id=? AND dni=?', (int(doc_id), dni), fetchone=True))
+        tipo = (d or {}).get('tipo') or 'NORMAL'
+        accion = (request.form.get('accion') or 'APROBADA').upper()
+        comentario = limpiar_texto(request.form.get('comentario') or '', upper=False)
+        firma = request.form.get('firma_data') or ''
+        huella = request.form.get('huella_dedo') or ''
+        if accion in ('RECHAZADA','OBSERVADA') and not comentario.strip():
+            flash('Ingrese motivo para rechazar u observar.', 'danger')
+            return redirect(url_for('boletas_revisar', doc_id=doc_id))
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr) or ''
+        ua = (request.headers.get('User-Agent') or '')[:250]
+        execute('DELETE FROM boleta_respuestas WHERE doc_id=? AND dni=?', (int(doc_id), dni), commit=True)
+        execute('''INSERT INTO boleta_respuestas(doc_id,dni,estado,comentario,firma_data,huella_dedo,fecha_hora,ip,user_agent)
+                   VALUES(?,?,?,?,?,?,?,?,?)''', (int(doc_id), dni, accion, comentario, firma[:200000], huella[:80], now_str(), ip, ua), commit=True)
+        execute('''INSERT INTO boleta_firmas(doc_id,dni,accion,firma_data,huella_dedo,fecha_hora,ip,user_agent)
+                   VALUES(?,?,?,?,?,?,?,?)''', (int(doc_id), dni, accion, firma[:200000], huella[:80], now_str(), ip, ua), commit=True)
+        execute("UPDATE boleta_documentos SET fecha_lectura=? WHERE id=? AND COALESCE(fecha_lectura,'')=''", (now_str(), int(doc_id)), commit=True)
+        flash('Respuesta registrada correctamente.', 'success')
+        return redirect(url_for('boletas_tipo', tipo=tipo))
+    return boletas_revisar_297(doc_id)
+
+
+# Overrides finales 302
+app.view_functions['boletas_subir'] = boletas_subir_302
+app.view_functions['boletas_usuario_home'] = boletas_usuario_home_302
+app.view_functions['boletas_tipo'] = boletas_tipo_302
+app.view_functions['boletas_listar'] = boletas_tipo_302
+app.view_functions['boletas_config'] = boletas_config_302
+app.view_functions['boletas_revisar'] = boletas_revisar_302
+app.view_functions['boletas_firmar'] = boletas_revisar_302
+# ======================= FIN PATCH BOLETAS OMAR 302 =======================
+
+
+# ========================= PATCH OMAR 303 =========================
+# Configuración por módulo: cada módulo tiene acceso a Carga masiva de trabajadores.
+# La carga alimenta la base central trabajadores para todos los módulos.
+
+MODULOS_303 = {
+    'tareo': {'titulo':'Tareo', 'icon':'bi-list-check', 'back':'home'},
+    'asistencia': {'titulo':'Asistencia', 'icon':'bi-fingerprint', 'back':'home'},
+    'transporte': {'titulo':'Transporte', 'icon':'bi-bus-front', 'back':'transporte'},
+    'contratacion': {'titulo':'Contratación', 'icon':'bi-person-plus', 'back':'contratacion_home'},
+    'boletas': {'titulo':'Boletas', 'icon':'bi-file-earmark-text', 'back':'boletas_home'},
+    'vacaciones': {'titulo':'Vacaciones', 'icon':'bi-calendar-check', 'back':'vacaciones_home'},
+    'renovacion': {'titulo':'Renovación', 'icon':'bi-arrow-repeat', 'back':'renovacion_home'},
+    'reportes': {'titulo':'Reportes Tareo', 'icon':'bi-file-earmark-bar-graph', 'back':'reportes'},
+    'sincronizacion': {'titulo':'Sincronización', 'icon':'bi-arrow-repeat', 'back':'sincronizacion'},
+}
+
+CONFIG_ENDPOINTS_303 = {
+    'tareo':'tareo_config', 'asistencia':'asistencia_config', 'transporte':'transporte_config',
+    'contratacion':'contratacion_config', 'boletas':'boletas_config', 'vacaciones':'vacaciones_config',
+    'renovacion':'renovacion_config', 'reportes':'reportes_config', 'sincronizacion':'sincronizacion_config'
+}
+
+
+def _safe_url_303(endpoint, **kw):
+    try:
+        return url_for(endpoint, **kw)
+    except Exception:
+        return '#'
+
+
+def _modulo_info_303(modulo):
+    return MODULOS_303.get(str(modulo or '').lower(), MODULOS_303['tareo'])
+
+
+def _modulo_config_url_303(modulo):
+    ep = CONFIG_ENDPOINTS_303.get(str(modulo or '').lower())
+    return _safe_url_303(ep) if ep else _safe_url_303('configuraciones')
+
+
+def _config303_css():
+    return r'''
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}
+      .shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:6px 8px 24px!important;background:#fff!important}
+      .cfg303-phone{max-width:390px;margin:0 auto}.cfg303-app{background:#fff;border:1px solid #e4e8e4;border-radius:14px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+      .cfg303-head{height:74px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}.cfg303-head a.back{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:32px;line-height:1}.cfg303-head .ttl{font-size:17px;font-weight:950;color:#fff;text-align:center;letter-spacing:.15px}.cfg303-head .mini{display:block;font-size:10px;font-weight:850;color:#dffbea;margin-top:2px}
+      .cfg303-body{padding:13px 13px 16px;background:#fff}.cfg303-note{border:1px solid #b8d7ff;background:#eef6ff;color:#0b2e83;border-radius:11px;padding:10px 11px;font-size:11px;font-weight:850;line-height:1.35;margin-bottom:11px}
+      .cfg303-list{display:grid;gap:8px}.cfg303-item{display:grid;grid-template-columns:32px 1fr 16px;align-items:center;gap:8px;text-decoration:none;color:#102a43;border:1px solid #e4ece4;border-radius:11px;padding:10px;background:#fff;box-shadow:0 4px 10px rgba(0,0,0,.035)}.cfg303-item i{font-size:21px;color:#08713b;text-align:center}.cfg303-item .chev{font-size:18px;color:#111}.cfg303-item b{display:block;font-size:12.5px;color:#102a43;line-height:1.1}.cfg303-item small{display:block;font-size:9.5px;color:#557064;font-weight:800;line-height:1.2;margin-top:2px}
+      .cfg303-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}.cfg303-tile{height:79px;background:#08713b;border-radius:10px;color:#fff!important;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 7px 13px rgba(0,0,0,.12);padding:5px}.cfg303-tile i{font-size:24px;color:#fff;margin-bottom:5px;line-height:1}.cfg303-tile b{font-size:10.5px;line-height:1.05;color:#fff;font-weight:950}.cfg303-tile small{font-size:8.5px;color:#eaffee;font-weight:850;line-height:1;margin-top:2px}
+      .cfg303-form{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:12px;margin:10px 0}.cfg303-form label{font-size:11px;font-weight:950;color:#176a35;margin-bottom:4px}.cfg303-form .form-control,.cfg303-form .form-select{height:38px!important;border-radius:9px!important;font-size:12px!important;font-weight:850}
+      .cfg303-btn{height:41px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff!important;font-weight:950;font-size:13px;width:100%;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:6px}.cfg303-outline{height:41px;border-radius:10px;background:#fff;border:1px solid #08713b;color:#08713b!important;font-weight:900;font-size:12px;width:100%;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:6px}
+      .cfg303-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}.cfg303-kpi{background:#10964e;color:#fff;border-radius:8px;text-align:center;padding:8px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}.cfg303-kpi small{display:block;font-size:9.5px;font-weight:950;color:#effff3;line-height:1.05}.cfg303-kpi b{display:block;font-size:20px;font-weight:950;line-height:1.05;margin-top:4px;color:#fff}
+      .cfg303-help{font-size:10.5px;color:#4a644f;font-weight:800;line-height:1.35;margin-top:5px}.cfg303-section{font-size:13px;font-weight:950;color:#08713b;text-transform:uppercase;margin:12px 1px 8px}
+      .cfg303-tablewrap{border:1px solid #e5e7eb;border-radius:10px;overflow:auto;background:#fff;max-height:220px}.cfg303-table{width:100%;min-width:430px;border-collapse:collapse}.cfg303-table th{background:#f8fafc;color:#12223b;font-size:11px;font-weight:950;padding:8px;border-bottom:1px solid #e5e7eb}.cfg303-table td{font-size:11px;color:#334155;padding:8px;border-bottom:1px solid #f1f5f9;font-weight:750}
+    </style>
+    '''
+
+
+def _upsert_trabajador_generico_303(dni, data):
+    dni = limpiar_dni(dni)
+    if len(dni) != 8:
+        return 'omitido'
+    trabajador = limpiar_texto(data.get('trabajador') or data.get('nombres') or data.get('nombre') or '')
+    empresa = limpiar_texto(data.get('empresa') or '')
+    area = limpiar_texto(data.get('area') or data.get('área') or '')
+    cargo = limpiar_texto(data.get('cargo') or '')
+    actividad = limpiar_texto(data.get('actividad') or '')
+    planilla = limpiar_texto(data.get('planilla') or '')
+    estado = limpiar_texto(data.get('estado') or 'ACTIVO')
+    existe = row_to_dict(execute('SELECT id FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if existe:
+        execute('UPDATE trabajadores SET trabajador=?, empresa=?, area=?, cargo=?, actividad=?, planilla=?, estado=?, fecha_carga=? WHERE dni=?',
+                (trabajador, empresa, area, cargo, actividad, planilla, estado, now_str(), dni), commit=True)
+        return 'actualizado'
+    execute('INSERT INTO trabajadores(dni, trabajador, empresa, area, cargo, actividad, planilla, estado, fecha_carga) VALUES(?,?,?,?,?,?,?,?,?)',
+            (dni, trabajador, empresa, area, cargo, actividad, planilla, estado, now_str()), commit=True)
+    return 'insertado'
+
+
+def _importar_trabajadores_modulo_303(file_storage, modulo):
+    if not file_storage or not file_storage.filename.lower().endswith(('.xlsx','.xlsm')):
+        return 0, 0, 0, 'Suba un Excel .xlsx válido.'
+    wb = load_workbook(file_storage, data_only=True, read_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return 0, 0, 0, 'Excel vacío.'
+    headers = [normalizar_columna(c) for c in rows[0]]
+    if 'DNI' not in headers:
+        return 0, 0, 0, 'La plantilla debe tener la columna DNI.'
+    ins = upd = omi = 0
+    mapping = {'TRABAJADOR':'trabajador','NOMBRE':'trabajador','NOMBRES':'trabajador','APELLIDOS Y NOMBRES':'trabajador','EMPRESA':'empresa','AREA':'area','ÁREA':'area','CARGO':'cargo','ACTIVIDAD':'actividad','PLANILLA':'planilla','ESTADO':'estado'}
+    for row in rows[1:]:
+        item = {headers[i]: row[i] if i < len(row) else '' for i in range(len(headers))}
+        dni = limpiar_dni(item.get('DNI'))
+        if len(dni) != 8:
+            omi += 1
+            continue
+        data = {}
+        for col, key in mapping.items():
+            if col in item and item.get(col) not in (None, ''):
+                data[key] = item.get(col)
+        res = _upsert_trabajador_generico_303(dni, data)
+        if res == 'insertado': ins += 1
+        elif res == 'actualizado': upd += 1
+        else: omi += 1
+    try:
+        execute('CREATE TABLE IF NOT EXISTS modulo_carga_trabajadores_log(id INTEGER PRIMARY KEY AUTOINCREMENT, modulo TEXT, insertados INTEGER, actualizados INTEGER, omitidos INTEGER, usuario TEXT, fecha_hora TEXT)', commit=True)
+        execute('INSERT INTO modulo_carga_trabajadores_log(modulo,insertados,actualizados,omitidos,usuario,fecha_hora) VALUES(?,?,?,?,?,?)', (modulo, ins, upd, omi, session.get('usuario') or '', now_str()), commit=True)
+    except Exception:
+        pass
+    return ins, upd, omi, ''
+
+
+def modulo_trabajadores_plantilla_303(modulo='general'):
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    info = _modulo_info_303(modulo)
+    headers = ['DNI','TRABAJADOR','EMPRESA','AREA','CARGO','ACTIVIDAD','PLANILLA','ESTADO']
+    rows = [{'DNI':'74324033','TRABAJADOR':'JOSE GARCIA','EMPRESA':'AQUANQA','AREA':'COSECHA','CARGO':'OPERARIO','ACTIVIDAD':'ARANDANO','PLANILLA':'AGRARIO','ESTADO':'ACTIVO'}]
+    return excel_response(headers, rows, f'plantilla_trabajadores_{info["titulo"].lower().replace(" ","_")}.xlsx', 'TRABAJADORES')
+
+
+def modulo_trabajadores_303(modulo='general'):
+    if not session.get('usuario'):
+        flash('Solo administrador puede cargar trabajadores.', 'danger')
+        return redirect(url_for('login'))
+    modulo = str(modulo or 'general').lower()
+    info = _modulo_info_303(modulo)
+    if request.method == 'POST':
+        f = request.files.get('archivo')
+        ins, upd, omi, err = _importar_trabajadores_modulo_303(f, modulo)
+        flash(err if err else f'Carga {info["titulo"]}: {ins} nuevos, {upd} actualizados, {omi} omitidos.', 'danger' if err else 'success')
+        return redirect(_modulo_config_url_303(modulo))
+    total = int(scalar('SELECT COUNT(*) AS c FROM trabajadores') or 0)
+    activos = int(scalar("SELECT COUNT(*) AS c FROM trabajadores WHERE UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO'") or 0)
+    ultimos = rows_to_dict(execute('SELECT dni, trabajador, empresa, area, cargo, estado, fecha_carga FROM trabajadores ORDER BY fecha_carga DESC, id DESC LIMIT 20', fetchall=True))
+    body = _config303_css() + r'''
+    <div class="cfg303-phone"><div class="cfg303-app">
+      <div class="cfg303-head"><a class="back" href="{{back_url}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl">Carga trabajadores</div><span class="mini">{{info.titulo}}</span></div></div>
+      <div class="cfg303-body">
+        <div class="cfg303-note"><b>Base central de trabajadores.</b><br>Esta carga queda disponible para {{info.titulo}} y también para los demás módulos. Use DNI de 8 dígitos.</div>
+        <div class="cfg303-kpis"><div class="cfg303-kpi"><small>Total</small><b>{{total}}</b></div><div class="cfg303-kpi"><small>Activos</small><b>{{activos}}</b></div><div class="cfg303-kpi"><small>Módulo</small><b><i class="bi {{info.icon}}"></i></b></div></div>
+        <form method="post" enctype="multipart/form-data" class="cfg303-form"><label><i class="bi bi-file-earmark-excel"></i> Excel de trabajadores</label><input class="form-control" type="file" name="archivo" accept=".xlsx,.xlsm" required><div class="cfg303-help">Columnas: DNI, TRABAJADOR, EMPRESA, AREA, CARGO, ACTIVIDAD, PLANILLA, ESTADO.</div><button class="cfg303-btn mt-2" type="submit"><i class="bi bi-cloud-arrow-up"></i> Cargar trabajadores</button></form>
+        <a class="cfg303-outline" href="{{url_for('modulo_trabajadores_plantilla_303', modulo=modulo)}}"><i class="bi bi-download"></i> Descargar plantilla trabajadores</a>
+        <div class="cfg303-section">Últimos cargados</div><div class="cfg303-tablewrap"><table class="cfg303-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Área</th><th>Cargo</th><th>Estado</th></tr></thead><tbody>{% for t in ultimos %}<tr><td>{{t.dni}}</td><td>{{t.trabajador or '-'}}</td><td>{{t.area or '-'}}</td><td>{{t.cargo or '-'}}</td><td>{{t.estado or '-'}}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Sin trabajadores.</td></tr>{% endfor %}</tbody></table></div>
+      </div>
+    </div></div>
+    '''
+    return render_page(body, info=info, modulo=modulo, total=total, activos=activos, ultimos=ultimos, back_url=_modulo_config_url_303(modulo), title=f'Carga trabajadores {info["titulo"]}')
+
+
+def _config_page_modulo_303(modulo, extra_items=None, note=None):
+    modulo = str(modulo or 'tareo').lower()
+    info = _modulo_info_303(modulo)
+    back_url = _safe_url_303(info.get('back') or 'home')
+    extra_items = extra_items or []
+    total = int(scalar('SELECT COUNT(*) AS c FROM trabajadores') or 0)
+    body = _config303_css() + r'''
+    <div class="cfg303-phone"><div class="cfg303-app">
+      <div class="cfg303-head"><a class="back" href="{{back_url}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl">Config. {{info.titulo}}</div><span class="mini">Parámetros del módulo</span></div></div>
+      <div class="cfg303-body"><div class="cfg303-note">{{note or 'Configuración del módulo. La base de trabajadores debe mantenerse actualizada para evitar errores de DNI, nombres y permisos.'}}</div>
+        <div class="cfg303-list">
+          <a class="cfg303-item" href="{{url_for('modulo_trabajadores_303', modulo=modulo)}}"><i class="bi bi-people"></i><div><b>Carga masiva de trabajadores</b><small>Excel para actualizar DNI, nombres, empresa, área, cargo y estado.</small></div><i class="bi bi-chevron-right chev"></i></a>
+          <a class="cfg303-item" href="{{url_for('modulo_trabajadores_plantilla_303', modulo=modulo)}}"><i class="bi bi-file-earmark-excel"></i><div><b>Plantilla trabajadores</b><small>Descarga formato estándar del módulo.</small></div><i class="bi bi-chevron-right chev"></i></a>
+          {% for it in extra_items %}<a class="cfg303-item" href="{{it.href}}"><i class="bi {{it.icon}}"></i><div><b>{{it.title}}</b><small>{{it.desc}}</small></div><i class="bi bi-chevron-right chev"></i></a>{% endfor %}
+        </div><div class="cfg303-kpis"><div class="cfg303-kpi"><small>Trabajadores</small><b>{{total}}</b></div><div class="cfg303-kpi"><small>Módulo</small><b><i class="bi {{info.icon}}"></i></b></div><div class="cfg303-kpi"><small>Estado</small><b>OK</b></div></div>
+      </div>
+    </div></div>
+    '''
+    return render_page(body, info=info, modulo=modulo, back_url=back_url, extra_items=extra_items, note=note, total=total, title=f'Config. {info["titulo"]}')
+
+
+def configuraciones_303():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    body = _config303_css() + r'''
+    <div class="cfg303-phone"><div class="cfg303-app"><div class="cfg303-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl">Configuraciones</div><span class="mini">Carga trabajadores por módulo</span></div></div><div class="cfg303-body"><div class="cfg303-note"><b>Nuevo estándar:</b> cada módulo tiene su propia configuración y dentro de ella su carga masiva de trabajadores. Todos alimentan la misma base central para evitar duplicados.</div><div class="cfg303-grid">{% for key, info in mods.items() %}<a class="cfg303-tile" href="{{config_url(key)}}"><i class="bi {{info.icon}}"></i><b>{{info.titulo}}</b><small>Config.</small></a>{% endfor %}</div><div class="cfg303-section">Base central</div><div class="cfg303-list"><a class="cfg303-item" href="{{url_for('cargar_base')}}"><i class="bi bi-database-up"></i><div><b>Carga central de trabajadores</b><small>Acceso clásico al cargador global.</small></div><i class="bi bi-chevron-right chev"></i></a><a class="cfg303-item" href="{{url_for('plantilla_trabajadores')}}"><i class="bi bi-file-earmark-excel"></i><div><b>Plantilla central</b><small>Formato Excel general.</small></div><i class="bi bi-chevron-right chev"></i></a><a class="cfg303-item" href="{{url_for('usuarios')}}"><i class="bi bi-person-gear"></i><div><b>Usuarios del sistema</b><small>Administrador y usuarios internos.</small></div><i class="bi bi-chevron-right chev"></i></a></div></div></div></div>
+    '''
+    return render_page(body, mods=MODULOS_303, config_url=_modulo_config_url_303, title='Configuraciones')
+
+
+def tareo_config_303():
+    extras = [
+        {'icon':'bi-diagram-3','title':'Actividades / Labores','desc':'Carga labores y consumidores.', 'href':_safe_url_303('cargar_actividades')},
+        {'icon':'bi-file-earmark-excel','title':'Plantilla actividades','desc':'Formato para labores/consumidores.', 'href':_safe_url_303('plantilla_actividades')},
+        {'icon':'bi-list-check','title':'Hojas de tareo','desc':'Volver al módulo de tareo.', 'href':_safe_url_303('hojas_tareo')},
+    ]
+    return _config_page_modulo_303('tareo', extras, 'Tareo necesita la base de trabajadores actualizada para lectura DNI/QR, registro de labores y control de duplicados.')
+
+
+def asistencia_config_303():
+    extras = [
+        {'icon':'bi-fingerprint','title':'Registro asistencia','desc':'Volver al módulo de asistencia.', 'href':_safe_url_303('asistencia_modulo')},
+        {'icon':'bi-file-earmark-arrow-down','title':'Exportar asistencia','desc':'Descarga marcaciones.', 'href':_safe_url_303('exportar_asistencia')},
+    ]
+    return _config_page_modulo_303('asistencia', extras, 'Asistencia usa trabajadores para validar DNI, nombres, empresa, área y cargo al marcar ingreso/salida.')
+
+
+def transporte_config_303():
+    extras = [
+        {'icon':'bi-person-vcard','title':'Conductores','desc':'Crear conductor y PIN móvil.', 'href':_safe_url_303('transporte_conductores')},
+        {'icon':'bi-bus-front','title':'Buses / vehículos','desc':'Flota, capacidad y estado.', 'href':_safe_url_303('transporte_vehiculos')},
+        {'icon':'bi-geo-alt','title':'Rutas base','desc':'Origen, destino y sede.', 'href':_safe_url_303('transporte_rutas')},
+        {'icon':'bi-pin-map','title':'GPS / seguimiento','desc':'Mapa general de unidades.', 'href':_safe_url_303('transporte_mapa_general')},
+    ]
+    return _config_page_modulo_303('transporte', extras, 'Transporte valida trabajadores al abordar. Mantenga la base de trabajadores actualizada además de conductores, buses y rutas.')
+
+
+def contratacion_config_303():
+    extras = [
+        {'icon':'bi-clipboard-plus','title':'Requerimientos','desc':'Cupos y flujo de ingreso.', 'href':_safe_url_303('contratacion_requerimientos')},
+        {'icon':'bi-person-check','title':'Postulantes','desc':'Nuevos y reingresantes por DNI.', 'href':_safe_url_303('contratacion_postulantes')},
+        {'icon':'bi-database','title':'Datos maestros','desc':'Empresa, área, cargo, actividad y plantillas.', 'href':_safe_url_303('contratacion_config_avanzada_303')},
+    ]
+    return _config_page_modulo_303('contratacion', extras, 'Contratación requiere carga masiva de trabajadores para detectar reingresantes y jalar datos automáticamente por DNI.')
+
+
+def boletas_config_303():
+    extras = [
+        {'icon':'bi-cloud-arrow-up','title':'Carga masiva PDF','desc':'PDFs tipo DNI.pdf por tipo y periodo.', 'href':_safe_url_303('boletas_subir')},
+        {'icon':'bi-search','title':'Detección automática','desc':'Carpeta BOLETAS_UPLOAD_AUTO.', 'href':_safe_url_303('boletas_detectar')},
+        {'icon':'bi-file-earmark-excel','title':'Plantilla control','desc':'Seguimiento de boletas.', 'href':_safe_url_303('boletas_plantilla')},
+    ]
+    return _config_page_modulo_303('boletas', extras, 'Boletas necesita trabajadores cargados para mostrar nombre correcto, DNI y acceso limitado del usuario.')
+
+
+def vacaciones_config_303():
+    extras = [
+        {'icon':'bi-calendar-check','title':'Saldos vacacionales','desc':'Carga saldos, periodos y días disponibles.', 'href':_safe_url_303('vacaciones_config_avanzada_303')},
+        {'icon':'bi-check2-square','title':'Solicitudes','desc':'Aprobar o rechazar vacaciones.', 'href':_safe_url_303('vacaciones_home')},
+        {'icon':'bi-download','title':'Exportar solicitudes','desc':'Reporte Excel vacaciones.', 'href':_safe_url_303('vacaciones_exportar')},
+    ]
+    return _config_page_modulo_303('vacaciones', extras, 'Vacaciones usa la base de trabajadores para saldos, jefes, validación de DNI y solicitudes del usuario.')
+
+
+def renovacion_config_303():
+    extras = [
+        {'icon':'bi-arrow-repeat','title':'Renovaciones','desc':'Panel de renovaciones y firmas.', 'href':_safe_url_303('renovacion_home')},
+        {'icon':'bi-download','title':'Exportar renovación','desc':'Reporte Excel.', 'href':_safe_url_303('renovacion_exportar')},
+    ]
+    return _config_page_modulo_303('renovacion', extras, 'Renovación requiere trabajadores cargados para contratos, fecha fin, estados y firma del trabajador.')
+
+
+def reportes_config_303():
+    extras = [
+        {'icon':'bi-file-earmark-bar-graph','title':'Reportes Tareo','desc':'Volver a filtros y exportación.', 'href':_safe_url_303('reportes')},
+        {'icon':'bi-file-earmark-excel','title':'Exportar tareos','desc':'Descarga reportes del día.', 'href':_safe_url_303('exportar_tareos')},
+    ]
+    return _config_page_modulo_303('reportes', extras, 'Reportes usa la base de trabajadores para filtrar por DNI, trabajador, área, cargo y labor.')
+
+
+def sincronizacion_config_303():
+    extras = [
+        {'icon':'bi-arrow-repeat','title':'Sincronización','desc':'Estado de tablas maestras.', 'href':_safe_url_303('sincronizacion')},
+        {'icon':'bi-database-check','title':'Base central','desc':'Carga clásica de trabajadores.', 'href':_safe_url_303('cargar_base')},
+    ]
+    return _config_page_modulo_303('sincronizacion', extras, 'Sincronización centraliza la actualización de trabajadores para todos los módulos.')
+
+_OLD_CONFIGS_303 = {
+    'contratacion_config': app.view_functions.get('contratacion_config'),
+    'vacaciones_config': app.view_functions.get('vacaciones_config'),
+    'boletas_config': app.view_functions.get('boletas_config'),
+    'renovacion_config': app.view_functions.get('renovacion_config'),
+}
+
+def _add_or_override_303(rule, endpoint, view, methods=None):
+    methods = methods or ['GET']
+    if endpoint in app.view_functions:
+        app.view_functions[endpoint] = view
+    else:
+        try:
+            app.add_url_rule(rule, endpoint, view, methods=methods)
+        except Exception:
+            app.view_functions[endpoint] = view
+
+try:
+    if 'modulo_trabajadores_303' not in app.view_functions:
+        app.add_url_rule('/config/<modulo>/trabajadores', 'modulo_trabajadores_303', modulo_trabajadores_303, methods=['GET','POST'])
+except Exception:
+    app.view_functions['modulo_trabajadores_303'] = modulo_trabajadores_303
+try:
+    if 'modulo_trabajadores_plantilla_303' not in app.view_functions:
+        app.add_url_rule('/config/<modulo>/trabajadores/plantilla', 'modulo_trabajadores_plantilla_303', modulo_trabajadores_plantilla_303, methods=['GET'])
+except Exception:
+    app.view_functions['modulo_trabajadores_plantilla_303'] = modulo_trabajadores_plantilla_303
+
+_add_or_override_303('/configuraciones', 'configuraciones', configuraciones_303, ['GET'])
+_add_or_override_303('/tareo/config', 'tareo_config', tareo_config_303, ['GET'])
+_add_or_override_303('/asistencia/config', 'asistencia_config', asistencia_config_303, ['GET'])
+_add_or_override_303('/transporte/config', 'transporte_config', transporte_config_303, ['GET'])
+_add_or_override_303('/contratacion/config', 'contratacion_config', contratacion_config_303, ['GET'])
+_add_or_override_303('/boletas/config', 'boletas_config', boletas_config_303, ['GET'])
+_add_or_override_303('/vacaciones/config', 'vacaciones_config', vacaciones_config_303, ['GET'])
+_add_or_override_303('/renovacion/config', 'renovacion_config', renovacion_config_303, ['GET'])
+_add_or_override_303('/reportes/config', 'reportes_config', reportes_config_303, ['GET'])
+_add_or_override_303('/sincronizacion/config', 'sincronizacion_config', sincronizacion_config_303, ['GET'])
+
+if _OLD_CONFIGS_303.get('contratacion_config'):
+    _add_or_override_303('/contratacion/config/avanzada', 'contratacion_config_avanzada_303', _OLD_CONFIGS_303['contratacion_config'], ['GET','POST'])
+if _OLD_CONFIGS_303.get('vacaciones_config'):
+    _add_or_override_303('/vacaciones/config/avanzada', 'vacaciones_config_avanzada_303', _OLD_CONFIGS_303['vacaciones_config'], ['GET','POST'])
+if _OLD_CONFIGS_303.get('boletas_config'):
+    _add_or_override_303('/boletas/config/avanzada', 'boletas_config_avanzada_303', _OLD_CONFIGS_303['boletas_config'], ['GET','POST'])
+if _OLD_CONFIGS_303.get('renovacion_config'):
+    _add_or_override_303('/renovacion/config/avanzada', 'renovacion_config_avanzada_303', _OLD_CONFIGS_303['renovacion_config'], ['GET','POST'])
+# ======================= FIN PATCH OMAR 303 =======================
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
