@@ -9414,6 +9414,156 @@ if _OLD_CONFIGS_303.get('renovacion_config'):
 # ======================= FIN PATCH OMAR 303 =======================
 
 
+# ========================= PATCH BOLETAS USUARIO OMAR 304 =========================
+# Corrige la vista /boletas/mis-boletas para USUARIO: deja de verse como links planos
+# y vuelve al diseño móvil verde/miniatura. También estiliza el detalle por tipo.
+
+_OLD_BOLETAS_TIPO_304 = app.view_functions.get('boletas_tipo')
+
+
+def _b304_css():
+    return r'''
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}
+      .shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:6px 8px 24px!important;background:#fff!important}
+      .b304-phone{max-width:390px!important;width:100%!important;margin:0 auto!important}
+      .b304-app{background:#fff;border:1px solid #e4e8e4;border-radius:14px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07);margin:6px auto 12px}
+      .b304-head{height:78px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}
+      .b304-head.big{height:84px}.b304-head a.back{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:32px;line-height:1}.b304-head .ttl{font-size:18px;font-weight:950;color:#fff;text-align:center;letter-spacing:.15px;text-transform:uppercase}
+      .b304-body{padding:13px 13px 16px;background:#fff}.b304-pill{display:inline-flex;align-items:center;gap:5px;background:#ecfdf5;border:1px solid #bbf7d0;color:#065f2a;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:950;margin-bottom:10px;max-width:100%}
+      .b304-help{display:grid;grid-template-columns:28px 1fr;gap:8px;border:1px solid #b8d7ff;background:#eef6ff;color:#0b2e83;border-radius:11px;padding:10px 11px;font-size:11.2px;font-weight:900;line-height:1.35;margin-bottom:11px}.b304-help i{font-size:18px;color:#0b5ed7;margin-top:2px;text-align:center}
+      .b304-section{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:950;color:#0f172a;margin:8px 0 10px}.b304-section:before{content:'';width:4px;height:24px;background:#10964e;border-radius:999px}.b304-section.small{font-size:15px;margin-top:10px}
+      .b304-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.b304-tile{height:92px;background:#08713b;border-radius:10px;color:#fff!important;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 8px 14px rgba(0,0,0,.14);padding:5px}.b304-tile i{font-size:27px;color:#fff;margin-bottom:7px;line-height:1}.b304-tile .lbl{font-size:12px;font-weight:950;line-height:1.05;color:#fff}.b304-tile .sub{font-size:9.5px;color:#eaffee;font-weight:900;line-height:1;margin-top:3px}
+      .b304-worker{display:grid;grid-template-columns:48px 1fr;gap:10px;align-items:center;border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:10px;margin-bottom:10px}.b304-avatar{width:46px;height:46px;border-radius:999px;background:#dcfce7;color:#08713b;display:grid;place-items:center;font-size:24px}.b304-worker b{font-size:13px;font-weight:950;color:#08713b;line-height:1.15}.b304-worker small{font-size:11px;font-weight:850;color:#64748b}
+      .b304-filter{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:10px;margin-bottom:9px}.b304-filter label{font-size:10.5px;font-weight:950;color:#08713b;margin-bottom:3px}.b304-filter .form-control,.b304-filter .form-select{height:36px!important;border-radius:9px!important;font-size:12px!important;font-weight:850;padding:6px 9px!important}.b304-period{display:grid;grid-template-columns:70px 79px 1fr;gap:7px;margin:1px 0 7px}.b304-note{font-size:10px;color:#64748b;font-weight:850;line-height:1.3;margin-top:5px}.b304-clear{color:#08713b!important;text-decoration:none;font-weight:950}
+      .b304-btn{height:36px;border-radius:9px;background:#08713b;border:1px solid #08713b;color:#fff!important;font-weight:950;font-size:12px;width:100%;display:flex;align-items:center;justify-content:center;text-decoration:none}.b304-btn.outline{background:#fff;color:#08713b!important}
+      .b304-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:9px 0}.b304-kpi{background:#10964e;color:#fff;border-radius:8px;text-align:center;padding:7px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}.b304-kpi small{display:block;font-size:9px;font-weight:950;line-height:1.08;color:#effff3}.b304-kpi b{display:block;font-size:21px;line-height:1.05;font-weight:950;color:#fff;margin-top:4px}
+      .b304-chart{border:1px solid #d7eadc;background:#fff;border-radius:12px;padding:9px;margin:8px 0}.b304-chart-title{font-size:12.5px;font-weight:950;color:#08713b;margin-bottom:5px}.b304-empty{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:18px 10px;text-align:center;color:#64748b;font-size:12px;font-weight:850;line-height:1.35;margin:8px 0}
+      .b304-doc{display:grid;grid-template-columns:44px 1fr 82px;gap:7px;align-items:center;border:1px solid #e4ece4;border-radius:11px;background:#fff;padding:8px;margin:7px 0;box-shadow:0 4px 10px rgba(0,0,0,.04)}.b304-doc.lock{opacity:.62}.b304-pdf{width:40px;height:45px;border-radius:9px;background:#ecfdf5;color:#08713b;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;font-weight:950}.b304-pdf i{font-size:19px}.b304-doc b{display:block;font-size:13px;color:#0f172a;line-height:1.1}.b304-doc .fname{display:block;font-size:10px;color:#334155;font-weight:800;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.b304-doc .date{display:block;font-size:9px;color:#64748b;font-weight:850;margin-top:2px}.b304-badge{display:inline-flex;align-items:center;gap:3px;border-radius:999px;padding:4px 6px;font-size:8px;font-weight:950;white-space:nowrap}.b304-badge.ok{background:#dcfce7;color:#08713b}.b304-badge.pend{background:#fff7ed;color:#c2410c}.b304-badge.bad{background:#fee2e2;color:#b91c1c}.b304-badge.obs{background:#fef3c7;color:#b45309}.b304-action{height:30px;border-radius:8px;border:1px solid #d1d5db;background:#fff;color:#0f172a!important;text-decoration:none;font-size:9.5px;font-weight:950;display:flex;align-items:center;justify-content:center;gap:3px;margin-top:4px}.b304-action.primary{background:#08713b;border-color:#08713b;color:#fff!important}.b304-action.warn{background:#fff7ed;border-color:#fdba74;color:#9a3412!important}.b304-doc-note{display:block;font-size:9px;color:#64748b;font-weight:850;margin-top:3px}.b304-doc-note.ok{color:#08713b}
+      @media(max-width:420px){.b304-body{padding:11px 10px}.b304-grid{gap:8px}.b304-tile{height:87px}.b304-tile .lbl{font-size:11.5px}.b304-period{grid-template-columns:1fr 1fr}.b304-period>div:nth-child(3),.b304-period>div:nth-child(4){grid-column:1/3}.b304-doc{grid-template-columns:42px 1fr 77px;gap:6px}.b304-doc .fname{max-width:120px}}
+    </style>
+    <script>
+      function b304TogglePeriodo(uid){const m=document.getElementById(uid+'Modo'), mes=document.getElementById(uid+'Mes'), sem=document.getElementById(uid+'Semana'); if(!m||!mes||!sem)return; const s=m.value==='SEMANA'; mes.style.display=s?'none':'block'; sem.style.display=s?'block':'none';}
+    </script>
+    '''
+
+
+def _b304_period_controls(periodo_actual='', uid='b304'):
+    nowy = datetime.now().strftime('%Y')
+    p = str(periodo_actual or _b302_period_filter_from_args() or _b302_periodo_valor())
+    modo = 'SEMANA' if re.search(r'-S\d{2}$', p) else 'MES'
+    anio = (re.match(r'^(20\d{2})', p) or [None, nowy])[1]
+    mes_sel = (re.match(r'^20\d{2}-(\d{2})$', p) or [None, datetime.now().strftime('%m')])[1]
+    sem_sel = int((re.match(r'^20\d{2}-S(\d{2})$', p) or [None, '1'])[1])
+    mes_opts = ''.join([f'<option value="{m}" {"selected" if m==mes_sel else ""}>{n}</option>' for m,n in B302_MESES])
+    sem_opts = ''.join([f'<option value="{i}" {"selected" if i==sem_sel else ""}>Semana {i:02d}</option>' for i in range(1,64)])
+    years = [str(int(nowy)+d) for d in range(-2,3)]
+    if anio not in years: years.insert(0, anio)
+    year_opts = ''.join([f'<option value="{y}" {"selected" if y==anio else ""}>{y}</option>' for y in years])
+    safe = re.sub(r'\W+','',uid or 'b304')
+    return f'''<div class="b304-period"><div><label>Año</label><select name="anio" class="form-select">{year_opts}</select></div><div><label>Tipo</label><select name="periodo_modo" id="{safe}Modo" class="form-select" onchange="b304TogglePeriodo('{safe}')"><option value="MES" {'selected' if modo=='MES' else ''}>Mes</option><option value="SEMANA" {'selected' if modo=='SEMANA' else ''}>Semana</option></select></div><div id="{safe}Mes" style="display:{'block' if modo=='MES' else 'none'}"><label>Mes</label><select name="mes" class="form-select">{mes_opts}</select></div><div id="{safe}Semana" style="display:{'block' if modo=='SEMANA' else 'none'}"><label>Semana</label><select name="semana" class="form-select">{sem_opts}</select></div></div>'''
+
+
+def _b304_chart(docs, tipo='NORMAL'):
+    if not docs:
+        return '<div class="b304-chart"><div class="b304-chart-title">Evolución de boletas</div><div class="b304-empty">Sin boletas en este tipo.</div></div>'
+    acc={}
+    for d in docs:
+        p=str(d.get('periodo') or '')
+        if not p:
+            p=str(d.get('fecha_subida') or '')[:7]
+        acc[p]=acc.get(p,0)+1
+    items=sorted(acc.items())[-6:]
+    if not items:
+        return '<div class="b304-chart"><div class="b304-chart-title">Evolución de boletas</div><div class="b304-empty">Sin boletas en este tipo.</div></div>'
+    maxv=max(v for k,v in items) or 1
+    w,h=330,125
+    step=w/(max(1,len(items)-1)) if len(items)>1 else w
+    pts=[]
+    labels=[]
+    for i,(k,v) in enumerate(items):
+        x=18+i*step
+        y=100-(v/maxv)*68
+        pts.append((x,y,v,k))
+        labels.append(k[-5:] if '-S' in k else _b302_periodo_label(k).split()[0][:3])
+    poly=' '.join(f'{x:.1f},{y:.1f}' for x,y,v,k in pts)
+    area=f'M {pts[0][0]:.1f},100 L ' + ' L '.join(f'{x:.1f},{y:.1f}' for x,y,v,k in pts) + f' L {pts[-1][0]:.1f},100 Z'
+    circles=''.join([f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#08713b"/><text x="{x:.1f}" y="{y-8:.1f}" text-anchor="middle" font-size="10" font-weight="900" fill="#08713b">{v}</text>' for x,y,v,k in pts])
+    lab=''.join([f'<text x="{pts[i][0]:.1f}" y="118" text-anchor="middle" font-size="9" font-weight="800" fill="#64748b">{labels[i]}</text>' for i in range(len(pts))])
+    return f'''<div class="b304-chart"><div class="b304-chart-title">Evolución de boletas</div><svg viewBox="0 0 {w} {h}" width="100%" height="125" role="img"><line x1="18" y1="100" x2="318" y2="100" stroke="#d1d5db"/><line x1="18" y1="65" x2="318" y2="65" stroke="#e5e7eb" stroke-dasharray="4 4"/><line x1="18" y1="30" x2="318" y2="30" stroke="#e5e7eb" stroke-dasharray="4 4"/><path d="{area}" fill="#dcfce7" opacity=".75"/><polyline points="{poly}" fill="none" stroke="#08713b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>{circles}{lab}</svg></div>'''
+
+
+def boletas_usuario_home_304():
+    _boleta_ensure_297()
+    if _boleta_is_admin_context_296():
+        return redirect(url_for('boletas_home'))
+    dni = _boleta_user_dni_296()
+    if not dni:
+        flash('Ingrese como usuario con DNI para ver sus boletas.', 'danger')
+        return redirect(url_for('modulo_acceso', modulo='boleta'))
+    worker = _b302_worker(dni)
+    conteos = _bol_tipo_conteos_298(dni)
+    body = _b304_css() + r'''
+    <div class="b304-phone"><div class="b304-app">
+      <div class="b304-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Mis boletas</div></div>
+      <div class="b304-body">
+        <span class="b304-pill"><i class="bi bi-person-badge"></i> {{worker.nombre}} · {{worker.dni}}</span>
+        <div class="b304-help"><i class="bi bi-shield-check"></i><div>Seleccione el tipo de boleta. Dentro de cada tipo podrá visualizar, firmar/aprobar, rechazar u observar sus documentos.</div></div>
+        <div class="b304-section">Documentos de pago</div>
+        <div class="b304-grid">
+          {% for t,lbl,ico in tipos %}
+            <a class="b304-tile" href="{{url_for('boletas_tipo', tipo=t)}}"><i class="bi {{ico}}"></i><span class="lbl">{{t}}</span><span class="sub">{{conteos.get(t,0)}} docs.</span></a>
+          {% endfor %}
+        </div>
+      </div>
+    </div></div>'''
+    return render_page(body, worker=worker, tipos=BOLETA_TIPOS_CANON_291, conteos=conteos, title='Mis boletas')
+
+
+def boletas_tipo_304(tipo=None):
+    if _boleta_is_admin_context_296() and _OLD_BOLETAS_TIPO_304:
+        return _OLD_BOLETAS_TIPO_304(tipo)
+    _boleta_ensure_297()
+    tipo = _bt_norm_tipo_291(tipo or request.args.get('tipo') or 'NORMAL')
+    dni = _boleta_user_dni_296()
+    if not dni:
+        flash('Ingrese como usuario con DNI para ver sus boletas.', 'danger')
+        return redirect(url_for('modulo_acceso', modulo='boleta'))
+    buscar = limpiar_texto(request.args.get('buscar') or '', upper=False)
+    periodo = _b302_period_filter_from_args()
+    worker = _b302_worker(dni)
+    docs = _b302_filter_docs_usuario(dni, tipo, '', '', buscar, periodo)
+    stats = _b302_stats_from_docs(docs)
+    chart = _b304_chart(docs, tipo)
+    period_controls = _b304_period_controls(periodo, 'b304tipo')
+    body = _b304_css() + r'''
+    <div class="b304-phone"><div class="b304-app">
+      <div class="b304-head big"><a class="back" href="{{url_for('boletas_usuario_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Boletas {{tipo}}</div></div>
+      <div class="b304-body">
+        <div class="b304-worker"><div class="b304-avatar"><i class="bi bi-person-fill"></i></div><div><b>{{worker.nombre}} · {{worker.dni}}</b><br><small>Revise y firme cada boleta para continuar</small></div></div>
+        <form class="b304-filter" method="get">
+          {{period_controls|safe}}
+          <div class="row g-2"><div class="col-9"><label>Buscar archivo</label><input name="buscar" value="{{buscar}}" class="form-control" placeholder="Ej. 74324033.pdf"></div><div class="col-3 d-flex align-items-end"><button class="b304-btn"><i class="bi bi-search"></i></button></div></div>
+          <div class="b304-note">Periodo filtrado: <b>{{periodo_label}}</b> · <a class="b304-clear" href="{{url_for('boletas_tipo', tipo=tipo, usar_periodo=0)}}">ver todos</a></div>
+        </form>
+        <div class="b304-kpis"><div class="b304-kpi"><small>Total</small><b>{{stats.total}}</b></div><div class="b304-kpi"><small>Firmadas</small><b>{{stats.aprobadas}}</b></div><div class="b304-kpi"><small>Pendientes</small><b>{{stats.pendientes}}</b></div></div>
+        {{chart|safe}}
+        <div class="b304-section small">Mis boletas {{tipo}}</div>
+        {% for d in docs %}
+          {% set estado = d.respuesta_estado or 'PENDIENTE' %}
+          <div class="b304-doc {% if d.bloqueada %}lock{% endif %}"><div class="b304-pdf"><div><i class="bi bi-file-earmark"></i><br>PDF</div></div><div><b>{{periodo_label_doc(d.periodo)}}</b><span class="fname">{{d.archivo_nombre}}</span><span class="date"><i class="bi bi-calendar3"></i> {{fecha_doc(d)}}</span>{% if d.bloqueada %}<span class="b304-doc-note">Debe responder la boleta anterior de {{tipo}}.</span>{% elif d.respondida %}<span class="b304-doc-note {% if estado=='APROBADA' %}ok{% endif %}"><i class="bi {{estado_icon(estado)}}"></i> {{estado_label(estado)}}{% if d.respuesta_fecha %} · {{(d.respuesta_fecha or '')[:10]}}{% endif %}</span>{% else %}<span class="b304-doc-note"><i class="bi bi-pen"></i> Firma requerida</span>{% endif %}</div><div>{% if d.bloqueada %}<span class="b304-badge pend"><i class="bi bi-lock"></i> Bloqueada</span>{% elif not d.respondida %}<span class="b304-badge pend"><i class="bi bi-clock"></i> Pendiente</span><a class="b304-action primary" href="{{url_for('boletas_revisar', doc_id=d.id)}}"><i class="bi bi-pen"></i> Firmar</a>{% elif estado=='APROBADA' %}<span class="b304-badge ok"><i class="bi bi-check-circle-fill"></i> Firmada</span><a class="b304-action" href="{{url_for('boletas_usuario_ver', doc_id=d.id)}}" target="_blank"><i class="bi bi-file-earmark"></i> PDF</a>{% else %}<span class="b304-badge {{estado_cls(estado)}}"><i class="bi {{estado_icon(estado)}}"></i> {{estado_label(estado)}}</span><a class="b304-action warn" href="{{url_for('boletas_revisar', doc_id=d.id)}}"><i class="bi bi-eye"></i> Revisar</a>{% endif %}</div></div>
+        {% else %}<div class="b304-empty">No tiene boletas {{tipo}} para {{periodo_label}}.</div>{% endfor %}
+      </div>
+    </div></div>'''
+    return render_page(body, worker=worker, tipo=tipo, docs=docs, stats=stats, buscar=buscar, periodo=periodo, periodo_label=_b302_periodo_label(periodo), period_controls=period_controls, chart=chart, fecha_doc=_b300_fecha_doc, periodo_label_doc=_b302_periodo_label, estado_label=_b300_estado_label, estado_cls=_b300_estado_cls, estado_icon=_b300_estado_icon, title=f'Boletas {tipo}')
+
+# Overrides finales 304
+app.view_functions['boletas_usuario_home'] = boletas_usuario_home_304
+app.view_functions['boletas_tipo'] = boletas_tipo_304
+app.view_functions['boletas_listar'] = boletas_tipo_304
+# ======================= FIN PATCH BOLETAS USUARIO OMAR 304 =======================
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
