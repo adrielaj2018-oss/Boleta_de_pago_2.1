@@ -9564,6 +9564,73 @@ app.view_functions['boletas_listar'] = boletas_tipo_304
 # ======================= FIN PATCH BOLETAS USUARIO OMAR 304 =======================
 
 
+# ======================= PATCH FINAL 305 OMAR =======================
+# Cambios solicitados:
+# 1) Splash inicial muestra APP MOVIL.
+# 2) Botón ENTRAR ya no muestra login general: entra directo al panel principal.
+# 3) Si se abre /login por enlace o navegador, redirige al panel principal.
+# 4) Se crea sesión ADMIN demo automáticamente solo para evitar la pantalla intermedia.
+
+def _asegurar_sesion_admin_305():
+    """Crea una sesión de administrador para entrar directo al dashboard móvil."""
+    if not session.get('usuario'):
+        session['usuario'] = 'admin'
+        session['rol'] = 'admin'
+        session['nombres'] = 'ADMINISTRADOR'
+        session['dni'] = ''
+        session['module_role'] = 'admin'
+        session['module_name'] = 'home'
+
+
+def inicio_305():
+    body = """
+    <div class="phone-wrap"><div class="splash-card">
+      <div class="splash-logo"><i class="bi bi-clipboard2-data"></i></div>
+      <div class="splash-title">APP MOVIL</div>
+      <a class="btn btn-light btn-sm mt-4 fw-bold text-success" href="{{url_for('home')}}">ENTRAR</a>
+      <div class="splash-foot">P&amp;A<br>v.1.0</div>
+    </div></div>"""
+    return render_page(body, title='APP MOVIL')
+
+
+def login_305():
+    _asegurar_sesion_admin_305()
+    return redirect(url_for('home'))
+
+
+def logout_305():
+    session.clear()
+    return redirect(url_for('inicio'))
+
+
+def home_305():
+    _asegurar_sesion_admin_305()
+    is_admin = _is_admin_292() if '_is_admin_292' in globals() else True
+    body = """
+    <div class="desktop-grid"><div class="phone-wrap"><div class="green-hero" style="min-height:220px"><div class="green-top"><a class="text-white text-decoration-none" href="{{url_for('soporte')}}"><i class="bi bi-headset"></i> Soporte</a>{% if is_admin %}<a class="text-white text-decoration-none" href="{{url_for('configuraciones')}}"><i class="bi bi-gear"></i> Config.</a>{% else %}<span></span>{% endif %}</div><div class="avatar"><i class="bi bi-person-circle"></i></div><div class="login-name">{{ session.get('nombres','ADMINISTRADOR') }}</div><div class="white-input mt-3"></div></div>
+      <div class="top-actions">
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='tareo')}}"><i class="bi bi-list-check"></i>TAREO</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='asistencia')}}"><i class="bi bi-fingerprint"></i>ASIST.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='transporte')}}"><i class="bi bi-bus-front"></i>TRANSP.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='contratacion')}}"><i class="bi bi-person-plus"></i>CONTRAT.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='boleta')}}"><i class="bi bi-file-earmark-text"></i>BOLETA</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='vacaciones')}}"><i class="bi bi-calendar-check"></i>VACAC.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='renovacion')}}"><i class="bi bi-arrow-repeat"></i>RENOV.</a>
+        {% if is_admin %}<a class="tile text-decoration-none" href="{{url_for('reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i>REPORTES<br>TAREO</a>{% endif %}
+        {% if is_admin %}<a class="tile text-decoration-none" href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-repeat"></i>SINC.</a>{% endif %}
+      </div><div class="leaf"></div><div class="bottom-sync"><i class="bi bi-arrow-repeat"></i> Actualizado hasta: {{ now }}</div><a href="{{url_for('logout')}}" class="bottom-out"><i class="bi bi-box-arrow-right"></i></a></div>
+      <div class="desk-panel"><h1 class="header-title">APP MÓVIL</h1><div class="card-pro p-4 mb-3"><h4 class="fw-bold text-success mb-1">Panel integrado RR.HH.</h4><div class="text-muted small">Ingreso directo habilitado. Panel principal listo para operar.</div></div></div></div>"""
+    return render_page(body, now=now_str(), is_admin=is_admin, title='APP MOVIL')
+
+# Reemplazos finales de rutas existentes.
+app.view_functions['inicio'] = inicio_305
+app.view_functions['login'] = login_305
+app.view_functions['logout'] = logout_305
+app.view_functions['home'] = home_305
+# ===================== FIN PATCH FINAL 305 OMAR =====================
+
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
