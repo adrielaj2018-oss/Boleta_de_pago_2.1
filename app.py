@@ -19,6 +19,13 @@ from io import BytesIO
 from flask import Flask, request, redirect, url_for, session, flash, jsonify, send_file, render_template_string, Response
 from openpyxl import Workbook, load_workbook
 from werkzeug.security import generate_password_hash, check_password_hash
+try:
+    from werkzeug.utils import secure_filename
+except Exception:
+    def secure_filename(filename):
+        filename = str(filename or '').replace('\\', '/').split('/')[-1]
+        filename = re.sub(r'[^A-Za-z0-9_.-]+', '_', filename).strip('._')
+        return filename or 'archivo'
 
 try:
     import psycopg2
@@ -12527,7 +12534,7 @@ app.view_functions['contratacion_firma_bio'] = contratacion_firma_bio_313
 
 # ===================== FIN PATCH CONTRATACIÓN 313 OMAR =====================
 
-# ===================== PATCH CONTRATACIÓN 314 OMAR =====================
+# ===================== PATCH CONTRATACIÓN 315 OMAR =====================
 # Corrección crítica CONFIG:
 # - Evita Internal Server Error al cargar TRABAJADORES en Render con bases SQLite/PostgreSQL antiguas.
 # - Crea/actualiza la tabla trabajadores antes de importar.
@@ -12819,7 +12826,7 @@ def contratacion_config_314():
         observados = rows_to_dict(execute('SELECT * FROM contratacion_observados ORDER BY id DESC LIMIT 80', fetchall=True))
     except Exception:
         observados = []
-    body = _ct_css306() + r'''<div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-gear"></i></div><div class="ttl">Config. contratación</div></div><div class="ct290-body"><div class="ct290-info"><b>Base, observados, árbol y plantillas.</b><br>La base TRABAJADORES solo detecta reingresantes. Use solo columnas base: DNI, TRABAJADOR, TIPO_TRABAJADOR, EMPRESA y ESTADO. Los campos amarillos no son obligatorios para esta carga.</div><a class="ct306-btn mb-2" href="{{url_for('contratacion_plantilla_excel_307')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla Excel V314</a>
+    body = _ct_css306() + r'''<div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-gear"></i></div><div class="ttl">Config. contratación</div></div><div class="ct290-body"><div class="ct290-info"><b>Base, observados, árbol y plantillas.</b><br>La base TRABAJADORES solo detecta reingresantes. Use solo columnas base: DNI, TRABAJADOR, TIPO_TRABAJADOR, EMPRESA y ESTADO. Los campos amarillos no son obligatorios para esta carga.</div><a class="ct306-btn mb-2" href="{{url_for('contratacion_plantilla_excel_307')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla Excel V315</a>
     <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="trabajadores"><label>Excel trabajadores activos / reingresantes</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="ct290-btn mt-2"><i class="bi bi-upload"></i> Cargar trabajadores</button></form>
     <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="observados"><label>Excel lista observados / bloqueados</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="ct306-dangerbtn mt-2"><i class="bi bi-shield-lock"></i> Cargar observados</button></form>
     <form method="post" class="ct290-form"><input type="hidden" name="accion" value="observado_manual"><label>Agregar observado manual</label><input name="dni" maxlength="8" class="form-control" placeholder="DNI" required><input name="trabajador" class="form-control mt-2" placeholder="Trabajador"><div class="ct290-row mt-2"><input name="motivo" class="form-control" placeholder="Motivo"><select name="nivel" class="form-select"><option>NIVEL 1</option><option>NIVEL 2</option><option>NIVEL 3</option></select></div><div class="ct290-row mt-2"><select name="estado" class="form-select"><option>ACTIVO</option><option>LEVANTADO</option><option>INACTIVO</option></select><select name="bloqueo" class="form-select"><option>SI</option><option>NO</option></select></div><input name="observacion" class="form-control mt-2" placeholder="Observación"><button class="ct290-btn mt-2"><i class="bi bi-save"></i> Guardar observado</button></form>
@@ -12835,7 +12842,7 @@ def contratacion_config_314():
 
 app.view_functions['contratacion_config'] = contratacion_config_314
 
-# ===================== FIN PATCH CONTRATACIÓN 314 OMAR =====================
+# ===================== FIN PATCH CONTRATACIÓN 315 OMAR =====================
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
