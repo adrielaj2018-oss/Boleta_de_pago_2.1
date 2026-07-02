@@ -12527,6 +12527,316 @@ app.view_functions['contratacion_firma_bio'] = contratacion_firma_bio_313
 
 # ===================== FIN PATCH CONTRATACIÓN 313 OMAR =====================
 
+# ===================== PATCH CONTRATACIÓN 314 OMAR =====================
+# Corrección crítica CONFIG:
+# - Evita Internal Server Error al cargar TRABAJADORES en Render con bases SQLite/PostgreSQL antiguas.
+# - Crea/actualiza la tabla trabajadores antes de importar.
+# - Lee siempre la hoja TRABAJADORES de la plantilla aunque existan otras hojas.
+# - Importación tolerante: solo usa columnas existentes y no revienta si el Excel trae campos vacíos/amarillos.
+
+
+def _ct314_table_exists(table):
+    conn = None; cur = None
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        if is_pg():
+            cur.execute("SELECT 1 FROM information_schema.tables WHERE table_name=%s LIMIT 1", (table,))
+            return bool(cur.fetchone())
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        return bool(cur.fetchone())
+    except Exception:
+        return False
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+
+
+def _ct314_create_trabajadores_table():
+    idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+    try:
+        execute(f'''CREATE TABLE IF NOT EXISTS trabajadores(
+            id {idtype}, dni TEXT UNIQUE, trabajador TEXT, nombre TEXT, nombres TEXT,
+            empresa TEXT, tipo_trabajador TEXT, estado TEXT DEFAULT 'ACTIVO',
+            area TEXT, cargo TEXT, actividad TEXT, regimen_laboral TEXT, tipo_contrato TEXT,
+            correo TEXT, email TEXT, celular TEXT, telefono TEXT, fecha_nacimiento TEXT,
+            direccion TEXT, distrito TEXT, provincia TEXT, departamento TEXT,
+            fecha_carga TEXT)''', commit=True)
+    except Exception as e:
+        print('V314 create trabajadores:', e)
+
+
+def _ensure_contratacion_314():
+    """Migración blindada para que /contratacion/config no caiga por columnas faltantes."""
+    try:
+        _ensure_contratacion_313()
+    except Exception as e:
+        print('V314 ensure 313 omitido:', e)
+    try:
+        _ct312_create_base_tables()
+    except Exception as e:
+        print('V314 base tables:', e)
+    _ct314_create_trabajadores_table()
+    conn = None; cur = None
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        trab_cols = [
+            ('dni','TEXT'), ('trabajador','TEXT'), ('nombre','TEXT'), ('nombres','TEXT'),
+            ('empresa','TEXT'), ('tipo_trabajador','TEXT'), ('estado',"TEXT DEFAULT 'ACTIVO'"),
+            ('area','TEXT'), ('cargo','TEXT'), ('actividad','TEXT'), ('regimen_laboral','TEXT'), ('tipo_contrato','TEXT'),
+            ('correo','TEXT'), ('email','TEXT'), ('celular','TEXT'), ('telefono','TEXT'), ('fecha_nacimiento','TEXT'),
+            ('direccion','TEXT'), ('distrito','TEXT'), ('provincia','TEXT'), ('departamento','TEXT'), ('fecha_carga','TEXT')
+        ]
+        for col, ddl in trab_cols:
+            try: _add_column_if_missing(cur, 'trabajadores', col, ddl)
+            except Exception as e: print('V314 col trabajadores', col, e)
+        for col, ddl in [('foto_postulante_path','TEXT'),('foto_postulante_en','TEXT'),('documento_firma_key','TEXT'),('documento_firma_nombre','TEXT')]:
+            try: _add_column_if_missing(cur, 'contratacion_ingresos', col, ddl)
+            except Exception: pass
+        for col, ddl in [('documento_key','TEXT'),('generated_doc_path','TEXT'),('paquete_firma','TEXT'),('requerimiento_id','INTEGER'),('requerimiento','TEXT')]:
+            try: _add_column_if_missing(cur, 'contratacion_firmas_bio', col, ddl)
+            except Exception: pass
+        conn.commit()
+    except Exception as e:
+        print('V314 add columns:', e)
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+
+
+def _ct314_norm_header(v):
+    s = normalizar_columna(v).replace('_',' ').strip()
+    return s
+
+
+def _ct314_to_text(v):
+    try:
+        if v is None:
+            return ''
+        if hasattr(v, 'strftime'):
+            return v.strftime('%Y-%m-%d')
+        return str(v).strip()
+    except Exception:
+        return ''
+
+
+def _ct314_get(row, *names):
+    for n in names:
+        k = _ct314_norm_header(n)
+        if k in row and row.get(k) not in (None, ''):
+            return row.get(k)
+    return ''
+
+
+def _ct314_open_workbook_from_filestorage(file_storage):
+    if not file_storage or not getattr(file_storage, 'filename', ''):
+        raise ValueError('Seleccione un archivo Excel.')
+    fn = secure_filename(file_storage.filename or 'trabajadores.xlsx')
+    if not fn.lower().endswith(('.xlsx', '.xlsm')):
+        raise ValueError('Use archivo Excel .xlsx. Si está en .xls, guárdelo como .xlsx.')
+    tmp_dir = _Path306(UPLOAD_DIR) / 'contratacion_tmp'
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = tmp_dir / (now_file() + '_' + fn)
+    file_storage.save(str(tmp_path))
+    return load_workbook(str(tmp_path), data_only=True)
+
+
+def _ct314_iter_sheet(file_storage, sheet_name='TRABAJADORES'):
+    wb = _ct314_open_workbook_from_filestorage(file_storage)
+    ws = None
+    wanted = _ct_norm306(sheet_name)
+    for nm in wb.sheetnames:
+        if _ct_norm306(nm) == wanted:
+            ws = wb[nm]; break
+    if ws is None:
+        ws = wb.active
+    headers = [_ct314_norm_header(c.value) for c in ws[1]]
+    rows = []
+    for vals in ws.iter_rows(min_row=2, values_only=True):
+        if not any(v not in (None, '') for v in vals):
+            continue
+        r = {}
+        for i, val in enumerate(vals[:len(headers)]):
+            if headers[i]:
+                r[headers[i]] = val
+        rows.append(r)
+    return rows
+
+
+def _ct314_import_trabajadores(file_storage):
+    _ensure_contratacion_314()
+    rows = _ct314_iter_sheet(file_storage, 'TRABAJADORES')
+    if not rows:
+        return 0
+    ok = 0
+    cols_table = _ct312_table_columns('trabajadores') if '_ct312_table_columns' in globals() else set()
+    if not cols_table:
+        _ensure_contratacion_314()
+        cols_table = _ct312_table_columns('trabajadores') if '_ct312_table_columns' in globals() else set()
+    for r in rows:
+        dni = limpiar_dni(_ct314_get(r, 'DNI', 'DOCUMENTO', 'NRO DOCUMENTO', 'NUMERO DOCUMENTO'))
+        if len(dni) != 8:
+            continue
+        trabajador = limpiar_texto(_ct314_get(r, 'TRABAJADOR', 'NOMBRES', 'NOMBRE', 'APELLIDOS Y NOMBRES', 'NOMBRES COMPLETOS'))
+        tipo_trab = limpiar_texto(_ct314_get(r, 'TIPO TRABAJADOR', 'TIPO_TRABAJADOR', 'TIPO'))
+        empresa = limpiar_texto(_ct314_get(r, 'EMPRESA'))
+        estado = limpiar_texto(_ct314_get(r, 'ESTADO') or 'ACTIVO')
+        data = {
+            'dni': dni,
+            'trabajador': trabajador,
+            'nombre': trabajador,
+            'nombres': trabajador,
+            'empresa': empresa,
+            'tipo_trabajador': tipo_trab,
+            'estado': estado,
+            'area': limpiar_texto(_ct314_get(r, 'AREA', 'ÁREA')),
+            'cargo': limpiar_texto(_ct314_get(r, 'CARGO')),
+            'actividad': limpiar_texto(_ct314_get(r, 'ACTIVIDAD')),
+            'regimen_laboral': limpiar_texto(_ct314_get(r, 'REGIMEN', 'RÉGIMEN', 'REGIMEN LABORAL', 'REGIMEN_LABORAL')),
+            'tipo_contrato': limpiar_texto(_ct314_get(r, 'TIPO CONTRATO', 'TIPO_CONTRATO')),
+            'correo': _ct314_to_text(_ct314_get(r, 'CORREO', 'EMAIL')),
+            'email': _ct314_to_text(_ct314_get(r, 'CORREO', 'EMAIL')),
+            'celular': _ct314_to_text(_ct314_get(r, 'TELEFONO', 'TELÉFONO', 'CELULAR')),
+            'telefono': _ct314_to_text(_ct314_get(r, 'TELEFONO', 'TELÉFONO', 'CELULAR')),
+            'fecha_nacimiento': _ct314_to_text(_ct314_get(r, 'FECHA NACIMIENTO', 'FECHA_NACIMIENTO')),
+            'direccion': limpiar_texto(_ct314_get(r, 'DIRECCION', 'DIRECCIÓN')),
+            'distrito': limpiar_texto(_ct314_get(r, 'DISTRITO')),
+            'provincia': limpiar_texto(_ct314_get(r, 'PROVINCIA')),
+            'departamento': limpiar_texto(_ct314_get(r, 'DEPARTAMENTO')),
+            'fecha_carga': now_str(),
+        }
+        cols = [c for c in data.keys() if c in cols_table]
+        if 'dni' not in cols:
+            continue
+        try:
+            exists = int(scalar('SELECT COUNT(*) AS c FROM trabajadores WHERE dni=?', (dni,)) or 0)
+            if exists:
+                setcols = [c for c in cols if c != 'dni']
+                if setcols:
+                    execute(f"UPDATE trabajadores SET {', '.join(c+'=?' for c in setcols)} WHERE dni=?", tuple(data[c] for c in setcols) + (dni,), commit=True)
+            else:
+                execute(f"INSERT INTO trabajadores({','.join(cols)}) VALUES({','.join(['?']*len(cols))})", tuple(data[c] for c in cols), commit=True)
+            ok += 1
+        except Exception as e:
+            print('V314 fila trabajadores omitida', dni, e)
+            continue
+    return ok
+
+
+# Reemplazo adicional de worker lookup para tolerar tablas viejas con nombre/nombres/trabajador.
+def _ct_worker306(dni):
+    _ensure_contratacion_314()
+    d = limpiar_dni(dni)
+    try:
+        r = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (d,), fetchone=True))
+    except Exception:
+        r = None
+    if not r:
+        return {'dni': d, 'nombres':'', 'telefono':'', 'correo':'', 'empresa':'', 'tipo_trabajador':'', 'regimen_laboral':'', 'tipo_contrato':'', 'area':'', 'cargo':'', 'actividad':'', 'direccion':'', 'distrito':'', 'provincia':'', 'departamento':'', 'fecha_nacimiento':''}
+    return {
+        'dni': r.get('dni') or d,
+        'nombres': r.get('trabajador') or r.get('nombre') or r.get('nombres') or '',
+        'telefono': r.get('celular') or r.get('telefono') or '',
+        'correo': r.get('correo') or r.get('email') or '',
+        'empresa': r.get('empresa') or '', 'tipo_trabajador': r.get('tipo_trabajador') or '',
+        'regimen_laboral': r.get('regimen_laboral') or r.get('regimen') or '', 'tipo_contrato': r.get('tipo_contrato') or '',
+        'area': r.get('area') or '', 'cargo': r.get('cargo') or '', 'actividad': r.get('actividad') or '',
+        'direccion': r.get('direccion') or r.get('direccion_actual') or '', 'distrito': r.get('distrito') or '',
+        'provincia': r.get('provincia') or '', 'departamento': r.get('departamento') or '',
+        'fecha_nacimiento': r.get('fecha_nacimiento') or ''
+    }
+
+
+def _ct_tipo306(dni):
+    _ensure_contratacion_314()
+    d = limpiar_dni(dni)
+    try:
+        if int(scalar('SELECT COUNT(*) AS c FROM trabajadores WHERE dni=?', (d,)) or 0):
+            return 'REINGRESANTE'
+    except Exception:
+        pass
+    try:
+        if int(scalar('SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE dni=?', (d,)) or 0):
+            return 'REINGRESANTE'
+    except Exception:
+        pass
+    return 'NUEVO'
+
+
+def contratacion_config_314():
+    if not _is_admin_292():
+        return _deny_admin_292()
+    try:
+        _ensure_contratacion_314()
+    except Exception as e:
+        flash('Se corrigió la estructura de la base. Actualice y vuelva a cargar: ' + str(e), 'warning')
+    if request.method == 'POST':
+        accion = request.form.get('accion') or 'trabajadores'
+        try:
+            if accion == 'trabajadores':
+                n = _ct314_import_trabajadores(request.files.get('archivo'))
+                flash(f'Trabajadores activos/reingresantes cargados: {n}.', 'success' if n else 'warning')
+            elif accion == 'observados':
+                flash(f'Observados cargados/actualizados: {_ct309_import_observados(request.files.get("archivo"))}.', 'success')
+            elif accion == 'observado_manual':
+                ok = _ct309_upsert_observado_manual(request.form)
+                flash('Observado guardado.' if ok else 'DNI inválido.', 'success' if ok else 'danger')
+            elif accion == 'maestro':
+                flash(f'Árbol requerimiento cargado: {_ct307_import_maestro(request.files.get("archivo"))} filas.', 'success')
+            elif accion == 'campos_excel':
+                flash(f'Campos extra cargados: {_ct307_import_campos(request.files.get("archivo"))}.', 'success')
+            elif accion == 'campo_manual':
+                ok = _ct307_upsert_campo(request.form.get('campo'), request.form.get('etiqueta'), request.form.get('obligatorio'), request.form.get('tipo_dato'), request.form.get('valor_defecto'), request.form.get('estado') or 'ACTIVO')
+                flash('Campo guardado.' if ok else 'Campo inválido.', 'success' if ok else 'danger')
+            elif accion == 'plantilla_word':
+                key = request.form.get('doc_key') or 'contrato_campo'; doc = _ct_doc306(key); f = request.files.get('archivo')
+                if not f or not (f.filename or '').lower().endswith('.docx'):
+                    flash('Suba una plantilla Word .docx válida.', 'danger')
+                else:
+                    f.save(CONTRATACION_TEMPLATES_DIR_306 / doc['file'])
+                    flash('Plantilla Word actualizada: ' + doc['nombre'], 'success')
+            elif accion == 'plantillas_word_masivo':
+                ok, no = _ct311_cargar_plantillas_masivo(request.files.getlist('archivos'))
+                flash(f'Plantillas Word cargadas: {ok}.' + ((' No reconocidas: ' + ', '.join(no[:5])) if no else ''), 'success' if ok else 'warning')
+        except Exception as e:
+            import traceback
+            print('V314 ERROR CONFIG POST:', traceback.format_exc())
+            flash('Error al cargar configuración: ' + str(e), 'danger')
+        return redirect(url_for('contratacion_config'))
+
+    docs = []
+    try:
+        for d in CONTRATACION_DOCS_CATALOGO_306:
+            p = _ct_template_path306(d)
+            detectados = _ct311_doc_fields_from_docx(p) if p.exists() else []
+            docs.append({**d, 'existe': p.exists(), 'path': str(p), 'campos_detectados': detectados})
+    except Exception as e:
+        flash('No se pudieron leer plantillas Word: ' + str(e), 'warning')
+    try:
+        campos = rows_to_dict(execute('SELECT * FROM contratacion_campos_extra ORDER BY id DESC LIMIT 80', fetchall=True))
+    except Exception:
+        campos = []
+    try:
+        observados = rows_to_dict(execute('SELECT * FROM contratacion_observados ORDER BY id DESC LIMIT 80', fetchall=True))
+    except Exception:
+        observados = []
+    body = _ct_css306() + r'''<div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-gear"></i></div><div class="ttl">Config. contratación</div></div><div class="ct290-body"><div class="ct290-info"><b>Base, observados, árbol y plantillas.</b><br>La base TRABAJADORES solo detecta reingresantes. Use solo columnas base: DNI, TRABAJADOR, TIPO_TRABAJADOR, EMPRESA y ESTADO. Los campos amarillos no son obligatorios para esta carga.</div><a class="ct306-btn mb-2" href="{{url_for('contratacion_plantilla_excel_307')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla Excel V314</a>
+    <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="trabajadores"><label>Excel trabajadores activos / reingresantes</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="ct290-btn mt-2"><i class="bi bi-upload"></i> Cargar trabajadores</button></form>
+    <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="observados"><label>Excel lista observados / bloqueados</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="ct306-dangerbtn mt-2"><i class="bi bi-shield-lock"></i> Cargar observados</button></form>
+    <form method="post" class="ct290-form"><input type="hidden" name="accion" value="observado_manual"><label>Agregar observado manual</label><input name="dni" maxlength="8" class="form-control" placeholder="DNI" required><input name="trabajador" class="form-control mt-2" placeholder="Trabajador"><div class="ct290-row mt-2"><input name="motivo" class="form-control" placeholder="Motivo"><select name="nivel" class="form-select"><option>NIVEL 1</option><option>NIVEL 2</option><option>NIVEL 3</option></select></div><div class="ct290-row mt-2"><select name="estado" class="form-select"><option>ACTIVO</option><option>LEVANTADO</option><option>INACTIVO</option></select><select name="bloqueo" class="form-select"><option>SI</option><option>NO</option></select></div><input name="observacion" class="form-control mt-2" placeholder="Observación"><button class="ct290-btn mt-2"><i class="bi bi-save"></i> Guardar observado</button></form>
+    <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="maestro"><label>Excel árbol Empresa / Tipo / Régimen / Área / Actividad / Cargo</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="ct290-btn mt-2"><i class="bi bi-diagram-3"></i> Cargar árbol</button></form>
+    <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="campos_excel"><label>Excel campos extra para plantillas Word</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control"><button class="ct290-btn mt-2"><i class="bi bi-input-cursor-text"></i> Cargar campos extra</button></form>
+    <form method="post" class="ct290-form"><input type="hidden" name="accion" value="campo_manual"><label>Crear campo manual para Word</label><div class="ct290-row"><input name="campo" class="form-control" placeholder="NombreCampoSinEspacios"><input name="etiqueta" class="form-control" placeholder="Etiqueta visible"></div><div class="ct290-row mt-2"><select name="obligatorio" class="form-select"><option>NO</option><option>SI</option></select><select name="tipo_dato" class="form-select"><option>TEXTO</option><option>FECHA</option><option>NUMERO</option></select></div><input name="valor_defecto" class="form-control mt-2" placeholder="Valor defecto"><button class="ct290-btn mt-2"><i class="bi bi-plus-circle"></i> Guardar campo</button></form>
+    <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="plantillas_word_masivo"><label>Carga masiva de plantillas Word</label><input type="file" name="archivos" accept=".docx" class="form-control" multiple><button class="ct290-btn mt-2"><i class="bi bi-files"></i> Cargar Word masivo</button></form>
+    <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="plantilla_word"><label>Cargar / reemplazar Word individual</label><select name="doc_key" class="form-select">{{doc_opts|safe}}</select><input type="file" name="archivo" accept=".docx" class="form-control mt-2"><button class="ct290-btn mt-2"><i class="bi bi-file-earmark-word"></i> Cargar / reemplazar Word</button></form>
+    <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Observado</th><th>Motivo</th><th>Estado</th></tr></thead><tbody>{% for o in observados %}<tr><td>{{o.dni}}<br>{{o.trabajador}}</td><td>{{o.motivo}}<br>{{o.nivel}}</td><td>{{o.estado}} / Bloqueo {{o.bloqueo}}</td></tr>{% else %}<tr><td colspan="3" class="text-center text-muted">Sin observados.</td></tr>{% endfor %}</tbody></table></div>
+    <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Documento/Campo</th><th>Estado</th><th>Campos detectados</th></tr></thead><tbody>{% for d in docs %}<tr><td>{{d.nombre}}</td><td>{% if d.existe %}{{badge('OK')|safe}}{% else %}{{badge('PENDIENTE')|safe}}{% endif %}</td><td>{% if d.existe %}{{(d.campos_detectados or d.campos)|join(', ')}}{% else %}Falta cargar Word{% endif %}</td></tr>{% endfor %}{% for c in campos %}<tr><td>{{c.campo}}</td><td>{{c.obligatorio}}</td><td>{{c.etiqueta}}</td></tr>{% endfor %}</tbody></table></div></div></div></div>'''
+    return render_page(body, docs=docs, campos=campos, observados=observados, doc_opts=_ct_doc_options306(), badge=_ct_badge306, title='Config contratación')
+
+
+app.view_functions['contratacion_config'] = contratacion_config_314
+
+# ===================== FIN PATCH CONTRATACIÓN 314 OMAR =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
