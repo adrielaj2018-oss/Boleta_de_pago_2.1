@@ -10233,7 +10233,17 @@ def _ct307_add_cols():
             ('contrato_admin_por','TEXT'),('contrato_admin_en','TEXT'),('documento_firma_key','TEXT'),('documento_firma_nombre','TEXT')
         ]:
             _add_column_if_missing(cur, 'contratacion_ingresos', col, ddl)
-        for col, ddl in [('tipo_trabajador','TEXT'),('regimen_laboral','TEXT'),('tipo_contrato','TEXT')]:
+        # Migración robusta de la tabla trabajadores.
+        # La tabla original del sistema móvil solo tenía: dni, trabajador, empresa, area, cargo, actividad, planilla, estado, fecha_carga.
+        # El módulo contratación usa campos extra para autocompletar postulantes/Word; si no existen, SQLite mostraba:
+        # "table trabajadores has no column named correo" al cargar la plantilla de trabajadores.
+        for col, ddl in [
+            ('area','TEXT'), ('cargo','TEXT'), ('actividad','TEXT'), ('planilla','TEXT'),
+            ('correo','TEXT'), ('celular','TEXT'), ('fecha_nacimiento','TEXT'),
+            ('direccion','TEXT'), ('distrito','TEXT'), ('provincia','TEXT'), ('departamento','TEXT'),
+            ('tipo_trabajador','TEXT'), ('regimen_laboral','TEXT'), ('tipo_contrato','TEXT'),
+            ('estado',"TEXT DEFAULT 'ACTIVO'"), ('fecha_carga','TEXT')
+        ]:
             try: _add_column_if_missing(cur, 'trabajadores', col, ddl)
             except Exception: pass
         idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
@@ -10764,7 +10774,7 @@ def _ct307_excel_response(filename='plantilla_contratacion_aquanqa.xlsx'):
 
 def _ct307_import_trabajadores(f):
     # Importa sólo la base de trabajadores activos/reingresantes.
-    # Encabezados esperados: DNI, TRABAJADOR, TIPO_TRABAJADOR, EMPRESA, ESTADO.
+    # Encabezados esperados para base reingresantes: DNI, TRABAJADOR, TIPO_TRABAJADOR, EMPRESA, ESTADO.
     # También tolera nombres antiguos, pero no exige los campos amarillos.
     if not f:
         return 0
@@ -11207,7 +11217,7 @@ def _ct309_upsert_observado_manual(form):
     return True
 
 
-def _ct307_excel_response(filename='plantilla_contratacion_aquanqa_v309.xlsx'):
+def _ct307_excel_response(filename='plantilla_contratacion_aquanqa_v310.xlsx'):
     wb = Workbook(); ws = wb.active; ws.title = 'TRABAJADORES'
     sheets = {
         'TRABAJADORES': [
@@ -11429,7 +11439,7 @@ def contratacion_config_309():
         p = _ct_template_path306(d); docs.append({**d, 'existe': p.exists(), 'path': str(p)})
     campos = rows_to_dict(execute('SELECT * FROM contratacion_campos_extra ORDER BY id DESC LIMIT 80', fetchall=True))
     observados = rows_to_dict(execute('SELECT * FROM contratacion_observados ORDER BY id DESC LIMIT 80', fetchall=True))
-    body = _ct_css306() + r'''<div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-gear"></i></div><div class="ttl">Config. contratación</div></div><div class="ct290-body"><div class="ct290-info"><b>Base, observados, árbol y plantillas.</b><br>La base TRABAJADORES solo detecta reingresantes. La base OBSERVADOS bloquea el pre-registro y el avance.</div><a class="ct306-btn mb-2" href="{{url_for('contratacion_plantilla_excel_307')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla Excel V309</a>
+    body = _ct_css306() + r'''<div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-gear"></i></div><div class="ttl">Config. contratación</div></div><div class="ct290-body"><div class="ct290-info"><b>Base, observados, árbol y plantillas.</b><br>La base TRABAJADORES solo detecta reingresantes. La base OBSERVADOS bloquea el pre-registro y el avance.</div><a class="ct306-btn mb-2" href="{{url_for('contratacion_plantilla_excel_307')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla Excel V310</a>
     <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="trabajadores"><label>Excel trabajadores activos / reingresantes</label><input type="file" name="archivo" accept=".xlsx,.xls" class="form-control" required><button class="ct290-btn mt-2"><i class="bi bi-upload"></i> Cargar trabajadores</button></form>
     <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="observados"><label>Excel lista observados / bloqueados</label><input type="file" name="archivo" accept=".xlsx,.xls" class="form-control" required><button class="ct306-dangerbtn mt-2"><i class="bi bi-shield-lock"></i> Cargar observados</button></form>
     <form method="post" class="ct290-form"><input type="hidden" name="accion" value="observado_manual"><label>Agregar observado manual</label><input name="dni" maxlength="8" class="form-control" placeholder="DNI" required><input name="trabajador" class="form-control mt-2" placeholder="Trabajador"><div class="ct290-row mt-2"><input name="motivo" class="form-control" placeholder="Motivo"><select name="nivel" class="form-select"><option>NIVEL 1</option><option>NIVEL 2</option><option>NIVEL 3</option></select></div><div class="ct290-row mt-2"><select name="estado" class="form-select"><option>ACTIVO</option><option>LEVANTADO</option><option>INACTIVO</option></select><select name="bloqueo" class="form-select"><option>SI</option><option>NO</option></select></div><input name="observacion" class="form-control mt-2" placeholder="Observación"><button class="ct290-btn mt-2"><i class="bi bi-save"></i> Guardar observado</button></form>
