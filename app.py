@@ -12844,6 +12844,256 @@ app.view_functions['contratacion_config'] = contratacion_config_314
 
 # ===================== FIN PATCH CONTRATACIÓN 315 OMAR =====================
 
+
+# ===================== PATCH CONTRATACIÓN 316 OMAR =====================
+# Corrección específica: carga de base TRABAJADORES solo para detectar NUEVO / REINGRESANTE.
+# - Elimina dependencia de UPLOAD_DIR: el Excel se lee directamente desde memoria.
+# - No intenta guardar campos amarillos ni columnas adicionales.
+# - Solo usa columnas base: DNI, TRABAJADOR, TIPO_TRABAJADOR, EMPRESA, ESTADO.
+# - Mantiene la tabla trabajadores mínima y tolerante para Render/SQLite/PostgreSQL.
+
+
+def _ct316_exec_direct(sql, params=(), commit=False, fetchone=False, fetchall=False):
+    return execute(sql, params, commit=commit, fetchone=fetchone, fetchall=fetchall)
+
+
+def _ct316_ensure_trabajadores_base():
+    # Tabla mínima para base de reingresantes. No agrega campos amarillos.
+    idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+    try:
+        execute(f'''CREATE TABLE IF NOT EXISTS trabajadores(
+            id {idtype},
+            dni TEXT UNIQUE,
+            trabajador TEXT,
+            tipo_trabajador TEXT,
+            empresa TEXT,
+            estado TEXT DEFAULT 'ACTIVO',
+            fecha_carga TEXT
+        )''', commit=True)
+    except Exception as e:
+        print('V316 create trabajadores base:', e)
+    conn = None; cur = None
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        for col, ddl in [
+            ('dni','TEXT'),
+            ('trabajador','TEXT'),
+            ('tipo_trabajador','TEXT'),
+            ('empresa','TEXT'),
+            ('estado',"TEXT DEFAULT 'ACTIVO'"),
+            ('fecha_carga','TEXT')
+        ]:
+            try:
+                _add_column_if_missing(cur, 'trabajadores', col, ddl)
+            except Exception as e:
+                print('V316 col trabajadores base', col, e)
+        conn.commit()
+    except Exception as e:
+        print('V316 ensure trabajadores base:', e)
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+
+
+def _ct307_add_cols():
+    # Reemplazo seguro: crea estructuras de contratación sin agregar campos amarillos a trabajadores.
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        for col, ddl in [
+            ('tipo_trabajador','TEXT'),('editado_por','TEXT'),('editado_en','TEXT'),('observacion','TEXT')
+        ]:
+            try: _add_column_if_missing(cur, 'contratacion_requerimientos', col, ddl)
+            except Exception: pass
+        for col, ddl in [
+            ('tipo_trabajador','TEXT'),('regimen','TEXT'),('contrato_admin_ok','INTEGER DEFAULT 0'),
+            ('contrato_admin_por','TEXT'),('contrato_admin_en','TEXT'),('documento_firma_key','TEXT'),('documento_firma_nombre','TEXT')
+        ]:
+            try: _add_column_if_missing(cur, 'contratacion_ingresos', col, ddl)
+            except Exception: pass
+        idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS contratacion_maestro_estructura(
+            id {idtype}, empresa TEXT, tipo_trabajador TEXT, regimen_laboral TEXT, area TEXT,
+            actividad TEXT, cargo TEXT, tipo_contrato TEXT, estado TEXT DEFAULT 'ACTIVO', creado_en TEXT)'''))
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS contratacion_campos_extra(
+            id {idtype}, campo TEXT UNIQUE, etiqueta TEXT, obligatorio TEXT DEFAULT 'NO', tipo_dato TEXT DEFAULT 'TEXTO',
+            valor_defecto TEXT, estado TEXT DEFAULT 'ACTIVO', creado_en TEXT)'''))
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS contratacion_campos_valores(
+            id {idtype}, ingreso_id INTEGER, campo TEXT, valor TEXT, actualizado_en TEXT)'''))
+        conn.commit()
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+    _ct316_ensure_trabajadores_base()
+
+
+def _ct312_add_missing_columns():
+    # Migración V312 corregida: no agrega columnas amarillas a trabajadores.
+    conn = None; cur = None
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        req_cols = [
+            ('fecha','TEXT'),('codigo','TEXT'),('empresa','TEXT'),('tipo_trabajador','TEXT'),('area','TEXT'),('cargo','TEXT'),('actividad','TEXT'),
+            ('cantidad','INTEGER DEFAULT 0'),('fecha_ingreso','TEXT'),('tipo_contrato','TEXT'),('regimen_laboral','TEXT'),('estado',"TEXT DEFAULT 'ABIERTO'"),
+            ('observacion','TEXT'),('creado_por','TEXT'),('creado_en','TEXT'),('editado_por','TEXT'),('editado_en','TEXT')]
+        ing_cols = [
+            ('requerimiento_id','INTEGER'),('requerimiento','TEXT'),('dni','TEXT'),('nombres','TEXT'),('telefono','TEXT'),('correo','TEXT'),('empresa','TEXT'),
+            ('tipo_trabajador','TEXT'),('area','TEXT'),('cargo','TEXT'),('actividad','TEXT'),('tipo_contrato','TEXT'),('regimen_laboral','TEXT'),('fecha_inicio','TEXT'),('fecha_fin','TEXT'),
+            ('basico','REAL DEFAULT 0'),('estado',"TEXT DEFAULT 'PRE-REGISTRO'"),('medica_estado',"TEXT DEFAULT 'PENDIENTE'"),('induccion_estado',"TEXT DEFAULT 'PENDIENTE'"),
+            ('indumentaria_estado',"TEXT DEFAULT 'PENDIENTE'"),('fotocheck_estado',"TEXT DEFAULT 'PENDIENTE'"),('firma_estado',"TEXT DEFAULT 'PENDIENTE'"),('observacion','TEXT'),
+            ('creado_por','TEXT'),('creado_en','TEXT'),('tipo_ingreso','TEXT'),('fecha_nacimiento','TEXT'),('direccion','TEXT'),('distrito','TEXT'),('provincia','TEXT'),('departamento','TEXT'),
+            ('dni_validado','INTEGER DEFAULT 0'),('fuente_datos','TEXT'),('funciones','TEXT'),('contrato_admin_ok','INTEGER DEFAULT 0'),('contrato_admin_por','TEXT'),('contrato_admin_en','TEXT'),
+            ('documento_firma_key','TEXT'),('documento_firma_nombre','TEXT'),('foto_postulante_path','TEXT'),('foto_postulante_en','TEXT'),('enviado_renovacion','INTEGER DEFAULT 0'),
+            ('renovacion_carpeta','TEXT'),('renovacion_enviado_en','TEXT'),('renovacion_enviado_por','TEXT')]
+        firma_cols = [('requerimiento_id','INTEGER'),('requerimiento','TEXT'),('documento_key','TEXT'),('generated_doc_path','TEXT'),('paquete_firma','TEXT')]
+        for table, cols in [('contratacion_requerimientos', req_cols), ('contratacion_ingresos', ing_cols), ('contratacion_firmas_bio', firma_cols)]:
+            for col, ddl in cols:
+                try: _add_column_if_missing(cur, table, col, ddl)
+                except Exception: pass
+        conn.commit()
+    except Exception as e:
+        print('Migración contratación V316:', e)
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+    _ct316_ensure_trabajadores_base()
+
+
+def _ensure_contratacion_314():
+    # Asegura configuración sin usar UPLOAD_DIR ni columnas amarillas en trabajadores.
+    try:
+        _ensure_contratacion_313()
+    except Exception as e:
+        print('V316 ensure 313 omitido:', e)
+        try:
+            _ct312_create_base_tables()
+            _ct312_add_missing_columns()
+        except Exception as ee:
+            print('V316 ensure base omitido:', ee)
+    _ct316_ensure_trabajadores_base()
+
+
+def _ct314_open_workbook_from_filestorage(file_storage):
+    # Lee Excel directo desde memoria; no usa UPLOAD_DIR ni guarda temporal.
+    if not file_storage or not getattr(file_storage, 'filename', ''):
+        raise ValueError('Seleccione un archivo Excel.')
+    fn = secure_filename(file_storage.filename or 'trabajadores.xlsx')
+    if not fn.lower().endswith(('.xlsx', '.xlsm')):
+        raise ValueError('Use archivo Excel .xlsx. Si está en .xls, guárdelo como .xlsx.')
+    try:
+        file_storage.stream.seek(0)
+    except Exception:
+        pass
+    return load_workbook(file_storage.stream, data_only=True)
+
+
+def _ct314_iter_sheet(file_storage, sheet_name='TRABAJADORES'):
+    wb = _ct314_open_workbook_from_filestorage(file_storage)
+    ws = None
+    wanted = _ct_norm306(sheet_name)
+    for nm in wb.sheetnames:
+        if _ct_norm306(nm) == wanted:
+            ws = wb[nm]
+            break
+    if ws is None:
+        ws = wb.active
+    headers = [_ct314_norm_header(c.value) for c in ws[1]]
+    rows = []
+    for vals in ws.iter_rows(min_row=2, values_only=True):
+        if not any(v not in (None, '') for v in vals):
+            continue
+        r = {}
+        for i, val in enumerate(vals[:len(headers)]):
+            if headers[i]:
+                r[headers[i]] = val
+        rows.append(r)
+    return rows
+
+
+def _ct314_import_trabajadores(file_storage):
+    # Importa solo base de reingresantes: DNI, TRABAJADOR, TIPO_TRABAJADOR, EMPRESA, ESTADO.
+    _ct316_ensure_trabajadores_base()
+    rows = _ct314_iter_sheet(file_storage, 'TRABAJADORES')
+    if not rows:
+        return 0
+    ok = 0
+    for r in rows:
+        dni = limpiar_dni(_ct314_get(r, 'DNI', 'DOCUMENTO', 'NRO DOCUMENTO', 'NUMERO DOCUMENTO'))
+        if len(dni) != 8:
+            continue
+        trabajador = limpiar_texto(_ct314_get(r, 'TRABAJADOR', 'NOMBRES', 'NOMBRE', 'APELLIDOS Y NOMBRES', 'NOMBRES COMPLETOS'))
+        tipo_trab = limpiar_texto(_ct314_get(r, 'TIPO TRABAJADOR', 'TIPO_TRABAJADOR', 'TIPO'))
+        empresa = limpiar_texto(_ct314_get(r, 'EMPRESA'))
+        estado = limpiar_texto(_ct314_get(r, 'ESTADO') or 'ACTIVO')
+        try:
+            exists = int(scalar('SELECT COUNT(*) AS c FROM trabajadores WHERE dni=?', (dni,)) or 0)
+            if exists:
+                execute('''UPDATE trabajadores
+                           SET trabajador=?, tipo_trabajador=?, empresa=?, estado=?, fecha_carga=?
+                           WHERE dni=?''',
+                        (trabajador, tipo_trab, empresa, estado, now_str(), dni), commit=True)
+            else:
+                execute('''INSERT INTO trabajadores(dni, trabajador, tipo_trabajador, empresa, estado, fecha_carga)
+                           VALUES(?,?,?,?,?,?)''',
+                        (dni, trabajador, tipo_trab, empresa, estado, now_str()), commit=True)
+            ok += 1
+        except Exception as e:
+            print('V316 fila trabajadores omitida', dni, e)
+            continue
+    return ok
+
+
+def _ct_worker306(dni):
+    # Consulta base mínima para autocompletar nombre/tipo/empresa.
+    _ct316_ensure_trabajadores_base()
+    d = limpiar_dni(dni)
+    try:
+        r = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (d,), fetchone=True))
+    except Exception:
+        r = None
+    if not r:
+        return {'dni': d, 'nombres':'', 'trabajador':'', 'empresa':'', 'tipo_trabajador':'', 'estado':''}
+    nom = r.get('trabajador') or r.get('nombre') or r.get('nombres') or ''
+    return {
+        'dni': r.get('dni') or d,
+        'nombres': nom,
+        'trabajador': nom,
+        'empresa': r.get('empresa') or '',
+        'tipo_trabajador': r.get('tipo_trabajador') or '',
+        'estado': r.get('estado') or 'ACTIVO',
+        # Campos vacíos para que otros módulos no fallen si los piden.
+        'telefono':'', 'correo':'', 'regimen_laboral':'', 'tipo_contrato':'',
+        'area':'', 'cargo':'', 'actividad':'', 'direccion':'', 'distrito':'',
+        'provincia':'', 'departamento':'', 'fecha_nacimiento':''
+    }
+
+
+def _ct_tipo306(dni):
+    _ct316_ensure_trabajadores_base()
+    d = limpiar_dni(dni)
+    try:
+        if int(scalar("SELECT COUNT(*) AS c FROM trabajadores WHERE dni=? AND UPPER(COALESCE(estado,'ACTIVO')) NOT IN ('INACTIVO','BAJA','CESADO')", (d,)) or 0):
+            return 'REINGRESANTE'
+    except Exception:
+        pass
+    return 'NUEVO'
+
+
+# Mantener endpoint API usando base mínima.
+def api_trabajador(dni):
+    t = _ct_worker306(dni)
+    if t.get('nombres'):
+        return jsonify(ok=True, trabajador={'dni': t.get('dni'), 'trabajador': t.get('nombres'), 'nombres': t.get('nombres'), 'empresa': t.get('empresa'), 'tipo_trabajador': t.get('tipo_trabajador'), 'estado': t.get('estado')})
+    return jsonify(ok=False, msg='DNI no encontrado en base trabajadores')
+try:
+    app.view_functions['api_trabajador'] = api_trabajador
+except Exception:
+    pass
+
+# Reasignar pantalla config para que use los imports V316 ya redefinidos.
+app.view_functions['contratacion_config'] = contratacion_config_314
+
+# ===================== FIN PATCH CONTRATACIÓN 316 OMAR =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
