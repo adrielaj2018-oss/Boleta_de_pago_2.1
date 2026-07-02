@@ -12242,6 +12242,291 @@ app.view_functions['contratacion_requerimientos'] = contratacion_requerimientos_
 
 # ===================== FIN PATCH CONTRATACIÓN 312 OMAR =====================
 
+
+# ===================== PATCH CONTRATACIÓN 313 OMAR =====================
+# Ajustes solicitados:
+# 1) Corrige caída en Firma Facial/Digital usando migración completa V312 antes de renderizar/guardar.
+# 2) Actualización individual/masiva de estados en Médica, Inducción e Indumentaria.
+# 3) Inducción: carga de videos por área/tema y demos de inducción.
+
+CONTRATACION_INDUCCION_VIDEOS_DIR_313 = _Path306(PERSIST_DIR) / 'contratacion_induccion_videos'
+CONTRATACION_INDUCCION_VIDEOS_DIR_313.mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_contratacion_313():
+    # Migración final para evitar Internal Server Error en Render con bases antiguas.
+    try:
+        _ensure_contratacion_312()
+    except Exception as e:
+        print('V313 ensure base 312:', e)
+        try: _ensure_contratacion_309()
+        except Exception as ee: print('V313 ensure base 309:', ee)
+    idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+    try:
+        execute(f'''CREATE TABLE IF NOT EXISTS contratacion_induccion_videos(
+            id {idtype}, area TEXT, tema TEXT, titulo TEXT, descripcion TEXT,
+            archivo_nombre TEXT, archivo_path TEXT, tipo TEXT DEFAULT 'VIDEO', estado TEXT DEFAULT 'ACTIVO',
+            creado_por TEXT, creado_en TEXT)''', commit=True)
+    except Exception as e:
+        print('V313 crear tabla videos:', e)
+    # Refuerzo de columnas críticas que causaban error 500 al firmar en bases ya creadas.
+    conn = None; cur = None
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        for col, ddl in [
+            ('requerimiento_id','INTEGER'),('requerimiento','TEXT'),('documento_key','TEXT'),
+            ('generated_doc_path','TEXT'),('paquete_firma','TEXT')
+        ]:
+            try: _add_column_if_missing(cur, 'contratacion_firmas_bio', col, ddl)
+            except Exception as e: print('V313 col firma', col, e)
+        for col, ddl in [
+            ('contrato_admin_ok','INTEGER DEFAULT 0'),('contrato_admin_por','TEXT'),('contrato_admin_en','TEXT'),
+            ('foto_postulante_path','TEXT'),('foto_postulante_en','TEXT')
+        ]:
+            try: _add_column_if_missing(cur, 'contratacion_ingresos', col, ddl)
+            except Exception as e: print('V313 col ingreso', col, e)
+        conn.commit()
+    except Exception as e:
+        print('V313 migracion columnas:', e)
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+
+
+def _ct313_allowed_video(filename):
+    ext = os.path.splitext((filename or '').lower())[1]
+    return ext in ('.mp4', '.webm', '.mov', '.m4v', '.avi')
+
+
+def _ct313_save_induccion_video(file_storage, area, tema, titulo, descripcion):
+    if not file_storage or not getattr(file_storage, 'filename', ''):
+        raise ValueError('Seleccione un video de inducción.')
+    if not _ct313_allowed_video(file_storage.filename):
+        raise ValueError('Formato no permitido. Use MP4, WEBM, MOV, M4V o AVI.')
+    area_s = _ct309_safe_file(area or 'GENERAL')
+    tema_s = _ct309_safe_file(tema or 'GENERAL')
+    carpeta = CONTRATACION_INDUCCION_VIDEOS_DIR_313 / area_s / tema_s
+    carpeta.mkdir(parents=True, exist_ok=True)
+    ext = os.path.splitext(file_storage.filename)[1].lower()
+    fname = f"{tema_s}_{now_file()}{ext}"
+    path = carpeta / fname
+    file_storage.save(str(path))
+    execute('''INSERT INTO contratacion_induccion_videos(area,tema,titulo,descripcion,archivo_nombre,archivo_path,tipo,estado,creado_por,creado_en)
+               VALUES(?,?,?,?,?,?,?,?,?,?)''',
+            (limpiar_texto(area or 'GENERAL'), limpiar_texto(tema or 'GENERAL'), limpiar_texto(titulo or tema or 'VIDEO INDUCCIÓN'),
+             descripcion or '', file_storage.filename, str(path), 'VIDEO', 'ACTIVO', session.get('usuario'), now_str()), commit=True)
+    return path
+
+
+def _ct313_insert_induccion_demos(area='GENERAL'):
+    demos = [
+        ('GENERAL', 'BIENVENIDA', 'Demo bienvenida a la empresa', 'Video demo para explicar reglas generales de ingreso.'),
+        ('CAMPO', 'RIESGOS POR LABOR', 'Demo riesgos en labores de campo', 'Uso de EPP, reporte de peligros y cuidado preventivo.'),
+        ('CAMPO', 'BUENAS PRACTICAS AGRICOLAS', 'Demo BPA / GGAP', 'Buenas prácticas agrícolas, higiene y orden.'),
+        ('PACKING', 'SEGURIDAD EN PLANTA', 'Demo seguridad en packing', 'Seguridad, tránsito interno, limpieza y zonas restringidas.'),
+        ('GENERAL', 'POLITICA SALARIAL', 'Demo política salarial', 'Inducción de política salarial y recepción de documentos.'),
+    ]
+    ok = 0
+    for ar, tema, titulo, desc in demos:
+        existe = int(scalar('''SELECT COUNT(*) AS c FROM contratacion_induccion_videos
+                               WHERE UPPER(COALESCE(tipo,''))='DEMO' AND UPPER(COALESCE(area,''))=? AND UPPER(COALESCE(tema,''))=?''',
+                            (ar.upper(), tema.upper())) or 0)
+        if existe:
+            continue
+        execute('''INSERT INTO contratacion_induccion_videos(area,tema,titulo,descripcion,archivo_nombre,archivo_path,tipo,estado,creado_por,creado_en)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                (ar, tema, titulo, desc, '', '', 'DEMO', 'ACTIVO', session.get('usuario'), now_str()), commit=True)
+        ok += 1
+    return ok
+
+
+def _ct313_videos_induccion(area=''):
+    try:
+        if area:
+            return rows_to_dict(execute('''SELECT * FROM contratacion_induccion_videos
+                WHERE UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO' AND (UPPER(COALESCE(area,'')) IN ('GENERAL', ?) OR COALESCE(area,'')='')
+                ORDER BY CASE WHEN UPPER(COALESCE(area,''))='GENERAL' THEN 1 ELSE 0 END, area, tema, id DESC LIMIT 120''',
+                (limpiar_texto(area).upper(),), fetchall=True))
+        return rows_to_dict(execute('''SELECT * FROM contratacion_induccion_videos
+            WHERE UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO' ORDER BY area,tema,id DESC LIMIT 120''', fetchall=True))
+    except Exception:
+        return []
+
+
+def contratacion_induccion_video_313(video_id):
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_313()
+    v = row_to_dict(execute('SELECT * FROM contratacion_induccion_videos WHERE id=?', (video_id,), fetchone=True))
+    if not v or not v.get('archivo_path') or not os.path.exists(v.get('archivo_path')):
+        flash('Video no encontrado o es un demo sin archivo cargado.', 'danger')
+        return redirect(url_for('contratacion_etapa', etapa='induccion'))
+    return send_file(v.get('archivo_path'), as_attachment=False, download_name=v.get('archivo_nombre') or 'induccion.mp4')
+
+
+def _ct313_update_rows_for_stage(etapa, req_id, ids, estado, obs):
+    meta = _ETAPAS_290.get(etapa)
+    if not meta:
+        return (0, 0, 'Etapa inválida')
+    titulo, icono, col, estados = meta
+    ok = skip = 0
+    for ing_id in ids:
+        try:
+            row = row_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE id=? AND (?="" OR requerimiento_id=?)',
+                                      (ing_id, str(req_id or ''), str(req_id or '')), fetchone=True))
+            listo, msg = _ct_stage_ok306(row, etapa)
+            if not listo:
+                skip += 1; continue
+            execute(f'UPDATE contratacion_ingresos SET {col}=?, observacion=? WHERE id=?', (estado, obs, row.get('id')), commit=True)
+            ok += 1
+        except Exception:
+            skip += 1
+    return ok, skip, ''
+
+
+def contratacion_etapa_313(etapa):
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_313()
+    if etapa == 'firma':
+        return redirect(url_for('contratacion_firma_bio', req=request.values.get('req') or ''))
+    meta = _ETAPAS_290.get(etapa)
+    if not meta:
+        return redirect(url_for('contratacion_home'))
+    titulo, icono, col, estados = meta
+    reqs = rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250', fetchall=True))
+    req_id = request.values.get('req') or request.form.get('requerimiento_id') or ''
+    req = row_to_dict(execute('SELECT * FROM contratacion_requerimientos WHERE id=?', (req_id,), fetchone=True)) if req_id else None
+
+    if request.method == 'POST':
+        accion = request.form.get('accion') or 'individual'
+        if etapa == 'induccion' and accion == 'video_upload':
+            try:
+                _ct313_save_induccion_video(request.files.get('video'), request.form.get('area'), request.form.get('tema'), request.form.get('titulo'), request.form.get('descripcion'))
+                flash('Video de inducción cargado correctamente.', 'success')
+            except Exception as e:
+                flash('No se pudo cargar video: ' + str(e), 'danger')
+            return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+        if etapa == 'induccion' and accion == 'video_demos':
+            ok = _ct313_insert_induccion_demos(req.get('area') if req else 'GENERAL')
+            flash(f'Demos cargados: {ok}.', 'success' if ok else 'warning')
+            return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+        if accion == 'masivo':
+            estado = request.form.get('estado_masivo') or request.form.get('estado') or (estados[0] if estados else 'PENDIENTE')
+            obs = request.form.get('observacion_masivo') or ''
+            modo = request.form.get('modo_masivo') or 'seleccion'
+            if modo == 'todos':
+                rows = rows_to_dict(execute('SELECT id FROM contratacion_ingresos WHERE (?="" OR requerimiento_id=?)', (str(req_id or ''), str(req_id or '')), fetchall=True))
+                ids = [r.get('id') for r in rows]
+            else:
+                ids = request.form.getlist('ingreso_ids')
+            ok, skip, msg = _ct313_update_rows_for_stage(etapa, req_id, ids, estado, obs)
+            flash(f'{titulo} masivo: {ok} actualizados, {skip} bloqueados/omitidos por flujo.', 'success' if ok else 'warning')
+            return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+        # individual
+        dni = limpiar_dni(request.form.get('dni'))
+        row = _ct_find_postulante306(dni, req_id)
+        ok, msg = _ct_stage_ok306(row, etapa)
+        if not ok:
+            flash('BLOQUEADO: ' + msg, 'danger')
+            return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+        execute(f'UPDATE contratacion_ingresos SET {col}=?, observacion=? WHERE id=?', (request.form.get('estado'), request.form.get('observacion'), row.get('id')), commit=True)
+        flash(titulo + ' actualizado.', 'success')
+        return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+
+    posts = rows_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE (?="" OR requerimiento_id=?) ORDER BY id DESC LIMIT 250', (str(req_id or ''), str(req_id or '')), fetchall=True))
+    opts = ''.join(f'<option>{_ct_h306(e)}</option>' for e in estados)
+    opts_masivo = opts
+    videos = _ct313_videos_induccion(req.get('area') if req else '') if etapa == 'induccion' else []
+    area_default = req.get('area') if req else ''
+    body = _ct_css306() + r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-{{icono}}"></i></div><div class="ttl">{{titulo}}</div></div><div class="ct290-body">{{nav|safe}}
+      <div class="ct290-info">Flujo validado: Postulantes → Médica → Inducción → Indumentaria → Firma → Fotocheck. Los pre-registros no avanzan hasta completar Postulantes.</div>
+      <form method="get" class="ct290-form"><label>Requerimiento</label><select class="form-select" name="req" onchange="this.form.submit()">{{req_opts|safe}}</select></form>
+      <form method="post" class="ct290-form"><input type="hidden" name="accion" value="individual"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><div class="ct290-row"><div><label>DNI</label><div class="ct306-inputgroup"><input id="dniEt306" name="dni" maxlength="8" class="form-control" required><button type="button" class="ct306-scan" onclick="abrirScanner('readerEt306','dniEt306')"><i class="bi bi-upc-scan"></i></button></div></div><div><label>Estado individual</label><select name="estado" class="form-select">{{opts|safe}}</select></div></div><div id="readerEt306" class="mt-2"></div><label class="mt-2">Trabajador</label><div id="nomEt306" class="ct306-namebox">Nombre automático.</div><label class="mt-2">Observación</label><input name="observacion" class="form-control"><button class="ct290-btn mt-2"><i class="bi bi-check2-circle"></i> Actualizar individual</button></form>
+      <form method="post" class="ct290-form"><input type="hidden" name="accion" value="masivo"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><label>Actualización masiva / selección</label><div class="ct290-row"><div><select name="estado_masivo" class="form-select">{{opts_masivo|safe}}</select></div><div><select name="modo_masivo" class="form-select"><option value="seleccion">Solo seleccionados</option><option value="todos">Todos del requerimiento</option></select></div></div><input name="observacion_masivo" class="form-control mt-2" placeholder="Observación masiva"><div class="ct290-row mt-2"><button type="button" class="ct290-outline" onclick="ct313ToggleChecks(true)"><i class="bi bi-check2-square"></i> Seleccionar</button><button type="button" class="ct290-outline" onclick="ct313ToggleChecks(false)"><i class="bi bi-square"></i> Limpiar</button></div><button class="ct290-btn mt-2" onclick="return confirm('¿Actualizar estado según selección?')"><i class="bi bi-people-fill"></i> Aplicar estado</button>
+      {% if etapa=='induccion' %}<div class="ct306-docbox"><b>Videos de inducción por área/tema:</b> use esta sección para subir videos y tener demos visibles para capacitación.</div>{% endif %}
+      <div class="ct290-tablewrap mt-2"><table class="ct290-table"><thead><tr><th>Sel.</th><th>DNI</th><th>Postulante</th><th>Estado proceso</th><th>Médica</th><th>Inducción</th><th>Indument.</th><th>Firma</th></tr></thead><tbody>{% for p in posts %}<tr><td><input type="checkbox" class="ct313-check" name="ingreso_ids" value="{{p.id}}"></td><td>{{p.dni}}</td><td>{{p.nombres or '-'}}</td><td>{{badge(p.estado)|safe}}</td><td>{{badge(p.medica_estado)|safe}}</td><td>{{badge(p.induccion_estado)|safe}}</td><td>{{badge(p.indumentaria_estado)|safe}}</td><td>{{badge(p.firma_estado)|safe}}</td></tr>{% else %}<tr><td colspan="8" class="text-center text-muted">Sin postulantes.</td></tr>{% endfor %}</tbody></table></div></form>
+      {% if etapa=='induccion' %}<form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="video_upload"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><label>Subir video de inducción</label><div class="ct290-row"><div><label>Área</label><input name="area" class="form-control" value="{{area_default or 'GENERAL'}}"></div><div><label>Tema</label><input name="tema" class="form-control" placeholder="SST / BPA / Riesgos"></div></div><input name="titulo" class="form-control mt-2" placeholder="Título del video"><input type="file" name="video" accept="video/*" class="form-control mt-2" required><input name="descripcion" class="form-control mt-2" placeholder="Descripción"><button class="ct290-btn mt-2"><i class="bi bi-cloud-arrow-up"></i> Cargar video</button></form><form method="post" class="ct290-form"><input type="hidden" name="accion" value="video_demos"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><button class="ct290-outline"><i class="bi bi-play-circle"></i> Cargar demos de inducción</button></form><div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Área</th><th>Tema</th><th>Título</th><th>Tipo</th><th>Video</th></tr></thead><tbody>{% for v in videos %}<tr><td>{{v.area}}</td><td>{{v.tema}}</td><td>{{v.titulo}}<br><small>{{v.descripcion}}</small></td><td>{{v.tipo}}</td><td>{% if v.archivo_path %}<a class="ct306-smalllink" href="{{url_for('contratacion_induccion_video', video_id=v.id)}}" target="_blank">Ver</a>{% else %}<span class="ct306-muted">Demo / sin archivo</span>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Sin videos. Puede cargar demos.</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+      </div></div></div><script>function ct313ToggleChecks(v){document.querySelectorAll('.ct313-check').forEach(c=>c.checked=v);} (function(){const d=document.getElementById('dniEt306'),n=document.getElementById('nomEt306');async function look(){let v=(d.value||'').replace(/\D/g,'').slice(-8);d.value=v;if(v.length<8){n.textContent='Nombre automático.';return;}try{let r=await fetch('/api/contratacion/postulante/'+v+'?req={{req_id}}',{cache:'no-store'});let j=await r.json();if(j.ok){n.innerHTML='<b>'+((j.postulante||{}).nombres||'-')+'</b> · '+((j.postulante||{}).tipo_ingreso||''); if(typeof beep==='function')beep();}else{let t=(j.trabajador||{});n.textContent=t.nombres||'No está registrado en postulantes';}}catch(e){n.textContent='No se pudo consultar DNI';}}d&&d.addEventListener('input',look);})();</script>'''
+    return render_page(body, etapa=etapa, titulo=titulo, icono=icono, posts=posts, req_id=req_id,
+                       req_opts=_ct_req_options306(reqs, req_id), opts=opts, opts_masivo=opts_masivo, badge=_ct_badge306,
+                       nav=_ct_nav306(etapa, req_id), title=titulo, videos=videos, area_default=area_default)
+
+
+def contratacion_firma_bio_313():
+    if not _is_admin_292(): return _deny_admin_292()
+    try:
+        _ensure_contratacion_313()
+    except Exception as e:
+        flash('Se corrigió la base de contratación. Vuelva a entrar a Firma: ' + str(e), 'warning')
+        return redirect(url_for('contratacion_home'))
+    req_id = request.values.get('req') or request.form.get('requerimiento_id') or ''
+    if request.method == 'POST':
+        try:
+            dni = limpiar_dni(request.form.get('dni'))
+            row = _ct_find_postulante306(dni, req_id)
+            ok, msg = _ct_stage_ok306(row, 'firma')
+            if not ok:
+                flash('BLOQUEADO: ' + msg, 'danger')
+                return redirect(url_for('contratacion_firma_bio', req=req_id))
+            firma_folder = _Path306(FIRMA_DIR) / 'contratacion'; firma_folder.mkdir(parents=True, exist_ok=True)
+            firma_path = guardar_data_url(request.form.get('firma_data'), str(firma_folder), f'firma_{dni}_{now_file()}') if request.form.get('firma_data') else ''
+            foto_path = guardar_data_url(request.form.get('foto_data'), str(firma_folder), f'foto_{dni}_{now_file()}') if request.form.get('foto_data') else ''
+            if not foto_path and request.form.get('usar_foto_postulante') == 'SI':
+                foto_path = row.get('foto_postulante_path') or ''
+            doc_key = request.form.get('documento_key') or 'TODOS'
+            keys = [d['key'] for d in CONTRATACION_DOCS_CATALOGO_306] if doc_key == 'TODOS' else [doc_key]
+            paquete_id = f"PKG-{dni}-{now_file()}" if len(keys) > 1 else ''
+            generated = _ct309_generate_docs_for_row(row, keys)
+            if not generated:
+                flash('No se generó ningún Word. Revise que las plantillas estén cargadas en Configuración.', 'danger')
+                return redirect(url_for('contratacion_firma_bio', req=req_id))
+            count = 0
+            for g in generated:
+                doc = g['doc']
+                execute('''INSERT INTO contratacion_firmas_bio(dni,trabajador,documento,metodo,firma_path,foto_path,fecha,hora,fecha_hora,registrado_por,observacion,requerimiento_id,requerimiento,documento_key,generated_doc_path,paquete_firma)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        (dni, row.get('nombres'), doc['nombre'], 'FIRMA TODOS' if len(keys)>1 else 'FACIAL+DIGITAL', firma_path, foto_path,
+                         today_str(), datetime.now().strftime('%H:%M:%S'), now_str(), session.get('usuario'), request.form.get('observacion'),
+                         req_id, row.get('requerimiento'), doc['key'], str(g['path']), paquete_id), commit=True)
+                count += 1
+            doc_nombre = 'TODOS LOS DOCUMENTOS' if len(keys) > 1 else (_ct_doc306(keys[0])['nombre'] if keys else '')
+            execute("UPDATE contratacion_ingresos SET firma_estado='FIRMADO', documento_firma_key=?, documento_firma_nombre=?, observacion=? WHERE id=?",
+                    (doc_key, doc_nombre, request.form.get('observacion'), row.get('id')), commit=True)
+            flash(f'Firma registrada para {count} documento(s).', 'success')
+            return redirect(url_for('contratacion_firma_bio', req=req_id))
+        except Exception as e:
+            flash('Error al firmar documentos: ' + str(e), 'danger')
+            return redirect(url_for('contratacion_firma_bio', req=req_id))
+    try:
+        reqs = rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250', fetchall=True))
+    except Exception as e:
+        reqs = []; flash('No se pudieron leer requerimientos: ' + str(e), 'danger')
+    try:
+        posts = rows_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE (?="" OR requerimiento_id=?) ORDER BY id DESC LIMIT 250', (str(req_id or ''), str(req_id or '')), fetchall=True))
+    except Exception as e:
+        posts = []; flash('No se pudieron leer postulantes: ' + str(e), 'danger')
+    firmados = {}
+    try:
+        for r in rows_to_dict(execute('SELECT dni, COUNT(*) AS c FROM contratacion_firmas_bio GROUP BY dni', fetchall=True)):
+            firmados[r.get('dni')] = r.get('c') or 0
+    except Exception as e:
+        flash('Se corrigió tabla de firmas. Actualice la página si no ve datos: ' + str(e), 'warning')
+    all_opts = "<option value='TODOS'>TODOS LOS DOCUMENTOS</option>" + _ct_doc_options306('contrato_campo')
+    body = _ct_css306() + r'''<div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-camera"></i></div><div class="ttl">Firma facial / digital</div></div><div class="ct290-body">{{nav|safe}}<div class="ct306-docbox"><b>Firma masiva de documentos.</b><br>Seleccione <b>TODOS LOS DOCUMENTOS</b> para generar y firmar todos los Word del trabajador en una sola captura.</div><form method="get" class="ct290-form"><label>Requerimiento</label><select class="form-select" name="req" onchange="this.form.submit()">{{req_opts|safe}}</select></form><form method="post" class="ct290-form" onsubmit="return prepFirma306()"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><input type="hidden" id="firmaData306" name="firma_data"><input type="hidden" id="fotoData306" name="foto_data"><label>DNI</label><div class="ct306-inputgroup"><input id="dniFirma306" name="dni" maxlength="8" class="form-control" required><button type="button" class="ct306-scan" onclick="abrirScanner('readerFirma306','dniFirma306')"><i class="bi bi-upc-scan"></i></button></div><div id="readerFirma306" class="mt-2"></div><label class="mt-2">Trabajador</label><div id="nomFirma306" class="ct306-namebox">Nombre automático.</div><div class="ct290-row mt-2"><div><label>Documento a firmar</label><select id="docKey306" name="documento_key" class="form-select">{{doc_opts|safe}}</select></div><div><label>Word llenado</label><a id="linkDoc306" class="ct306-outline" href="#"><i class="bi bi-file-earmark-zip"></i> Generar</a></div></div><div class="ct306-muted mt-2"><label><input type="checkbox" name="usar_foto_postulante" value="SI" checked> Usar fotografía de Postulantes si no capturo otra foto.</label></div><label class="mt-2">Reconocimiento facial</label><div class="ct306-cam"><video id="videoFirma306" autoplay playsinline muted></video><canvas id="fotoCanvas306" style="display:none"></canvas></div><div class="ct290-row3 mt-2"><button type="button" class="ct290-outline" onclick="openCam306()"><i class="bi bi-camera-video"></i> Cámara</button><button type="button" class="ct290-outline" onclick="capCam306()"><i class="bi bi-camera"></i> Capturar</button><button type="button" class="ct306-dangerbtn" onclick="closeCam306()"><i class="bi bi-x-circle"></i> Cerrar</button></div><label class="mt-2">Firma digital</label><canvas id="signCanvas306" class="ct306-sign"></canvas><button type="button" class="ct290-outline mt-2" onclick="clearSign306()"><i class="bi bi-eraser"></i> Limpiar firma</button><label class="mt-2">Observación</label><input name="observacion" class="form-control"><button class="ct290-btn mt-2"><i class="bi bi-check-circle"></i> Firmar documentos</button></form><div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>DNI</th><th>Postulante</th><th>Médica</th><th>Inducción</th><th>Indument.</th><th>Firma</th><th>Docs firmados</th><th>Ficha</th></tr></thead><tbody>{% for p in posts %}<tr><td>{{p.dni}}</td><td>{{p.nombres or '-'}}</td><td>{{badge(p.medica_estado)|safe}}</td><td>{{badge(p.induccion_estado)|safe}}</td><td>{{badge(p.indumentaria_estado)|safe}}</td><td>{{badge(p.firma_estado)|safe}}</td><td>{{firmados.get(p.dni,0)}}</td><td><a class="ct306-smalllink" href="{{url_for('contratacion_ficha_trabajador', ingreso_id=p.id)}}">Ficha</a></td></tr>{% else %}<tr><td colspan="8" class="text-center text-muted">Sin postulantes.</td></tr>{% endfor %}</tbody></table></div></div></div></div><script>let stream306=null;async function openCam306(){try{stream306=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});document.getElementById('videoFirma306').srcObject=stream306;}catch(e){alert('No se pudo abrir cámara. Use HTTPS/localhost y otorgue permiso.');}}function closeCam306(){try{if(stream306){stream306.getTracks().forEach(t=>t.stop());stream306=null;}const v=document.getElementById('videoFirma306');v.pause();v.srcObject=null;}catch(e){}}function capCam306(){const v=document.getElementById('videoFirma306'),c=document.getElementById('fotoCanvas306');if(!v.videoWidth){alert('Abra la cámara primero.');return;}c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);document.getElementById('fotoData306').value=c.toDataURL('image/png');c.style.display='block';v.style.display='none';closeCam306();}const s=document.getElementById('signCanvas306'),ctx=s.getContext('2d');function resizeS(){s.width=s.clientWidth*devicePixelRatio;s.height=s.clientHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);ctx.lineWidth=2;ctx.lineCap='round';}setTimeout(resizeS,80);let draw=false,last=null;function pos(e){const r=s.getBoundingClientRect(),p=e.touches?e.touches[0]:e;return{x:p.clientX-r.left,y:p.clientY-r.top};}s.addEventListener('pointerdown',e=>{draw=true;last=pos(e)});s.addEventListener('pointermove',e=>{if(!draw)return;const p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;});window.addEventListener('pointerup',()=>draw=false);function clearSign306(){ctx.clearRect(0,0,s.width,s.height);}function prepFirma306(){document.getElementById('firmaData306').value=s.toDataURL('image/png');return true;}const dni=document.getElementById('dniFirma306'),nom=document.getElementById('nomFirma306'),lnk=document.getElementById('linkDoc306'),doc=document.getElementById('docKey306');function updLink(){let v=(dni.value||'').replace(/\D/g,'').slice(-8);if(v.length===8){lnk.href=(doc.value==='TODOS'?'/contratacion/documentos/dni/'+v+'/todos':'/contratacion/documento/dni/'+v+'/'+doc.value)+'?req={{req_id}}';}else{lnk.href='#';}}async function look(){let v=(dni.value||'').replace(/\D/g,'').slice(-8);dni.value=v;updLink();if(v.length<8){nom.textContent='Nombre automático.';return;}try{let r=await fetch('/api/contratacion/postulante/'+v+'?req={{req_id}}',{cache:'no-store'});let j=await r.json();if(j.observado){nom.innerHTML='<b style="color:#991b1b">OBSERVADO/BLOQUEADO</b> · '+((j.observado_detalle||{}).motivo||'');return;}if(j.ok){nom.innerHTML='<b>'+((j.postulante||{}).nombres||'-')+'</b> · '+((j.postulante||{}).documento_firma_nombre||'');if((j.postulante||{}).documento_firma_key && doc.value!=='TODOS')doc.value=(j.postulante||{}).documento_firma_key;updLink();}else{nom.textContent=(j.trabajador||{}).nombres||'No está registrado en postulantes';}}catch(e){nom.textContent='No se pudo consultar DNI';}}dni&&dni.addEventListener('input',look);doc&&doc.addEventListener('change',updLink);</script>'''
+    return render_page(body, req_id=req_id, req_opts=_ct_req_options306(reqs, req_id), posts=posts,
+                       firmados=firmados, badge=_ct_badge306, nav=_ct_nav306('firma', req_id), doc_opts=all_opts, title='Firma contratación')
+
+
+try:
+    app.add_url_rule('/contratacion/induccion-video/<int:video_id>', 'contratacion_induccion_video', contratacion_induccion_video_313, methods=['GET'])
+except Exception:
+    app.view_functions['contratacion_induccion_video'] = contratacion_induccion_video_313
+
+app.view_functions['contratacion_etapa'] = contratacion_etapa_313
+app.view_functions['contratacion_firma_bio'] = contratacion_firma_bio_313
+
+# ===================== FIN PATCH CONTRATACIÓN 313 OMAR =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
