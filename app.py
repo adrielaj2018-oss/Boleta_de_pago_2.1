@@ -10216,6 +10216,471 @@ app.view_functions['contratacion_config'] = contratacion_config_306
 
 
 
+# ===================== PATCH CONTRATACIÓN 307 OMAR =====================
+# Mejoras: plantilla Excel integral, árbol de requerimiento, eliminación,
+# pre-registro automático, datos de contrato separados y campos dinámicos Word.
+
+
+def _ct307_add_cols():
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        for col, ddl in [
+            ('tipo_trabajador','TEXT'),('editado_por','TEXT'),('editado_en','TEXT'),('observacion','TEXT')
+        ]:
+            _add_column_if_missing(cur, 'contratacion_requerimientos', col, ddl)
+        for col, ddl in [
+            ('tipo_trabajador','TEXT'),('regimen','TEXT'),('contrato_admin_ok','INTEGER DEFAULT 0'),
+            ('contrato_admin_por','TEXT'),('contrato_admin_en','TEXT'),('documento_firma_key','TEXT'),('documento_firma_nombre','TEXT')
+        ]:
+            _add_column_if_missing(cur, 'contratacion_ingresos', col, ddl)
+        for col, ddl in [('tipo_trabajador','TEXT'),('regimen_laboral','TEXT'),('tipo_contrato','TEXT')]:
+            try: _add_column_if_missing(cur, 'trabajadores', col, ddl)
+            except Exception: pass
+        idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS contratacion_maestro_estructura(
+            id {idtype}, empresa TEXT, tipo_trabajador TEXT, regimen_laboral TEXT, area TEXT,
+            actividad TEXT, cargo TEXT, tipo_contrato TEXT, estado TEXT DEFAULT 'ACTIVO', creado_en TEXT)'''))
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS contratacion_campos_extra(
+            id {idtype}, campo TEXT UNIQUE, etiqueta TEXT, obligatorio TEXT DEFAULT 'NO', tipo_dato TEXT DEFAULT 'TEXTO',
+            valor_defecto TEXT, estado TEXT DEFAULT 'ACTIVO', creado_en TEXT)'''))
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS contratacion_campos_valores(
+            id {idtype}, ingreso_id INTEGER, campo TEXT, valor TEXT, actualizado_en TEXT)'''))
+        conn.commit()
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+
+
+def _ensure_contratacion_307():
+    _ensure_contratacion_306()
+    _ct307_add_cols()
+
+
+def _ct307_norm_key(v):
+    s = _ct_norm306(v).replace(' ', '_')
+    s = re.sub(r'[^A-Z0-9_]+', '', s)
+    return s
+
+
+def _ct307_distinct(col, default=None):
+    default = default or []
+    try:
+        rows = rows_to_dict(execute(f"SELECT DISTINCT {col} AS v FROM contratacion_maestro_estructura WHERE COALESCE(estado,'ACTIVO')='ACTIVO' AND COALESCE({col},'')<>'' ORDER BY {col}", fetchall=True))
+        vals = [r.get('v') for r in rows if r.get('v')]
+        return vals or default
+    except Exception:
+        return default
+
+
+def _ct307_options(vals, selected=''):
+    out = ['<option value="">Seleccione...</option>']
+    for v in vals:
+        sel = 'selected' if _ct_norm306(v) == _ct_norm306(selected) else ''
+        out.append(f'<option value="{_ct_h306(v)}" {sel}>{_ct_h306(v)}</option>')
+    return ''.join(out)
+
+
+def _ct307_tree_rows():
+    try:
+        rows = rows_to_dict(execute("SELECT empresa,tipo_trabajador,regimen_laboral,area,actividad,cargo,tipo_contrato FROM contratacion_maestro_estructura WHERE COALESCE(estado,'ACTIVO')='ACTIVO' ORDER BY empresa,tipo_trabajador,regimen_laboral,area,actividad,cargo", fetchall=True))
+        if rows: return rows
+    except Exception: pass
+    return [
+        {'empresa':'AQUANQA','tipo_trabajador':'OBRERO','regimen_laboral':'AGRARIO','area':'CAMPO','actividad':'OB_PODA / COSECHA','cargo':'OBRERO DE CAMPO','tipo_contrato':'TEMPORAL'},
+        {'empresa':'AQUANQA','tipo_trabajador':'OBRERO','regimen_laboral':'AGRARIO','area':'PACKING','actividad':'OB_PACKING','cargo':'OBRERO DE PLANTA','tipo_contrato':'INTERMITENTE'},
+        {'empresa':'AQUANQA','tipo_trabajador':'EMPLEADO','regimen_laboral':'GENERAL','area':'ADMINISTRACION','actividad':'RRHH','cargo':'ASISTENTE RRHH','tipo_contrato':'INDETERMINADO'},
+    ]
+
+
+def _ct307_req_label(r):
+    if not r: return ''
+    tt = r.get('tipo_trabajador') or ''
+    cupo = int(r.get('cantidad') or 0)
+    base = f"REQ-{int(r.get('id') or 0):03d} · {r.get('cargo') or '-'} · {r.get('area') or '-'}"
+    return base + (f" · {tt}" if tt else '') + (f" · CUPO {cupo}" if cupo else '')
+
+
+def _ct_req_label306(r):
+    return _ct307_req_label(r)
+
+
+def _ct307_req_options(reqs, selected=''):
+    html = ['<option value="">Seleccione requerimiento...</option>']
+    for r in reqs:
+        sel = 'selected' if str(r.get('id')) == str(selected) else ''
+        full = ' · CUPO COMPLETO' if _ct_req_full306(r) else ''
+        html.append(f"<option value='{r.get('id')}' {sel}>{_ct_h306(_ct307_req_label(r)+full)}</option>")
+    return ''.join(html)
+
+
+def _ct_req_options306(reqs, selected=''):
+    return _ct307_req_options(reqs, selected)
+
+
+def _ct307_excel_response(filename='plantilla_contratacion_aquanqa.xlsx'):
+    wb = Workbook(); ws = wb.active; ws.title = 'TRABAJADORES'
+    sheets = {
+        'TRABAJADORES': [
+            ['DNI','TRABAJADOR','TIPO_TRABAJADOR','EMPRESA','REGIMEN','AREA','ACTIVIDAD','CARGO','TIPO_CONTRATO','FECHA_NACIMIENTO','TELEFONO','CORREO','DIRECCION','DISTRITO','PROVINCIA','DEPARTAMENTO','ESTADO'],
+            ['74324033','AZABACHE JUAN OMAR EDUARDO','OBRERO','AQUANQA','AGRARIO','CAMPO','OB_PODA / COSECHA','OBRERO DE CAMPO','TEMPORAL','1995-01-15','999999999','correo@demo.com','AV. EJEMPLO 123','TRUJILLO','TRUJILLO','LA LIBERTAD','ACTIVO']
+        ],
+        'ESTRUCTURA_REQ': [
+            ['EMPRESA','TIPO_TRABAJADOR','REGIMEN','AREA','ACTIVIDAD','CARGO','TIPO_CONTRATO','ESTADO'],
+            ['AQUANQA','OBRERO','AGRARIO','CAMPO','OB_PODA / COSECHA','OBRERO DE CAMPO','TEMPORAL','ACTIVO'],
+            ['AQUANQA','OBRERO','AGRARIO','PACKING','OB_PACKING','OBRERO DE PLANTA','INTERMITENTE','ACTIVO'],
+            ['AQUANQA','EMPLEADO','GENERAL','ADMINISTRACION','RRHH','ASISTENTE RRHH','INDETERMINADO','ACTIVO'],
+        ],
+        'CAMPOS_EXTRA': [
+            ['CAMPO_PLANTILLA','ETIQUETA','OBLIGATORIO','TIPO_DATO','VALOR_DEFECTO','ESTADO'],
+            ['Funciones','Funciones para contrato','SI','TEXTO','','ACTIVO'],
+            ['Sede','Sede','NO','TEXTO','RAZURI','ACTIVO'],
+            ['Producto','Producto','NO','TEXTO','ARANDANO','ACTIVO'],
+        ],
+        'INSTRUCCIONES': [
+            ['PLANTILLA CONTRATACIÓN AQUANQA'],
+            ['TRABAJADORES: base para autocompletar nombres y datos por DNI.'],
+            ['ESTRUCTURA_REQ: árbol Empresa → Tipo trabajador → Régimen → Área → Actividad → Cargo → Tipo contrato.'],
+            ['CAMPOS_EXTRA: campos nuevos que se llenan y migran a Word cuando la plantilla use «Campo» o <<Campo>>.']
+        ]
+    }
+    first = True
+    for name, data in sheets.items():
+        ws = wb.active if first else wb.create_sheet(name); first = False; ws.title = name
+        for row in data: ws.append(row)
+        try:
+            for c in ws[1]:
+                c.font = Font(bold=True, color='FFFFFF'); c.fill = PatternFill('solid', fgColor='08713B'); c.alignment = Alignment(horizontal='center')
+            ws.freeze_panes = 'A2'
+            for col in ws.columns:
+                mx = max(len(str(c.value or '')) for c in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max(mx + 3, 14), 42)
+        except Exception: pass
+    out = BytesIO(); wb.save(out); out.seek(0)
+    return send_file(out, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+def contratacion_plantilla_excel_307():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_307()
+    return _ct307_excel_response()
+
+
+def _ct307_import_trabajadores(f):
+    ok = 0
+    for r in _iter_excel_upload(f):
+        dni = limpiar_dni(r.get('DNI') or r.get('DOCUMENTO'))
+        if len(dni) != 8: continue
+        nombre = limpiar_texto(r.get('TRABAJADOR') or r.get('NOMBRES') or r.get('APELLIDOS Y NOMBRES'))
+        vals = (dni,nombre,limpiar_texto(r.get('EMPRESA')),limpiar_texto(r.get('AREA') or r.get('ÁREA')),limpiar_texto(r.get('CARGO')),limpiar_texto(r.get('ACTIVIDAD')),r.get('CORREO') or r.get('EMAIL'),r.get('TELEFONO') or r.get('TELÉFONO') or r.get('CELULAR'),r.get('FECHA NACIMIENTO') or r.get('FECHA_NACIMIENTO'),r.get('DIRECCION') or r.get('DIRECCIÓN'),r.get('DISTRITO'),r.get('PROVINCIA'),r.get('DEPARTAMENTO'),limpiar_texto(r.get('TIPO_TRABAJADOR')),limpiar_texto(r.get('REGIMEN') or r.get('REGIMEN_LABORAL')),limpiar_texto(r.get('TIPO_CONTRATO')),'ACTIVO',now_str())
+        if is_pg():
+            sql = '''INSERT INTO trabajadores(dni,trabajador,empresa,area,cargo,actividad,correo,celular,fecha_nacimiento,direccion,distrito,provincia,departamento,tipo_trabajador,regimen_laboral,tipo_contrato,estado,fecha_carga)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (dni) DO UPDATE SET trabajador=EXCLUDED.trabajador,empresa=EXCLUDED.empresa,area=EXCLUDED.area,cargo=EXCLUDED.cargo,actividad=EXCLUDED.actividad,correo=EXCLUDED.correo,celular=EXCLUDED.celular,fecha_nacimiento=EXCLUDED.fecha_nacimiento,direccion=EXCLUDED.direccion,distrito=EXCLUDED.distrito,provincia=EXCLUDED.provincia,departamento=EXCLUDED.departamento,tipo_trabajador=EXCLUDED.tipo_trabajador,regimen_laboral=EXCLUDED.regimen_laboral,tipo_contrato=EXCLUDED.tipo_contrato,estado=EXCLUDED.estado,fecha_carga=EXCLUDED.fecha_carga'''
+        else:
+            sql = '''INSERT OR REPLACE INTO trabajadores(dni,trabajador,empresa,area,cargo,actividad,correo,celular,fecha_nacimiento,direccion,distrito,provincia,departamento,tipo_trabajador,regimen_laboral,tipo_contrato,estado,fecha_carga)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'''
+        execute(sql, vals, commit=True); ok += 1
+    return ok
+
+
+def _ct307_import_maestro(f):
+    ok = 0
+    for r in _iter_excel_upload(f):
+        empresa = limpiar_texto(r.get('EMPRESA'))
+        area = limpiar_texto(r.get('AREA') or r.get('ÁREA'))
+        cargo = limpiar_texto(r.get('CARGO'))
+        if not (empresa and area and cargo): continue
+        vals = (empresa, limpiar_texto(r.get('TIPO_TRABAJADOR')), limpiar_texto(r.get('REGIMEN') or r.get('REGIMEN_LABORAL')), area, limpiar_texto(r.get('ACTIVIDAD')), cargo, limpiar_texto(r.get('TIPO_CONTRATO')), limpiar_texto(r.get('ESTADO') or 'ACTIVO'), now_str())
+        execute('''INSERT INTO contratacion_maestro_estructura(empresa,tipo_trabajador,regimen_laboral,area,actividad,cargo,tipo_contrato,estado,creado_en) VALUES(?,?,?,?,?,?,?,?,?)''', vals, commit=True)
+        ok += 1
+    return ok
+
+
+def _ct307_upsert_campo(campo, etiqueta='', obligatorio='NO', tipo_dato='TEXTO', valor_defecto='', estado='ACTIVO'):
+    campo = re.sub(r'[^A-Za-z0-9_ÁÉÍÓÚÑáéíóúñ]+', '', str(campo or '').strip())
+    if not campo: return False
+    exists = int(scalar('SELECT COUNT(*) AS c FROM contratacion_campos_extra WHERE campo=?', (campo,)) or 0)
+    if exists:
+        execute('''UPDATE contratacion_campos_extra SET etiqueta=?, obligatorio=?, tipo_dato=?, valor_defecto=?, estado=? WHERE campo=?''', (etiqueta or campo, obligatorio or 'NO', tipo_dato or 'TEXTO', valor_defecto or '', estado or 'ACTIVO', campo), commit=True)
+    else:
+        execute('''INSERT INTO contratacion_campos_extra(campo,etiqueta,obligatorio,tipo_dato,valor_defecto,estado,creado_en) VALUES(?,?,?,?,?,?,?)''', (campo, etiqueta or campo, obligatorio or 'NO', tipo_dato or 'TEXTO', valor_defecto or '', estado or 'ACTIVO', now_str()), commit=True)
+    return True
+
+
+def _ct307_import_campos(f):
+    ok = 0
+    for r in _iter_excel_upload(f):
+        if _ct307_upsert_campo(r.get('CAMPO_PLANTILLA') or r.get('CAMPO'), r.get('ETIQUETA'), r.get('OBLIGATORIO'), r.get('TIPO_DATO'), r.get('VALOR_DEFECTO'), r.get('ESTADO') or 'ACTIVO'):
+            ok += 1
+    return ok
+
+
+def _ct307_template_tokens():
+    tokens = set()
+    try:
+        for d in CONTRATACION_DOCS_CATALOGO_306:
+            p = _ct_template_path306(d)
+            if not p.exists(): continue
+            with _zip306.ZipFile(p, 'r') as z:
+                for n in z.namelist():
+                    if n.startswith('word/') and n.endswith('.xml'):
+                        txt = z.read(n).decode('utf-8', errors='ignore')
+                        txt2 = re.sub(r'<[^>]+>', '', txt)
+                        for m in re.findall(r'«([^»]{1,80})»', txt2): tokens.add(m.strip())
+                        for m in re.findall(r'<<([^>]{1,80})>>', txt2): tokens.add(m.strip())
+    except Exception: pass
+    return sorted(t for t in tokens if t)
+
+
+def _ct307_extra_fields():
+    rows = rows_to_dict(execute("SELECT * FROM contratacion_campos_extra WHERE COALESCE(estado,'ACTIVO')='ACTIVO' ORDER BY id", fetchall=True))
+    existing = {_ct307_norm_key(r.get('campo')) for r in rows}
+    for t in _ct307_template_tokens():
+        if _ct307_norm_key(t) and _ct307_norm_key(t) not in existing and _ct307_norm_key(t) not in {_ct307_norm_key(x) for x in _ct_mapping306({}).keys()}:
+            rows.append({'campo':t, 'etiqueta':t, 'obligatorio':'NO', 'tipo_dato':'TEXTO', 'valor_defecto':'', 'estado':'ACTIVO'})
+    return rows
+
+
+def _ct307_get_extra_values(ingreso_id):
+    rows = rows_to_dict(execute('SELECT campo,valor FROM contratacion_campos_valores WHERE ingreso_id=?', (ingreso_id,), fetchall=True))
+    return {r.get('campo'): r.get('valor') for r in rows}
+
+
+def _ct307_save_extra_values(ingreso_id, form):
+    for f in _ct307_extra_fields():
+        campo = f.get('campo')
+        if not campo: continue
+        valor = form.get('extra_' + campo, '')
+        exists = int(scalar('SELECT COUNT(*) AS c FROM contratacion_campos_valores WHERE ingreso_id=? AND campo=?', (ingreso_id, campo)) or 0)
+        if exists:
+            execute('UPDATE contratacion_campos_valores SET valor=?, actualizado_en=? WHERE ingreso_id=? AND campo=?', (valor, now_str(), ingreso_id, campo), commit=True)
+        else:
+            execute('INSERT INTO contratacion_campos_valores(ingreso_id,campo,valor,actualizado_en) VALUES(?,?,?,?)', (ingreso_id, campo, valor, now_str()), commit=True)
+
+
+def _ct_mapping307(row):
+    mp = _ct_mapping306(row or {})
+    if row:
+        mp.update({
+            'Empresa': row.get('empresa') or '', 'TipoTrabajador': row.get('tipo_trabajador') or row.get('tipo_ingreso') or '',
+            'RegimenLaboral': row.get('regimen_laboral') or row.get('regimen') or '', 'TipoContrato': row.get('tipo_contrato') or '',
+            'FechaInicioContrato': row.get('fecha_inicio') or '', 'FechaFinContrato': row.get('fecha_fin') or '',
+            'Basico': row.get('basico') or '', 'RemunBasicaAgraria': row.get('basico') or '',
+            'NombreTrabajador': row.get('nombres') or '', 'Email': row.get('correo') or '', 'NroTelefonoMovil': row.get('telefono') or '',
+        })
+        for k in row.keys():
+            val = row.get(k)
+            camel = ''.join(w.capitalize() if i else w for i,w in enumerate(str(k).split('_')))
+            mp.setdefault(k, val or '')
+            mp.setdefault(camel, val or '')
+        try:
+            for k,v in _ct307_get_extra_values(row.get('id')).items(): mp[k] = v or ''
+        except Exception: pass
+    return mp
+
+
+def contratacion_documento_dni_307(dni, doc_key):
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_307(); req_id = request.args.get('req') or ''
+    row = _ct_find_postulante306(dni, req_id)
+    if not row:
+        flash('No se encontró el DNI en Postulantes para generar documento.', 'danger')
+        return redirect(url_for('contratacion_postulantes', req=req_id))
+    if not int(row.get('contrato_admin_ok') or 0):
+        flash('Primero complete Datos de contrato antes de generar/firma.', 'danger')
+        return redirect(url_for('contratacion_datos_contrato_307', ingreso_id=row.get('id')))
+    doc = _ct_doc306(doc_key)
+    src = _ct_template_path306(doc)
+    if not src.exists():
+        flash('Falta cargar la plantilla Word: ' + doc['file'], 'danger')
+        return redirect(url_for('contratacion_config'))
+    safe = re.sub(r'[^A-Z0-9_]+', '_', _ct_norm306(doc['nombre']))[:50]
+    dst = CONTRATACION_DOCS_DIR_306 / f"{row.get('dni')}_{safe}_{now_file()}.docx"
+    _ct_replace_docx306(src, dst, _ct_mapping307(row))
+    return send_file(dst, as_attachment=True, download_name=dst.name, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+
+def contratacion_datos_contrato_307(ingreso_id):
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_307()
+    row = row_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE id=?', (ingreso_id,), fetchone=True))
+    if not row:
+        flash('No se encontró postulante.', 'danger'); return redirect(url_for('contratacion_postulantes'))
+    if request.method == 'POST':
+        execute('''UPDATE contratacion_ingresos SET fecha_inicio=?, fecha_fin=?, basico=?, funciones=?, documento_firma_key=?, documento_firma_nombre=?, contrato_admin_ok=1, contrato_admin_por=?, contrato_admin_en=? WHERE id=?''',
+                (request.form.get('fecha_inicio'), request.form.get('fecha_fin'), float(request.form.get('basico') or 0), request.form.get('funciones'), request.form.get('documento_firma_key') or 'contrato_campo', _ct_doc306(request.form.get('documento_firma_key') or 'contrato_campo')['nombre'], session.get('usuario'), now_str(), ingreso_id), commit=True)
+        _ct307_save_extra_values(ingreso_id, request.form)
+        flash('Datos de contrato guardados. Ya puede pasar a Firma.', 'success')
+        return redirect(url_for('contratacion_firma_bio', req=row.get('requerimiento_id')))
+    extras = _ct307_extra_fields(); vals = _ct307_get_extra_values(ingreso_id)
+    body = _ct_css306() + r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_postulantes', req=row.requerimiento_id)}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-file-earmark-text"></i></div><div class="ttl">Datos contrato</div></div><div class="ct290-body">
+      <div class="ct290-info"><b>{{row.dni}} · {{row.nombres}}</b><br>Esta ventana es solo para que el administrador complete básico, fechas, funciones y campos adicionales antes de Firma.</div>
+      <form method="post" class="ct290-form"><div class="ct290-row"><div><label>Inicio contrato <b style="color:#dc2626">*</b></label><input type="date" name="fecha_inicio" value="{{row.fecha_inicio or ''}}" class="form-control" required></div><div><label>Fin contrato <b style="color:#dc2626">*</b></label><input type="date" name="fecha_fin" value="{{row.fecha_fin or ''}}" class="form-control" required></div></div>
+      <div class="ct290-row"><div><label>Básico <b style="color:#dc2626">*</b></label><input type="number" step="0.01" name="basico" value="{{row.basico or ''}}" class="form-control" required></div><div><label>Documento firma <b style="color:#dc2626">*</b></label><select name="documento_firma_key" class="form-select">{{doc_opts|safe}}</select></div></div>
+      <label class="mt-2">Funciones para contrato <b style="color:#dc2626">*</b></label><textarea name="funciones" class="form-control" required style="height:78px">{{row.funciones or ''}}</textarea>
+      {% for f in extras %}<label class="mt-2">{{f.etiqueta or f.campo}} {% if (f.obligatorio or '').upper()=='SI' %}<b style="color:#dc2626">*</b>{% endif %}</label><input name="extra_{{f.campo}}" value="{{vals.get(f.campo) or f.valor_defecto or ''}}" class="form-control" {% if (f.obligatorio or '').upper()=='SI' %}required{% endif %}>{% endfor %}
+      <button class="ct290-btn mt-2"><i class="bi bi-save"></i> Guardar datos de contrato</button></form></div></div></div>'''
+    return render_page(body, row=row, extras=extras, vals=vals, doc_opts=_ct_doc_options306(row.get('documento_firma_key') or 'contrato_campo'), title='Datos contrato')
+
+
+def contratacion_config_307():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_307()
+    if request.method == 'POST':
+        accion = request.form.get('accion') or 'trabajadores'
+        try:
+            if accion == 'plantilla_word':
+                key = request.form.get('doc_key') or 'contrato_campo'; doc = _ct_doc306(key); f = request.files.get('archivo')
+                if not f or not f.filename.lower().endswith('.docx'): flash('Suba una plantilla Word .docx válida.', 'danger')
+                else: f.save(CONTRATACION_TEMPLATES_DIR_306 / doc['file']); flash('Plantilla Word actualizada: ' + doc['nombre'], 'success')
+            elif accion == 'trabajadores':
+                f = request.files.get('archivo'); flash(f'Trabajadores cargados/actualizados: {_ct307_import_trabajadores(f)}.', 'success')
+            elif accion == 'maestro':
+                f = request.files.get('archivo'); flash(f'Árbol requerimiento cargado: {_ct307_import_maestro(f)} filas.', 'success')
+            elif accion == 'campos_excel':
+                f = request.files.get('archivo'); flash(f'Campos extra cargados: {_ct307_import_campos(f)}.', 'success')
+            elif accion == 'campo_manual':
+                ok = _ct307_upsert_campo(request.form.get('campo'), request.form.get('etiqueta'), request.form.get('obligatorio'), request.form.get('tipo_dato'), request.form.get('valor_defecto'), request.form.get('estado') or 'ACTIVO')
+                flash('Campo guardado.' if ok else 'Campo inválido.', 'success' if ok else 'danger')
+        except Exception as e:
+            flash('Error en configuración: ' + str(e), 'danger')
+        return redirect(url_for('contratacion_config'))
+    docs = []
+    for d in CONTRATACION_DOCS_CATALOGO_306:
+        p = _ct_template_path306(d); docs.append({**d, 'existe': p.exists(), 'path': str(p)})
+    campos = rows_to_dict(execute('SELECT * FROM contratacion_campos_extra ORDER BY id DESC LIMIT 80', fetchall=True))
+    body = _ct_css306() + r'''<div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-gear"></i></div><div class="ttl">Config. contratación</div></div><div class="ct290-body"><div class="ct290-info"><b>Base y plantillas.</b><br>Descarga la plantilla Excel integral: trabajadores, árbol de requerimiento y campos extra para Word.</div><a class="ct306-btn mb-2" href="{{url_for('contratacion_plantilla_excel_307')}}"><i class="bi bi-file-earmark-excel"></i> Descargar plantilla Excel contratación</a>
+    <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="trabajadores"><label>Excel trabajadores</label><input type="file" name="archivo" accept=".xlsx,.xls" class="form-control" required><button class="ct290-btn mt-2"><i class="bi bi-upload"></i> Cargar trabajadores</button></form>
+    <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="maestro"><label>Excel árbol Empresa / Tipo / Régimen / Área / Actividad / Cargo</label><input type="file" name="archivo" accept=".xlsx,.xls" class="form-control" required><button class="ct290-btn mt-2"><i class="bi bi-diagram-3"></i> Cargar árbol requerimiento</button></form>
+    <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="campos_excel"><label>Excel campos extra para plantillas Word</label><input type="file" name="archivo" accept=".xlsx,.xls" class="form-control" required><button class="ct290-btn mt-2"><i class="bi bi-input-cursor-text"></i> Cargar campos extra</button></form>
+    <form method="post" class="ct290-form"><input type="hidden" name="accion" value="campo_manual"><label>Agregar campo manual para Word</label><div class="ct290-row"><input name="campo" class="form-control" placeholder="NombreCampo" required><select name="obligatorio" class="form-select"><option>NO</option><option>SI</option></select></div><input name="etiqueta" class="form-control mt-2" placeholder="Etiqueta visible"><div class="ct290-row mt-2"><select name="tipo_dato" class="form-select"><option>TEXTO</option><option>NUMERO</option><option>FECHA</option></select><select name="estado" class="form-select"><option>ACTIVO</option><option>INACTIVO</option></select></div><input name="valor_defecto" class="form-control mt-2" placeholder="Valor por defecto opcional"><button class="ct290-btn mt-2"><i class="bi bi-plus-circle"></i> Guardar campo</button></form>
+    <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="plantilla_word"><label>Documento Word</label><select name="doc_key" class="form-select">{{doc_opts|safe}}</select><label class="mt-2">Plantilla .docx</label><input type="file" name="archivo" accept=".docx" class="form-control" required><button class="ct290-btn mt-2"><i class="bi bi-file-earmark-word"></i> Cargar / reemplazar Word</button></form>
+    <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Documento/Campo</th><th>Estado</th><th>Campos</th></tr></thead><tbody>{% for d in docs %}<tr><td>{{d.nombre}}</td><td>{% if d.existe %}{{badge('OK')|safe}}{% else %}{{badge('PENDIENTE')|safe}}{% endif %}</td><td>{{d.campos|join(', ')}}</td></tr>{% endfor %}{% for c in campos %}<tr><td>{{c.campo}}</td><td>{{c.obligatorio}}</td><td>{{c.etiqueta}}</td></tr>{% endfor %}</tbody></table></div></div></div></div>'''
+    return render_page(body, docs=docs, campos=campos, doc_opts=_ct_doc_options306(), badge=_ct_badge306, title='Config contratación')
+
+
+def contratacion_requerimientos_307():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_307()
+    req_id = request.values.get('req') or request.form.get('requerimiento_id') or ''
+    if request.method == 'POST':
+        accion = request.form.get('accion') or 'crear'
+        if accion == 'crear':
+            execute('''INSERT INTO contratacion_requerimientos(fecha,codigo,empresa,tipo_trabajador,area,cargo,actividad,cantidad,fecha_ingreso,tipo_contrato,regimen_laboral,estado,creado_por,creado_en,observacion)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (request.form.get('fecha') or today_str(), request.form.get('codigo') or '', limpiar_texto(request.form.get('empresa') or 'AQUANQA'), limpiar_texto(request.form.get('tipo_trabajador')), limpiar_texto(request.form.get('area')), limpiar_texto(request.form.get('cargo')), limpiar_texto(request.form.get('actividad')), int(request.form.get('cantidad') or 0), request.form.get('fecha_ingreso') or today_str(), request.form.get('tipo_contrato') or 'TEMPORAL', request.form.get('regimen_laboral') or 'AGRARIO', request.form.get('estado') or 'ABIERTO', session.get('usuario'), now_str(), request.form.get('observacion')), commit=True)
+            flash('Requerimiento creado.', 'success'); return redirect(url_for('contratacion_requerimientos'))
+        req = row_to_dict(execute('SELECT * FROM contratacion_requerimientos WHERE id=?', (req_id,), fetchone=True)) if req_id else None
+        if not req:
+            flash('Seleccione requerimiento.', 'danger'); return redirect(url_for('contratacion_requerimientos'))
+        if accion == 'editar':
+            execute('''UPDATE contratacion_requerimientos SET fecha=?, empresa=?, tipo_trabajador=?, area=?, cargo=?, actividad=?, cantidad=?, fecha_ingreso=?, tipo_contrato=?, regimen_laboral=?, estado=?, observacion=?, editado_por=?, editado_en=? WHERE id=?''',
+                    (request.form.get('fecha') or req.get('fecha'), limpiar_texto(request.form.get('empresa')), limpiar_texto(request.form.get('tipo_trabajador')), limpiar_texto(request.form.get('area')), limpiar_texto(request.form.get('cargo')), limpiar_texto(request.form.get('actividad')), int(request.form.get('cantidad') or 0), request.form.get('fecha_ingreso'), request.form.get('tipo_contrato'), request.form.get('regimen_laboral'), request.form.get('estado'), request.form.get('observacion'), session.get('usuario'), now_str(), req_id), commit=True)
+            flash('Requerimiento actualizado.', 'success'); return redirect(url_for('contratacion_requerimientos', req=req_id))
+        if accion == 'eliminar_req':
+            execute('DELETE FROM contratacion_ingresos WHERE requerimiento_id=?', (req_id,), commit=True)
+            execute('DELETE FROM contratacion_requerimientos WHERE id=?', (req_id,), commit=True)
+            flash('Requerimiento eliminado junto con sus preregistros/postulantes.', 'warning'); return redirect(url_for('contratacion_requerimientos'))
+        if accion == 'eliminar_prereg':
+            ing = request.form.get('ingreso_id')
+            execute("DELETE FROM contratacion_ingresos WHERE id=? AND UPPER(COALESCE(estado,''))='PRE-REGISTRO'", (ing,), commit=True)
+            flash('Trabajador eliminado del preregistro.', 'warning'); return redirect(url_for('contratacion_requerimientos', req=req_id))
+        if accion == 'preregistro':
+            if _ct_req_full306(req):
+                flash('CUPO COMPLETO / CERRADO. Edite cantidad o estado para habilitar más DNI.', 'danger'); return redirect(url_for('contratacion_requerimientos', req=req_id))
+            dni = limpiar_dni(request.form.get('dni_prereg'))
+            if len(dni) != 8: flash('DNI inválido.', 'danger'); return redirect(url_for('contratacion_requerimientos', req=req_id))
+            if int(scalar('SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE requerimiento_id=? AND dni=?', (req_id, dni)) or 0):
+                flash('Este DNI ya está preregistrado/registrado en el requerimiento.', 'warning'); return redirect(url_for('contratacion_requerimientos', req=req_id))
+            base = _ct_worker306(dni); tipo = _ct_tipo306(dni)
+            execute('''INSERT INTO contratacion_ingresos(requerimiento_id,requerimiento,dni,nombres,telefono,correo,empresa,tipo_trabajador,area,cargo,actividad,tipo_contrato,regimen_laboral,fecha_inicio,fecha_fin,basico,estado,medica_estado,induccion_estado,indumentaria_estado,fotocheck_estado,firma_estado,observacion,creado_por,creado_en,tipo_ingreso,fecha_nacimiento,direccion,distrito,provincia,departamento,dni_validado,fuente_datos,funciones)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (req_id, _ct307_req_label(req), dni, base.get('nombres') or '', base.get('telefono') or '', base.get('correo') or '', req.get('empresa') or base.get('empresa'), req.get('tipo_trabajador') or base.get('tipo_trabajador') or tipo, req.get('area') or base.get('area'), req.get('cargo') or base.get('cargo'), req.get('actividad') or base.get('actividad'), req.get('tipo_contrato'), req.get('regimen_laboral'), req.get('fecha_ingreso'), '', 0, 'PRE-REGISTRO', 'PENDIENTE','PENDIENTE','PENDIENTE','PENDIENTE','PENDIENTE', request.form.get('obs_prereg'), session.get('usuario'), now_str(), tipo, base.get('fecha_nacimiento'), base.get('direccion'), base.get('distrito'), base.get('provincia'), base.get('departamento'), 1 if base.get('nombres') else 0, 'TRABAJADORES' if base.get('nombres') else 'LECTURA_DNI', ''), commit=True)
+            req2 = row_to_dict(execute('SELECT * FROM contratacion_requerimientos WHERE id=?', (req_id,), fetchone=True))
+            if _ct_req_full306(req2): execute("UPDATE contratacion_requerimientos SET estado='CERRADO', editado_en=? WHERE id=?", (now_str(), req_id), commit=True)
+            flash(f'Pre-registro automático guardado: {dni}.', 'success'); return redirect(url_for('contratacion_requerimientos', req=req_id))
+    reqs = rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250', fetchall=True))
+    if not req_id and reqs: req_id = str(reqs[0].get('id'))
+    req = row_to_dict(execute('SELECT * FROM contratacion_requerimientos WHERE id=?', (req_id,), fetchone=True)) if req_id else None
+    total_req = len(reqs); abiertos = sum(1 for r in reqs if _ct_norm306(r.get('estado')) not in ('CERRADO','CANCELADO')); cupos = sum(int(r.get('cantidad') or 0) for r in reqs)
+    total, post = _ct_req_counts306(req_id) if req_id else (0,0); bloqueado = _ct_req_full306(req) if req else False
+    registros = rows_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE (?="" OR requerimiento_id=?) ORDER BY id DESC LIMIT 250', (str(req_id or ''), str(req_id or '')), fetchall=True))
+    tree = _ct307_tree_rows(); empresas = sorted(set([x.get('empresa') for x in tree if x.get('empresa')]) or {'AQUANQA'}); tipos = sorted(set([x.get('tipo_trabajador') for x in tree if x.get('tipo_trabajador')]) or {'OBRERO','EMPLEADO'}); regs = sorted(set([x.get('regimen_laboral') for x in tree if x.get('regimen_laboral')]) or {'AGRARIO','GENERAL'}); areas = sorted(set([x.get('area') for x in tree if x.get('area')]) or {'CAMPO'}); acts = sorted(set([x.get('actividad') for x in tree if x.get('actividad')]) or {'OB_PODA / COSECHA'}); cargos = sorted(set([x.get('cargo') for x in tree if x.get('cargo')]) or {'OBRERO DE CAMPO'}); contratos = sorted(set([x.get('tipo_contrato') for x in tree if x.get('tipo_contrato')]) or {'TEMPORAL','INTERMITENTE','INDETERMINADO'})
+    body = _ct_css306() + r'''<div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-clipboard-plus"></i></div><div class="ttl">Requerimientos</div></div><div class="ct290-body">{{nav|safe}}<div class="ct290-kpis"><div><small>Total</small><b>{{total_req}}</b></div><div><small>Abiertos</small><b>{{abiertos}}</b></div><div><small>Cupos</small><b>{{cupos}}</b></div></div><a class="ct306-outline mb-2" href="{{url_for('contratacion_plantilla_excel_307')}}"><i class="bi bi-download"></i> Plantilla Excel</a>
+    <form method="post" class="ct290-form"><input type="hidden" name="accion" value="crear"><div class="ct290-row"><div><label>Fecha</label><input type="date" name="fecha" value="{{today}}" class="form-control" required></div><div><label>Cantidad</label><input name="cantidad" type="number" value="1" class="form-control" required></div></div><div class="ct290-row"><div><label>Empresa</label><select id="reqEmpresa" name="empresa" class="form-select" required>{{emp_opts|safe}}</select></div><div><label>Tipo trabajador</label><select id="reqTipo" name="tipo_trabajador" class="form-select" required>{{tipo_opts|safe}}</select></div></div><div class="ct290-row"><div><label>Régimen</label><select id="reqReg" name="regimen_laboral" class="form-select" required>{{reg_opts|safe}}</select></div><div><label>Área</label><select id="reqArea" name="area" class="form-select" required>{{area_opts|safe}}</select></div></div><div class="ct290-row"><div><label>Actividad</label><select id="reqAct" name="actividad" class="form-select" required>{{act_opts|safe}}</select></div><div><label>Cargo</label><select id="reqCargo" name="cargo" class="form-select" required>{{cargo_opts|safe}}</select></div></div><div class="ct290-row"><div><label>Fecha ingreso</label><input type="date" name="fecha_ingreso" value="{{today}}" class="form-control" required></div><div><label>Tipo contrato</label><select id="reqContrato" name="tipo_contrato" class="form-select" required>{{contrato_opts|safe}}</select></div></div><label>Estado</label><select name="estado" class="form-select"><option>ABIERTO</option><option>CERRADO</option><option>CANCELADO</option></select><button class="ct290-btn mt-2"><i class="bi bi-plus-circle"></i> Crear requerimiento</button></form>
+    <form method="get" class="ct290-form"><label>Requerimiento activo</label><select class="form-select" name="req" onchange="this.form.submit()">{{req_opts|safe}}</select><div class="ct306-muted mt-2">Registrados/preregistrados: <b>{{total}}</b> · Postulantes completos: <b>{{post}}</b></div></form>{% if req %}<form method="post" class="ct290-form"><input type="hidden" name="accion" value="editar"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><label>Editar requerimiento seleccionado</label><div class="ct290-row"><input type="number" name="cantidad" value="{{req.cantidad or 0}}" class="form-control"><select name="estado" class="form-select"><option {% if req.estado=='ABIERTO' %}selected{% endif %}>ABIERTO</option><option {% if req.estado=='CERRADO' %}selected{% endif %}>CERRADO</option><option {% if req.estado=='CANCELADO' %}selected{% endif %}>CANCELADO</option></select></div><input type="hidden" name="fecha" value="{{req.fecha or today}}"><input type="hidden" name="empresa" value="{{req.empresa or ''}}"><input type="hidden" name="tipo_trabajador" value="{{req.tipo_trabajador or ''}}"><input type="hidden" name="area" value="{{req.area or ''}}"><input type="hidden" name="cargo" value="{{req.cargo or ''}}"><input type="hidden" name="actividad" value="{{req.actividad or ''}}"><input type="hidden" name="fecha_ingreso" value="{{req.fecha_ingreso or today}}"><input type="hidden" name="tipo_contrato" value="{{req.tipo_contrato or ''}}"><input type="hidden" name="regimen_laboral" value="{{req.regimen_laboral or ''}}"><button class="ct306-btn mt-2"><i class="bi bi-pencil-square"></i> Actualizar cupo/estado</button></form><form method="post" onsubmit="return confirm('¿Eliminar requerimiento y todos sus preregistros/postulantes?')"><input type="hidden" name="accion" value="eliminar_req"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><button class="ct306-dangerbtn mb-2"><i class="bi bi-trash"></i> Eliminar requerimiento</button></form>{% endif %}{% if bloqueado %}<div class="ct306-lock"><i class="bi bi-lock-fill"></i> CUPO COMPLETO / CERRADO. No se puede digitar DNI ni usar cámara hasta editar cantidad o estado.</div>{% endif %}
+    <form method="post" id="frmPre307" class="ct290-form"><input type="hidden" name="accion" value="preregistro"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><label>Pre-registro DNI / QR / Código barras</label><div class="ct306-inputgroup"><input id="dniPre307" name="dni_prereg" class="form-control" maxlength="20" inputmode="numeric" autocomplete="off" {% if bloqueado or not req %}disabled{% endif %}><button class="ct306-scan" type="button" onclick="abrirScanner('readerPre307','dniPre307')" {% if bloqueado or not req %}disabled{% endif %}><i class="bi bi-upc-scan"></i></button></div><div id="readerPre307" class="mt-2"></div><div id="preName307" class="ct306-namebox mt-2">Al detectar 8 dígitos se guarda automáticamente.</div><input type="hidden" name="obs_prereg"><button class="ct290-btn mt-2" {% if bloqueado or not req %}disabled{% endif %}><i class="bi bi-person-plus"></i> Guardar manual</button></form>
+    <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>DNI</th><th>Nombre</th><th>Tipo</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{% for r in registros %}<tr><td>{{r.dni}}</td><td>{{r.nombres or '-'}}</td><td>{{r.tipo_ingreso or r.tipo_trabajador or '-'}}</td><td>{{badge(r.estado)|safe}}</td><td>{% if (r.estado or '').upper()=='PRE-REGISTRO' %}<form method="post" onsubmit="return confirm('¿Quitar trabajador del preregistro?')"><input type="hidden" name="accion" value="eliminar_prereg"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><input type="hidden" name="ingreso_id" value="{{r.id}}"><button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button></form>{% else %}-{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Sin registros.</td></tr>{% endfor %}</tbody></table></div></div></div></div><script>const tree307={{tree_json|safe}};function fillSel(id,vals,sel){const e=document.getElementById(id);if(!e)return;const cur=sel||e.value;e.innerHTML='<option value="">Seleccione...</option>'+[...new Set(vals.filter(Boolean))].sort().map(v=>'<option '+(v==cur?'selected':'')+'>'+v+'</option>').join('');}function cascade307(){let emp=reqEmpresa.value,t=reqTipo.value,reg=reqReg.value,ar=reqArea.value,ac=reqAct.value;let f=tree307.filter(x=>(!emp||x.empresa==emp)&&(!t||x.tipo_trabajador==t)&&(!reg||x.regimen_laboral==reg));fillSel('reqArea',f.map(x=>x.area),ar);ar=reqArea.value;f=f.filter(x=>(!ar||x.area==ar));fillSel('reqAct',f.map(x=>x.actividad),ac);ac=reqAct.value;f=f.filter(x=>(!ac||x.actividad==ac));fillSel('reqCargo',f.map(x=>x.cargo),reqCargo.value);fillSel('reqContrato',f.map(x=>x.tipo_contrato),reqContrato.value);}['reqEmpresa','reqTipo','reqReg','reqArea','reqAct'].forEach(id=>{let e=document.getElementById(id);e&&e.addEventListener('change',cascade307)});cascade307();(function(){const d=document.getElementById('dniPre307'),n=document.getElementById('preName307'),f=document.getElementById('frmPre307');let sent='';async function look(){let v=(d.value||'').replace(/\D/g,'').slice(-8);d.value=v;if(v.length<8){n.textContent='Al detectar 8 dígitos se guarda automáticamente.';return;}let r=await fetch('/api/contratacion/dni/'+v,{cache:'no-store'});let j=await r.json();n.innerHTML=(j.trabajador&&j.trabajador.nombres?'<b>'+j.trabajador.nombres+'</b> · ':'')+(j.tipo||'')+' · guardando...'; if(v!==sent){sent=v;setTimeout(()=>f.submit(),350);}}d&&d.addEventListener('input',look);})();</script>'''
+    return render_page(body, nav=_ct_nav306('requerimientos', req_id), reqs=reqs, req=req, req_id=req_id, total_req=total_req, abiertos=abiertos, cupos=cupos, total=total, post=post, registros=registros, bloqueado=bloqueado, req_opts=_ct307_req_options(reqs, req_id), emp_opts=_ct307_options(empresas, (req or {}).get('empresa') or 'AQUANQA'), tipo_opts=_ct307_options(tipos, (req or {}).get('tipo_trabajador')), reg_opts=_ct307_options(regs, (req or {}).get('regimen_laboral')), area_opts=_ct307_options(areas, (req or {}).get('area')), act_opts=_ct307_options(acts, (req or {}).get('actividad')), cargo_opts=_ct307_options(cargos, (req or {}).get('cargo')), contrato_opts=_ct307_options(contratos, (req or {}).get('tipo_contrato')), tree_json=json.dumps(tree), today=today_str(), badge=_ct_badge306, title='Requerimientos')
+
+
+def contratacion_postulantes_307():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_307()
+    reqs = rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250', fetchall=True))
+    req_id = request.values.get('req') or request.form.get('requerimiento_id') or (str(reqs[0]['id']) if reqs else '')
+    req = row_to_dict(execute('SELECT * FROM contratacion_requerimientos WHERE id=?', (req_id,), fetchone=True)) if req_id else None
+    if request.method == 'POST':
+        if not req: flash('Seleccione requerimiento.', 'danger'); return redirect(url_for('contratacion_postulantes'))
+        dni = limpiar_dni(request.form.get('dni'))
+        if len(dni) != 8: flash('DNI inválido.', 'danger'); return redirect(url_for('contratacion_postulantes', req=req_id))
+        row = _ct_find_postulante306(dni, req_id)
+        if not row and _ct_req_full306(req): flash('Requerimiento con cupo completo/cerrado.', 'danger'); return redirect(url_for('contratacion_postulantes', req=req_id))
+        base = _ct_worker306(dni); tipo = _ct_tipo306(dni)
+        data = {'nombres': limpiar_texto(request.form.get('nombres') or base.get('nombres')), 'telefono': request.form.get('telefono') or base.get('telefono'), 'correo': request.form.get('correo') or base.get('correo'), 'fecha_nacimiento': request.form.get('fecha_nacimiento') or base.get('fecha_nacimiento'), 'direccion': request.form.get('direccion') or base.get('direccion'), 'distrito': request.form.get('distrito') or base.get('distrito'), 'provincia': request.form.get('provincia') or base.get('provincia'), 'departamento': request.form.get('departamento') or base.get('departamento'), 'observacion': request.form.get('observacion')}
+        empresa, tt, area, cargo, act, tc, reg = req.get('empresa'), req.get('tipo_trabajador'), req.get('area'), req.get('cargo'), req.get('actividad'), req.get('tipo_contrato'), req.get('regimen_laboral')
+        if row:
+            execute('''UPDATE contratacion_ingresos SET nombres=?,telefono=?,correo=?,empresa=?,tipo_trabajador=?,area=?,cargo=?,actividad=?,tipo_contrato=?,regimen_laboral=?,fecha_inicio=?,estado='POSTULANTE',observacion=?,tipo_ingreso=?,fecha_nacimiento=?,direccion=?,distrito=?,provincia=?,departamento=?,dni_validado=?,fuente_datos=? WHERE id=?''',
+                    (data['nombres'],data['telefono'],data['correo'],empresa,tt,area,cargo,act,tc,reg,req.get('fecha_ingreso'),data['observacion'],tipo,data['fecha_nacimiento'],data['direccion'],data['distrito'],data['provincia'],data['departamento'],1 if base.get('nombres') else 0,'TRABAJADORES' if base.get('nombres') else 'DIGITADO',row.get('id')), commit=True)
+            flash('Postulante actualizado desde preregistro.', 'success')
+        else:
+            execute('''INSERT INTO contratacion_ingresos(requerimiento_id,requerimiento,dni,nombres,telefono,correo,empresa,tipo_trabajador,area,cargo,actividad,tipo_contrato,regimen_laboral,fecha_inicio,estado,medica_estado,induccion_estado,indumentaria_estado,fotocheck_estado,firma_estado,observacion,creado_por,creado_en,tipo_ingreso,fecha_nacimiento,direccion,distrito,provincia,departamento,dni_validado,fuente_datos)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (req_id,_ct307_req_label(req),dni,data['nombres'],data['telefono'],data['correo'],empresa,tt,area,cargo,act,tc,reg,req.get('fecha_ingreso'),'POSTULANTE','PENDIENTE','PENDIENTE','PENDIENTE','PENDIENTE','PENDIENTE',data['observacion'],session.get('usuario'),now_str(),tipo,data['fecha_nacimiento'],data['direccion'],data['distrito'],data['provincia'],data['departamento'],1 if base.get('nombres') else 0,'TRABAJADORES' if base.get('nombres') else 'DIGITADO'), commit=True)
+            flash(f'Postulante {tipo} registrado.', 'success')
+        return redirect(url_for('contratacion_postulantes', req=req_id))
+    posts = rows_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE (?="" OR requerimiento_id=?) ORDER BY id DESC LIMIT 250', (str(req_id or ''), str(req_id or '')), fetchall=True))
+    bloqueado = _ct_req_full306(req) if req else False
+    body = _ct_css306() + r'''<div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-person-plus"></i></div><div class="ttl">Postulantes</div></div><div class="ct290-body">{{nav|safe}}<div class="ct290-info">Los campos Empresa / Tipo trabajador / Régimen / Área / Actividad / Cargo / Tipo contrato vienen automáticamente del requerimiento. Los datos de contrato se completan después en ventana aparte.</div><form method="get" class="ct290-form"><label>Requerimiento</label><select class="form-select" name="req" onchange="this.form.submit()">{{req_opts|safe}}</select></form>{% if bloqueado %}<div class="ct306-lock">Cupo completo/cerrado. Solo puede completar postulantes ya pre-registrados.</div>{% endif %}<form method="post" class="ct290-form"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><label>DNI <b style="color:#dc2626">*</b></label><div class="ct306-inputgroup"><input id="dniPost307" name="dni" maxlength="8" class="form-control" required><button type="button" class="ct306-scan" onclick="abrirScanner('readerPost307','dniPost307')"><i class="bi bi-upc-scan"></i></button></div><div id="readerPost307" class="mt-2"></div><div id="nomPost307" class="ct306-namebox mt-2">Nombre automático al digitar DNI.</div><label class="mt-2">Nombres completos <b style="color:#dc2626">*</b></label><input id="nombresPost307" name="nombres" class="form-control" required><div class="ct290-row mt-2"><div><label>Tipo trabajador</label><input class="form-control" value="{{req.tipo_trabajador if req else ''}}" readonly></div><div><label>Régimen</label><input class="form-control" value="{{req.regimen_laboral if req else ''}}" readonly></div></div><div class="ct290-row mt-2"><div><label>Empresa</label><input class="form-control" value="{{req.empresa if req else ''}}" readonly></div><div><label>Área</label><input class="form-control" value="{{req.area if req else ''}}" readonly></div></div><div class="ct290-row mt-2"><div><label>Cargo</label><input class="form-control" value="{{req.cargo if req else ''}}" readonly></div><div><label>Actividad</label><input class="form-control" value="{{req.actividad if req else ''}}" readonly></div></div><div class="ct290-row mt-2"><div><label>Fecha nacimiento <b style="color:#dc2626">*</b></label><input id="fnPost307" type="date" name="fecha_nacimiento" class="form-control" required></div><div><label>Tipo contrato</label><input class="form-control" value="{{req.tipo_contrato if req else ''}}" readonly></div></div><div class="ct290-row mt-2"><div><label>Teléfono</label><input id="telPost307" name="telefono" class="form-control"></div><div><label>Correo</label><input id="corPost307" name="correo" class="form-control"></div></div><label class="mt-2">Dirección <b style="color:#dc2626">*</b></label><input id="dirPost307" name="direccion" class="form-control" required><div class="ct290-row mt-2"><input id="distPost307" name="distrito" class="form-control" placeholder="Distrito" required><input id="provPost307" name="provincia" class="form-control" placeholder="Provincia" required></div><input id="depPost307" name="departamento" class="form-control mt-2" placeholder="Departamento" required><label class="mt-2">Observación</label><input name="observacion" class="form-control"><button class="ct290-btn mt-2"><i class="bi bi-save"></i> Guardar postulante</button></form><div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>DNI</th><th>Postulante</th><th>Estado</th><th>Contrato</th><th>Acción</th></tr></thead><tbody>{% for p in posts %}<tr><td>{{p.dni}}</td><td>{{p.nombres or '-'}}</td><td>{{badge(p.estado)|safe}}</td><td>{% if p.contrato_admin_ok %}{{badge('OK')|safe}}{% else %}{{badge('PENDIENTE')|safe}}{% endif %}</td><td><a class="ct306-smalllink" href="{{url_for('contratacion_datos_contrato_307', ingreso_id=p.id)}}"><i class="bi bi-pencil-square"></i> Datos contrato</a></td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Sin postulantes.</td></tr>{% endfor %}</tbody></table></div></div></div></div><script>(function(){const d=document.getElementById('dniPost307'),n=document.getElementById('nomPost307'),nom=document.getElementById('nombresPost307');async function look(){let v=(d.value||'').replace(/\D/g,'').slice(-8);d.value=v;if(v.length<8){n.textContent='Nombre automático al digitar DNI.';return;}let r=await fetch('/api/contratacion/dni/'+v,{cache:'no-store'});let j=await r.json();let t=j.trabajador||{};n.innerHTML=(t.nombres?'<b>'+t.nombres+'</b>':'DNI nuevo')+' · '+(j.tipo||'');if(t.nombres)nom.value=t.nombres;['telefono','correo','fecha_nacimiento','direccion','distrito','provincia','departamento'].forEach(k=>{let id={telefono:'telPost307',correo:'corPost307',fecha_nacimiento:'fnPost307',direccion:'dirPost307',distrito:'distPost307',provincia:'provPost307',departamento:'depPost307'}[k], el=document.getElementById(id); if(el&&t[k])el.value=t[k];});}d&&d.addEventListener('input',look);})();</script>'''
+    return render_page(body, req_id=req_id, req=req, req_opts=_ct307_req_options(reqs, req_id), posts=posts, bloqueado=bloqueado, badge=_ct_badge306, nav=_ct_nav306('postulantes', req_id), title='Postulantes')
+
+# Rutas nuevas / reemplazos finales 307
+try: app.add_url_rule('/contratacion/plantilla-excel', 'contratacion_plantilla_excel_307', contratacion_plantilla_excel_307, methods=['GET'])
+except Exception: app.view_functions['contratacion_plantilla_excel_307'] = contratacion_plantilla_excel_307
+try: app.add_url_rule('/contratacion/datos-contrato/<int:ingreso_id>', 'contratacion_datos_contrato_307', contratacion_datos_contrato_307, methods=['GET','POST'])
+except Exception: app.view_functions['contratacion_datos_contrato_307'] = contratacion_datos_contrato_307
+
+app.view_functions['contratacion_documento_dni'] = contratacion_documento_dni_307
+app.view_functions['contratacion_config'] = contratacion_config_307
+app.view_functions['contratacion_requerimientos'] = contratacion_requerimientos_307
+app.view_functions['contratacion_postulantes'] = contratacion_postulantes_307
+# =================== FIN PATCH CONTRATACIÓN 307 OMAR ===================
+
+
+# ===== PATCH 307B: compatibilidad plantilla/worker ampliado =====
+def _ct_worker306(dni):
+    d = limpiar_dni(dni)
+    r = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (d,), fetchone=True))
+    if not r:
+        return {'dni': d, 'nombres':'', 'telefono':'', 'correo':'', 'empresa':'', 'tipo_trabajador':'', 'regimen_laboral':'', 'tipo_contrato':'', 'area':'', 'cargo':'', 'actividad':'', 'direccion':'', 'distrito':'', 'provincia':'', 'departamento':'', 'fecha_nacimiento':''}
+    return {
+        'dni': r.get('dni') or d,
+        'nombres': r.get('trabajador') or r.get('nombre') or r.get('nombres') or '',
+        'telefono': r.get('celular') or r.get('telefono') or '',
+        'correo': r.get('correo') or r.get('email') or '',
+        'empresa': r.get('empresa') or '', 'tipo_trabajador': r.get('tipo_trabajador') or '',
+        'regimen_laboral': r.get('regimen_laboral') or r.get('regimen') or '', 'tipo_contrato': r.get('tipo_contrato') or '',
+        'area': r.get('area') or '', 'cargo': r.get('cargo') or '', 'actividad': r.get('actividad') or '',
+        'direccion': r.get('direccion') or r.get('direccion_actual') or '', 'distrito': r.get('distrito') or '',
+        'provincia': r.get('provincia') or '', 'departamento': r.get('departamento') or '',
+        'fecha_nacimiento': r.get('fecha_nacimiento') or ''
+    }
+
+# El enlace antiguo ahora descarga la plantilla integral.
+app.view_functions['contratacion_plantilla_trabajadores'] = contratacion_plantilla_excel_307
+# ===== FIN PATCH 307B =====
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
