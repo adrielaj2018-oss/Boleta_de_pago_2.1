@@ -14889,6 +14889,381 @@ except Exception as e:
     print('HE312 instalación patch pendiente:', e)
 # =================== FIN PATCH HORAS EXTRAS 312 ===================
 
+
+
+# ===================== PATCH HORAS EXTRAS 313: CARGA TRABAJADORES ULTRA SEGURA =====================
+# Esta versión evita pantalla blanca 500 en /horas-extras/cargar-trabajadores.
+# No usa la tabla central trabajadores para guardar la carga. Usa tabla propia de Horas Extras.
+# No usa flash obligatorio; devuelve pantalla controlada y vuelve al módulo.
+
+HE_TRAB_TABLE_313 = 'horas_extras_trabajadores'
+
+
+def _he313_norm_txt(v):
+    try:
+        s = '' if v is None else str(v).strip()
+        return s.upper()
+    except Exception:
+        return ''
+
+
+def _he313_dni(v):
+    try:
+        s = '' if v is None else str(v).strip()
+        if s.lower() in ('nan','none','nat'):
+            return ''
+        if re.fullmatch(r'\d+\.0', s):
+            s = s[:-2]
+        digits = re.sub(r'\D', '', s)
+        if not digits:
+            return ''
+        if len(digits) < 8:
+            digits = digits.zfill(8)
+        if len(digits) > 8:
+            digits = digits[-8:]
+        return digits
+    except Exception:
+        return ''
+
+
+def _he313_float(v, default=0.0):
+    try:
+        if v is None:
+            return default
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = str(v).strip()
+        if s.lower() in ('','nan','none','nat'):
+            return default
+        s = s.replace('S/','').replace('s/','').replace(' ', '')
+        if ',' in s and '.' in s:
+            if s.rfind(',') > s.rfind('.'):
+                s = s.replace('.', '').replace(',', '.')
+            else:
+                s = s.replace(',', '')
+        else:
+            s = s.replace(',', '.')
+        s = re.sub(r'[^0-9.\-]', '', s)
+        return float(s) if s not in ('','-','.') else default
+    except Exception:
+        return default
+
+
+def _he313_sql(sql):
+    try:
+        return qmark(sql)
+    except Exception:
+        return sql.replace('?', '%s') if 'DATABASE_URL' in globals() and DATABASE_URL else sql
+
+
+def _he313_fetchone_dict(cur):
+    r = cur.fetchone()
+    if not r:
+        return None
+    try:
+        return dict(r)
+    except Exception:
+        try:
+            cols = [d[0] for d in cur.description]
+            return dict(zip(cols, r))
+        except Exception:
+            return None
+
+
+def _he313_ensure_table(conn, cur):
+    # Tabla propia, estable y sin dependencia de estructuras anteriores.
+    cur.execute(_he313_sql(f'''CREATE TABLE IF NOT EXISTS {HE_TRAB_TABLE_313}(
+        dni TEXT PRIMARY KEY,
+        trabajador TEXT,
+        nombres TEXT,
+        empresa TEXT,
+        area TEXT,
+        cargo TEXT,
+        actividad TEXT,
+        planilla TEXT,
+        tipo_trabajador TEXT,
+        regimen TEXT,
+        regimen_laboral TEXT,
+        remuneracion REAL DEFAULT 0,
+        horas_mes REAL DEFAULT 240,
+        dia_descanso TEXT DEFAULT '',
+        estado TEXT DEFAULT 'ACTIVO',
+        fecha_carga TEXT,
+        actualizado_en TEXT,
+        origen TEXT DEFAULT 'HORAS_EXTRAS'
+    )'''))
+    conn.commit()
+    # Migración tolerante: si una columna falla, se hace rollback y continúa sin abortar la transacción PostgreSQL.
+    for col, ddl in [
+        ('trabajador','TEXT'),('nombres','TEXT'),('empresa','TEXT'),('area','TEXT'),('cargo','TEXT'),
+        ('actividad','TEXT'),('planilla','TEXT'),('tipo_trabajador','TEXT'),('regimen','TEXT'),
+        ('regimen_laboral','TEXT'),('remuneracion','REAL DEFAULT 0'),('horas_mes','REAL DEFAULT 240'),
+        ('dia_descanso',"TEXT DEFAULT ''"),('estado',"TEXT DEFAULT 'ACTIVO'"),('fecha_carga','TEXT'),
+        ('actualizado_en','TEXT'),('origen',"TEXT DEFAULT 'HORAS_EXTRAS'")
+    ]:
+        try:
+            if is_pg():
+                cur.execute(f'ALTER TABLE {HE_TRAB_TABLE_313} ADD COLUMN IF NOT EXISTS {col} {ddl}')
+            else:
+                cur.execute(f'PRAGMA table_info({HE_TRAB_TABLE_313})')
+                cols = [str(x[1]).lower() for x in cur.fetchall()]
+                if col.lower() not in cols:
+                    cur.execute(f'ALTER TABLE {HE_TRAB_TABLE_313} ADD COLUMN {col} {ddl}')
+            conn.commit()
+        except Exception as e:
+            try: conn.rollback()
+            except Exception: pass
+            print('HE313 migración columna omitida', col, e)
+
+
+def _he313_alias_header(v):
+    try:
+        n = _he_norm(v)
+    except Exception:
+        n = str(v or '').strip().upper()
+        try:
+            import unicodedata as _u
+            n = _u.normalize('NFKD', n).encode('ASCII','ignore').decode('ASCII')
+        except Exception:
+            pass
+        n = re.sub(r'[^A-Z0-9]+', '_', n).strip('_')
+    alias = {
+        'DNI':'DNI','DOCUMENTO':'DNI','NRO_DOCUMENTO':'DNI','NUMERO_DOCUMENTO':'DNI','NRO_DOC':'DNI',
+        'TRABAJADOR':'NOMBRES','NOMBRES':'NOMBRES','NOMBRE':'NOMBRES','APELLIDOS_Y_NOMBRES':'NOMBRES',
+        'APELLIDOS_NOMBRES':'NOMBRES','NOMBRES_Y_APELLIDOS':'NOMBRES','NOMBRE_COMPLETO':'NOMBRES','COLABORADOR':'NOMBRES',
+        'EMPRESA':'EMPRESA','AREA':'AREA','CARGO':'CARGO','PUESTO':'CARGO','ACTIVIDAD':'ACTIVIDAD','PLANILLA':'PLANILLA',
+        'TIPO_TRABAJADOR':'TIPO_TRABAJADOR','TIPO':'TIPO_TRABAJADOR',
+        'REGIMEN':'REGIMEN','REGIMEN_LABORAL':'REGIMEN','REMUNERACION':'REMUNERACION','BASICO':'REMUNERACION',
+        'SUELDO':'REMUNERACION','REMUNERACION_BASICA':'REMUNERACION','REMUNERACION_BASICA_MENSUAL':'REMUNERACION',
+        'HORAS_MES':'HORAS_MES','HORAS_BASE':'HORAS_MES','HORAS_MENSUALES':'HORAS_MES','JORNADA_MENSUAL':'HORAS_MES',
+        'DIA_DESCANSO':'DIA_DESCANSO','DESCANSO':'DIA_DESCANSO','DESCANSO_SEMANAL':'DIA_DESCANSO','DIA_LIBRE':'DIA_DESCANSO',
+        'ESTADO':'ESTADO'
+    }
+    return alias.get(n, n)
+
+
+def _he313_read_rows(file_storage):
+    if not file_storage:
+        raise ValueError('No llegó archivo en el formulario.')
+    filename = getattr(file_storage, 'filename', '') or ''
+    if not filename.lower().endswith(('.xlsx','.xlsm')):
+        raise ValueError('Debe subir un archivo Excel .xlsx o .xlsm.')
+    data = b''
+    try:
+        if hasattr(file_storage, 'stream'):
+            try: file_storage.stream.seek(0)
+            except Exception: pass
+        data = file_storage.read()
+    except Exception:
+        data = b''
+    if not data:
+        try:
+            if hasattr(file_storage, 'stream'):
+                file_storage.stream.seek(0)
+                data = file_storage.stream.read()
+        except Exception:
+            data = b''
+    if not data:
+        raise ValueError('El archivo llegó vacío. Vuelva a seleccionar el Excel y cargue nuevamente.')
+    try:
+        wb = load_workbook(BytesIO(data), data_only=True, read_only=True)
+    except Exception as e:
+        raise ValueError('No pude abrir el Excel. Guárdelo como .xlsx y vuelva a cargarlo. Detalle: ' + str(e))
+
+    # Buscar primero la hoja TRABAJADORES, luego cualquier hoja con DNI y NOMBRES/TRABAJADOR.
+    ordered = []
+    for pref in ('TRABAJADORES','BASE_TRABAJADORES','PERSONAL'):
+        for sh in wb.sheetnames:
+            if _he313_alias_header(sh) == _he313_alias_header(pref) and sh not in ordered:
+                ordered.append(sh)
+    ordered += [sh for sh in wb.sheetnames if sh not in ordered]
+
+    for sh in ordered:
+        ws = wb[sh]
+        header_idx = None
+        headers = []
+        for idx, rr in enumerate(ws.iter_rows(min_row=1, max_row=30, values_only=True), start=1):
+            hs = [_he313_alias_header(c) for c in rr]
+            hset = {h for h in hs if h}
+            if 'DNI' in hset and ('NOMBRES' in hset or 'TRABAJADOR' in hset):
+                header_idx = idx
+                headers = hs
+                break
+            if 'DNI' in hset and _he313_alias_header(sh) == 'TRABAJADORES':
+                header_idx = idx
+                headers = hs
+                break
+        if not header_idx:
+            continue
+        rows = []
+        for rr in ws.iter_rows(min_row=header_idx+1, values_only=True):
+            if not rr or all(v is None or str(v).strip()=='' for v in rr):
+                continue
+            item = {}
+            for i, h in enumerate(headers):
+                if h:
+                    item[h] = rr[i] if i < len(rr) else ''
+            if _he313_alias_header(item.get('DNI')) == 'DNI':
+                continue
+            rows.append(item)
+        if rows:
+            return rows, sh
+    raise ValueError('No encontré datos válidos. La hoja debe tener columnas DNI y NOMBRES.')
+
+
+def _he313_estado_carga_normal(value, actual='ACTIVO'):
+    # Base normal nunca inactiva; los cesados se procesan solo por la opción CESADOS.
+    txt = _he313_norm_txt(value).replace(' ', '_')
+    actual_txt = _he313_norm_txt(actual or 'ACTIVO') or 'ACTIVO'
+    if txt in ('ACTIVO','ACTIVE','ALTA','VIGENTE','REINGRESO','REINGRESANTE'):
+        return 'ACTIVO'
+    if txt in ('INACTIVO','CESADO','BAJA','CESE','CESADOS'):
+        return actual_txt if actual_txt else 'ACTIVO'
+    return actual_txt if actual_txt else 'ACTIVO'
+
+
+def _he313_import_trabajadores(file_storage):
+    rows, sheet_name = _he313_read_rows(file_storage)
+    conn = get_conn(); cur = conn.cursor()
+    insertados = actualizados = omitidos = 0
+    errores = []
+    try:
+        _he313_ensure_table(conn, cur)
+        for n, r in enumerate(rows, start=2):
+            try:
+                dni = _he313_dni(r.get('DNI'))
+                if len(dni) != 8:
+                    raise ValueError('DNI inválido')
+                cur.execute(_he313_sql(f'SELECT * FROM {HE_TRAB_TABLE_313} WHERE dni=?'), (dni,))
+                actual = _he313_fetchone_dict(cur) or {}
+                nombre_actual = actual.get('trabajador') or actual.get('nombres') or ''
+                nombres = _he313_norm_txt(r.get('NOMBRES') or r.get('TRABAJADOR') or r.get('NOMBRE') or nombre_actual)
+                if not nombres:
+                    raise ValueError('NOMBRES vacío')
+                regimen = _he313_norm_txt(r.get('REGIMEN') if r.get('REGIMEN') not in (None,'') else actual.get('regimen') or actual.get('regimen_laboral') or 'GENERAL') or 'GENERAL'
+                item = {
+                    'dni': dni,
+                    'trabajador': nombres,
+                    'nombres': nombres,
+                    'empresa': _he313_norm_txt(r.get('EMPRESA') if r.get('EMPRESA') not in (None,'') else actual.get('empresa') or ''),
+                    'area': _he313_norm_txt(r.get('AREA') if r.get('AREA') not in (None,'') else actual.get('area') or ''),
+                    'cargo': _he313_norm_txt(r.get('CARGO') if r.get('CARGO') not in (None,'') else actual.get('cargo') or ''),
+                    'actividad': _he313_norm_txt(r.get('ACTIVIDAD') if r.get('ACTIVIDAD') not in (None,'') else actual.get('actividad') or ''),
+                    'planilla': _he313_norm_txt(r.get('PLANILLA') if r.get('PLANILLA') not in (None,'') else actual.get('planilla') or ''),
+                    'tipo_trabajador': _he313_norm_txt(r.get('TIPO_TRABAJADOR') if r.get('TIPO_TRABAJADOR') not in (None,'') else actual.get('tipo_trabajador') or ''),
+                    'regimen': regimen,
+                    'regimen_laboral': regimen,
+                    'remuneracion': _he313_float(r.get('REMUNERACION'), actual.get('remuneracion') or 0),
+                    'horas_mes': _he313_float(r.get('HORAS_MES'), actual.get('horas_mes') or HE_DEFAULT_HORAS_MES) or HE_DEFAULT_HORAS_MES,
+                    'dia_descanso': _he313_norm_txt(r.get('DIA_DESCANSO') if r.get('DIA_DESCANSO') not in (None,'') else actual.get('dia_descanso') or '').replace('_',' '),
+                    'estado': _he313_estado_carga_normal(r.get('ESTADO'), actual.get('estado') or 'ACTIVO'),
+                    'fecha_carga': now_str(),
+                    'actualizado_en': now_str(),
+                    'origen': 'HORAS_EXTRAS'
+                }
+                if actual:
+                    cols = [c for c in item.keys() if c != 'dni']
+                    cur.execute(_he313_sql(f'UPDATE {HE_TRAB_TABLE_313} SET ' + ', '.join([f'{c}=?' for c in cols]) + ' WHERE dni=?'), tuple(item[c] for c in cols) + (dni,))
+                    actualizados += 1
+                else:
+                    cols = list(item.keys())
+                    cur.execute(_he313_sql(f'INSERT INTO {HE_TRAB_TABLE_313}(' + ','.join(cols) + ') VALUES(' + ','.join(['?']*len(cols)) + ')'), tuple(item[c] for c in cols))
+                    insertados += 1
+            except Exception as e:
+                omitidos += 1
+                try: conn.rollback()
+                except Exception: pass
+                # Reabrir transacción limpia para PostgreSQL.
+                try:
+                    _he313_ensure_table(conn, cur)
+                except Exception:
+                    pass
+                if len(errores) < 10:
+                    errores.append(f'Fila {n}: {e}')
+        conn.commit()
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+    return {'insertados': insertados, 'actualizados': actualizados, 'omitidos': omitidos, 'errores': errores, 'hoja': sheet_name, 'total': len(rows)}
+
+
+def _he313_safe_result_page(titulo, mensaje, ok=True, detalles=None):
+    detalles = detalles or []
+    color = '#166534' if ok else '#991b1b'
+    bg = '#ecfdf5' if ok else '#fef2f2'
+    lis = ''.join('<li>'+str(x)+'</li>' for x in detalles[:10])
+    html = f'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="refresh" content="3;url=/horas-extras"><title>{titulo}</title><style>body{{font-family:Arial,sans-serif;background:#f8faf8;margin:0;padding:22px;color:#163b20}}.card{{max-width:520px;margin:40px auto;background:white;border-radius:16px;box-shadow:0 8px 24px #0002;padding:22px;border-top:7px solid {color}}}.msg{{background:{bg};border:1px solid {color};border-radius:12px;padding:12px;color:{color};font-weight:800}}a{{display:block;margin-top:16px;background:#2f773b;color:white;text-align:center;padding:12px;border-radius:10px;text-decoration:none;font-weight:900}}li{{font-size:12px;margin:4px 0;white-space:pre-wrap}}</style></head><body><div class="card"><h2>{titulo}</h2><div class="msg">{mensaje}</div>{'<ul>'+lis+'</ul>' if lis else ''}<a href="/horas-extras">Volver a Horas Extras</a><div style="font-size:12px;color:#64748b;margin-top:10px">Volverá automáticamente en 3 segundos.</div></div></body></html>'''
+    return Response(html, status=200, mimetype='text/html')
+
+
+def horas_extras_cargar_trabajadores_v313():
+    # Esta ruta nunca debe terminar en Internal Server Error.
+    try:
+        if not session.get('usuario'):
+            return redirect('/login')
+        res = _he313_import_trabajadores(request.files.get('archivo'))
+        msg = f"Carga correcta desde hoja {res['hoja']}: {res['insertados']} nuevos, {res['actualizados']} actualizados, {res['omitidos']} omitidos. No se borró información ni se inactivó personal por ausencia en la base."
+        return _he313_safe_result_page('Trabajadores cargados', msg, True, res.get('errores') or [])
+    except Exception as e:
+        import traceback as _tb
+        detalle = _tb.format_exc(limit=6)
+        print('HE313 ERROR CONTROLADO cargar trabajadores:', detalle)
+        return _he313_safe_result_page('No se pudo cargar trabajadores', str(e), False, [detalle])
+
+
+def _he_worker(dni):
+    # Consulta principal del módulo HE: primero tabla propia, luego tabla central si existe.
+    d = _he313_dni(dni)
+    if not d:
+        return None
+    row = None
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        _he313_ensure_table(conn, cur)
+        cur.execute(_he313_sql(f'SELECT * FROM {HE_TRAB_TABLE_313} WHERE dni=?'), (d,))
+        row = _he313_fetchone_dict(cur)
+        cur.close(); conn.close()
+    except Exception as e:
+        print('HE313 worker tabla propia omitida:', e)
+        try:
+            cur.close(); conn.close()
+        except Exception:
+            pass
+    if not row:
+        try:
+            row = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=? LIMIT 1', (d,), fetchone=True))
+        except Exception:
+            row = None
+    if not row:
+        return None
+    nombres = row.get('trabajador') or row.get('nombres') or row.get('nombre') or ''
+    return {
+        'dni': row.get('dni') or d,
+        'nombres': nombres,
+        'trabajador': nombres,
+        'empresa': row.get('empresa') or '',
+        'area': row.get('area') or '',
+        'cargo': row.get('cargo') or '',
+        'actividad': row.get('actividad') or '',
+        'planilla': row.get('planilla') or '',
+        'regimen': row.get('regimen') or row.get('regimen_laboral') or row.get('planilla') or 'GENERAL',
+        'remuneracion': _he313_float(row.get('remuneracion'), 0),
+        'horas_mes': _he313_float(row.get('horas_mes'), HE_DEFAULT_HORAS_MES) or HE_DEFAULT_HORAS_MES,
+        'dia_descanso': row.get('dia_descanso') or '',
+        'estado': row.get('estado') or 'ACTIVO',
+    }
+
+try:
+    app.view_functions['horas_extras_cargar_trabajadores'] = horas_extras_cargar_trabajadores_v313
+    # Prueba de migración al iniciar, sin tumbar la app.
+    try:
+        _c313 = get_conn(); _cur313 = _c313.cursor(); _he313_ensure_table(_c313, _cur313); _cur313.close(); _c313.close()
+    except Exception as _e313:
+        print('HE313 migración inicial pendiente:', _e313)
+except Exception as _e313:
+    print('HE313 no pudo reemplazar endpoint:', _e313)
+# =================== FIN PATCH HORAS EXTRAS 313 ===================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
