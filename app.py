@@ -14205,6 +14205,287 @@ except Exception as e:
     print('Migración Horas Extras 310 pendiente:', e)
 # =================== FIN PATCH HORAS EXTRAS 310 ===================
 
+
+# ===================== PATCH HORAS EXTRAS 311: CARGA TRABAJADORES BLINDADA =====================
+# Corrige Internal Server Error al subir plantilla de trabajadores.
+# - Lee el Excel desde bytes para evitar problemas con FileStorage/Render.
+# - Ubica la hoja TRABAJADORES aunque la plantilla tenga varias hojas.
+# - Actualiza/agrega trabajadores sin borrar historial.
+# - La base normal NO convierte cesados a INACTIVO; para eso existe la carga CESADOS.
+# - Usa columnas existentes y migra columnas faltantes de forma segura.
+
+try:
+    import calendar as _he_calendar
+    calendar = _he_calendar
+except Exception:
+    _he_calendar = calendar if 'calendar' in globals() else None
+
+HE_COLUMN_ALIASES.update({
+    'APELLIDOS_NOMBRES':'NOMBRES', 'NOMBRES_Y_APELLIDOS':'NOMBRES', 'APELLIDOS_Y_NOMBRES_COMPLETOS':'NOMBRES',
+    'NOMBRE_COMPLETO':'NOMBRES', 'COLABORADOR':'NOMBRES', 'PERSONAL':'NOMBRES',
+    'REMUNERACION_BASICA_MENSUAL':'REMUNERACION', 'SUELDO_BASICO':'REMUNERACION', 'BASICO_MENSUAL':'REMUNERACION',
+    'JORNADA_MENSUAL':'HORAS_MES', 'H_MES':'HORAS_MES', 'BASE_HORAS_MES':'HORAS_MES',
+    'DESCANSO_MENSUAL':'DIA_DESCANSO', 'DIA_LIBRE':'DIA_DESCANSO',
+})
+
+
+def _he_table_columns_v3(table):
+    conn = None; cur = None
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        if is_pg():
+            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s", (table,))
+            rows = cur.fetchall()
+            out = set()
+            for r in rows:
+                if isinstance(r, dict):
+                    out.add(str(r.get('column_name') or '').lower())
+                else:
+                    out.add(str(r[0] or '').lower())
+            return out
+        cur.execute(f"PRAGMA table_info({table})")
+        return {str(r[1]).lower() for r in cur.fetchall()}
+    except Exception as e:
+        print('HE v311 columnas', table, e)
+        return set()
+    finally:
+        try:
+            cur.close(); conn.close()
+        except Exception:
+            pass
+
+
+def _he_ensure_trabajadores_v3():
+    idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+    try:
+        execute(f"""CREATE TABLE IF NOT EXISTS trabajadores(
+            id {idtype}, dni TEXT, trabajador TEXT, nombres TEXT, nombre TEXT,
+            empresa TEXT, area TEXT, cargo TEXT, actividad TEXT, planilla TEXT,
+            tipo_trabajador TEXT, estado TEXT DEFAULT 'ACTIVO', fecha_carga TEXT,
+            regimen TEXT, regimen_laboral TEXT, remuneracion REAL DEFAULT 0,
+            horas_mes REAL DEFAULT 240, dia_descanso TEXT DEFAULT '', actualizado_en TEXT
+        )""", commit=True)
+    except Exception as e:
+        print('HE v311 create trabajadores:', e)
+    conn = None; cur = None
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        for col, ddl in [
+            ('dni','TEXT'), ('trabajador','TEXT'), ('nombres','TEXT'), ('nombre','TEXT'),
+            ('empresa','TEXT'), ('area','TEXT'), ('cargo','TEXT'), ('actividad','TEXT'), ('planilla','TEXT'),
+            ('tipo_trabajador','TEXT'), ('estado',"TEXT DEFAULT 'ACTIVO'"), ('fecha_carga','TEXT'),
+            ('regimen','TEXT'), ('regimen_laboral','TEXT'), ('remuneracion','REAL DEFAULT 0'),
+            ('horas_mes','REAL DEFAULT 240'), ('dia_descanso',"TEXT DEFAULT ''"), ('actualizado_en','TEXT')
+        ]:
+            try:
+                _add_column_if_missing(cur, 'trabajadores', col, ddl)
+            except Exception as e:
+                print('HE v311 col trabajadores', col, e)
+        conn.commit()
+    except Exception as e:
+        print('HE v311 ensure trabajadores:', e)
+    finally:
+        try:
+            cur.close(); conn.close()
+        except Exception:
+            pass
+
+
+def _he_read_upload_bytes_v3(file_storage):
+    if not file_storage:
+        return b''
+    try:
+        if hasattr(file_storage, 'stream'):
+            try: file_storage.stream.seek(0)
+            except Exception: pass
+        data = file_storage.read()
+        if data:
+            return data
+    except Exception:
+        pass
+    try:
+        if hasattr(file_storage, 'stream'):
+            file_storage.stream.seek(0)
+            return file_storage.stream.read()
+    except Exception:
+        pass
+    return b''
+
+
+def _he_rows_from_upload_v3(file_storage, preferred_sheets=('TRABAJADORES',), required=('DNI',)):
+    data = _he_read_upload_bytes_v3(file_storage)
+    if not data:
+        raise ValueError('El archivo está vacío o no se pudo leer.')
+    wb = load_workbook(BytesIO(data), data_only=True, read_only=True)
+
+    sheet_order = []
+    for name in preferred_sheets or ():
+        for real in wb.sheetnames:
+            if _he_norm(real) == _he_norm(name):
+                sheet_order.append(real)
+                break
+    sheet_order += [s for s in wb.sheetnames if s not in sheet_order]
+
+    best_rows = []
+    for sname in sheet_order:
+        ws = wb[sname]
+        raw = list(ws.iter_rows(values_only=True))
+        if not raw:
+            continue
+        header_idx = None; headers = None
+        for idx, rr in enumerate(raw[:20]):
+            hs = [_he_alias(c) for c in rr]
+            hs_set = {h for h in hs if h}
+            if all(req in hs_set for req in required):
+                header_idx = idx; headers = hs; break
+        if header_idx is None:
+            continue
+        rows = []
+        for rr in raw[header_idx+1:]:
+            if not rr or all(v is None or str(v).strip()=='' for v in rr):
+                continue
+            item = {}
+            for i, h in enumerate(headers):
+                if h:
+                    item[h] = rr[i] if i < len(rr) else ''
+            if _he_norm(item.get('DNI')) == 'DNI':
+                continue
+            rows.append(item)
+        if rows and (not best_rows or _he_norm(sname) in {_he_norm(x) for x in preferred_sheets or ()}):
+            best_rows = rows
+            if _he_norm(sname) in {_he_norm(x) for x in preferred_sheets or ()}:
+                break
+    if not best_rows:
+        raise ValueError('No encontré una hoja válida con columna DNI. Usa la hoja TRABAJADORES de la plantilla.')
+    return best_rows
+
+
+def _he_estado_base_activa_v3(value, actual='ACTIVO'):
+    txt = limpiar_texto(value or '').replace(' ', '_')
+    actual_txt = limpiar_texto(actual or 'ACTIVO') or 'ACTIVO'
+    if txt in ('ACTIVO', 'ACTIVE', 'ALTA', 'VIGENTE', 'REINGRESO', 'REINGRESANTE'):
+        return 'ACTIVO'
+    # En carga normal no se inactiva. Los cesados van por la carga específica CESADOS.
+    if txt in ('INACTIVO', 'CESADO', 'BAJA', 'CESE', 'CESADOS'):
+        return actual_txt if actual_txt else 'ACTIVO'
+    return actual_txt if actual_txt else 'ACTIVO'
+
+
+def _he_get_worker_raw_v3(dni):
+    _he_ensure_trabajadores_v3()
+    d = limpiar_dni(dni)
+    if not d:
+        return None
+    try:
+        return row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=? LIMIT 1', (d,), fetchone=True))
+    except Exception as e:
+        print('HE v311 get worker:', e)
+        return None
+
+
+def _he_upsert_worker(data):
+    _he_ensure_trabajadores_v3()
+    dni = limpiar_dni(data.get('DNI'))
+    if len(dni) != 8:
+        raise ValueError('DNI inválido')
+    actual = _he_get_worker_raw_v3(dni) or {}
+    actual_nombre = actual.get('trabajador') or actual.get('nombres') or actual.get('nombre') or ''
+    nombres = limpiar_texto(data.get('NOMBRES') or data.get('TRABAJADOR') or actual_nombre or '')
+    if not nombres:
+        raise ValueError('Nombre vacío')
+
+    regimen = limpiar_texto(data.get('REGIMEN') if data.get('REGIMEN') not in (None,'') else actual.get('regimen') or actual.get('regimen_laboral') or 'GENERAL')
+    estado = _he_estado_base_activa_v3(data.get('ESTADO'), actual.get('estado') or 'ACTIVO')
+    item = {
+        'dni': dni,
+        'trabajador': nombres,
+        'nombres': nombres,
+        'nombre': nombres,
+        'empresa': limpiar_texto(data.get('EMPRESA') if data.get('EMPRESA') not in (None,'') else actual.get('empresa') or ''),
+        'area': limpiar_texto(data.get('AREA') if data.get('AREA') not in (None,'') else actual.get('area') or ''),
+        'cargo': limpiar_texto(data.get('CARGO') if data.get('CARGO') not in (None,'') else actual.get('cargo') or ''),
+        'actividad': limpiar_texto(data.get('ACTIVIDAD') if data.get('ACTIVIDAD') not in (None,'') else actual.get('actividad') or ''),
+        'planilla': limpiar_texto(data.get('PLANILLA') if data.get('PLANILLA') not in (None,'') else actual.get('planilla') or ''),
+        'tipo_trabajador': limpiar_texto(data.get('TIPO_TRABAJADOR') if data.get('TIPO_TRABAJADOR') not in (None,'') else actual.get('tipo_trabajador') or ''),
+        'estado': estado,
+        'fecha_carga': now_str(),
+        'regimen': regimen,
+        'regimen_laboral': regimen,
+        'remuneracion': _he_float(data.get('REMUNERACION'), actual.get('remuneracion') or 0),
+        'horas_mes': _he_float(data.get('HORAS_MES'), actual.get('horas_mes') or HE_DEFAULT_HORAS_MES) or HE_DEFAULT_HORAS_MES,
+        'dia_descanso': _he_norm(data.get('DIA_DESCANSO') if data.get('DIA_DESCANSO') not in (None,'') else actual.get('dia_descanso') or '').replace('_',' '),
+        'actualizado_en': now_str(),
+    }
+    cols = _he_table_columns_v3('trabajadores')
+    usable = {k:v for k,v in item.items() if k.lower() in cols}
+    exists = bool(actual)
+    if exists:
+        set_cols = [c for c in usable.keys() if c != 'dni']
+        if set_cols:
+            sql = 'UPDATE trabajadores SET ' + ', '.join([f'{c}=?' for c in set_cols]) + ' WHERE dni=?'
+            execute(sql, tuple(usable[c] for c in set_cols) + (dni,), commit=True)
+        return 'actualizado'
+    insert_cols = [c for c in usable.keys() if c != 'id']
+    if not insert_cols:
+        raise ValueError('No hay columnas válidas para insertar trabajador')
+    sql = 'INSERT INTO trabajadores(' + ','.join(insert_cols) + ') VALUES(' + ','.join(['?']*len(insert_cols)) + ')'
+    execute(sql, tuple(usable[c] for c in insert_cols), commit=True)
+    return 'insertado'
+
+
+def _he_import_workers(file_storage):
+    try:
+        if not file_storage or not getattr(file_storage, 'filename', '').lower().endswith(('.xlsx','.xlsm')):
+            return 0,0,0,'Suba un Excel .xlsx válido.'
+        rows = _he_rows_from_upload_v3(file_storage, ('TRABAJADORES','BASE_TRABAJADORES','PERSONAL'), ('DNI',))
+        ins=upd=omi=0; errores=[]
+        for idx, r in enumerate(rows, start=2):
+            try:
+                res = _he_upsert_worker(r)
+                if res == 'insertado': ins += 1
+                else: upd += 1
+            except Exception as e:
+                omi += 1
+                if len(errores) < 5:
+                    errores.append(f'Fila {idx}: {e}')
+        err = ''
+        if errores and ins == 0 and upd == 0:
+            err = 'No se cargó ningún trabajador. Revise columnas DNI/NOMBRES. ' + ' | '.join(errores)
+        return ins, upd, omi, err
+    except Exception as e:
+        return 0,0,0,f'Error procesando trabajadores: {e}'
+
+
+def horas_extras_cargar_trabajadores_v3():
+    try:
+        if not session.get('usuario'):
+            return redirect(url_for('login'))
+        ins, upd, omi, err = _he_import_workers(request.files.get('archivo'))
+        if err:
+            flash(err, 'danger')
+        else:
+            flash(f'Trabajadores procesados correctamente: {ins} nuevos, {upd} actualizados, {omi} omitidos. No se borró ni inactivó personal por ausencia en la base.', 'success')
+    except Exception as e:
+        print('HE v311 cargar trabajadores error:', e)
+        try:
+            flash(f'No se pudo cargar trabajadores: {e}', 'danger')
+        except Exception:
+            pass
+    return redirect(url_for('horas_extras_modulo'))
+
+
+# Reemplazar endpoint existente sin duplicar ruta.
+try:
+    app.view_functions['horas_extras_cargar_trabajadores'] = horas_extras_cargar_trabajadores_v3
+except Exception as e:
+    print('HE v311 reemplazo endpoint cargar trabajadores:', e)
+
+try:
+    _he_ensure_trabajadores_v3()
+except Exception as e:
+    print('HE v311 migración trabajadores pendiente:', e)
+# =================== FIN PATCH HORAS EXTRAS 311 ===================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
