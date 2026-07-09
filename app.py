@@ -13607,13 +13607,13 @@ def horas_extras_modulo():
     <div class="he-phone"><div class="he-app">
       <div class="he-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl"><i class="bi bi-clock-history"></i> Horas Extras</div><span class="mini">control, compensación y pago</span></div></div>
       <div class="he-body">
-        <div class="he-note"><b>Regla automática:</b> día ordinario: primeras 2 horas al 25% y saldo al 35%. Feriado/descanso: 100%. La compensación descuenta primero 100%, luego 35% y finalmente 25%.</div>
+        <div class="he-note"><b>Regla automática:</b> día ordinario: primeras 2 horas al 25% y saldo al 35%. Feriado/descanso: 100%. La compensación descuenta primero 100%, luego 35% y finalmente 25%. Feriados nacionales son generales, sin DNI; cesados se cargan aparte para cambiar solo a INACTIVO.</div>
         <form class="he-form" method="get"><div class="he-row"><div><label>Desde</label><input type="date" name="desde" class="form-control" value="{{desde}}"></div><div><label>Hasta</label><input type="date" name="hasta" class="form-control" value="{{hasta}}"></div></div><label class="mt-2">Buscar DNI / trabajador / área / cargo</label><input class="form-control" name="q" value="{{q}}" placeholder="DNI o nombre"><button class="he-btn mt-2"><i class="bi bi-search"></i> Filtrar</button></form>
         <div class="he-kpis"><div class="he-kpi"><small>Generado</small><b>{{fmt(resumen.total_generado)}}</b></div><div class="he-kpi"><small>Compensado</small><b>{{fmt(resumen.total_compensado)}}</b></div><div class="he-kpi"><small>Gozado</small><b>{{fmt(resumen.total_gozado)}}</b></div><div class="he-kpi"><small>Saldo</small><b>{{fmt(resumen.saldo_total)}}</b></div><div class="he-kpi"><small>Registros</small><b>{{resumen.registros}}</b></div><div class="he-kpi"><small>No aplicada</small><b>{{fmt(resumen.comp_no_aplicada)}}</b></div></div>
         <div class="he-total-pay"><small>Detalle final para pago luego de compensaciones</small><b>{{money(pago_total)}}</b></div>
         <div class="he-actions"><a class="he-outline" href="{{url_for('horas_extras_plantilla')}}"><i class="bi bi-download"></i> Plantilla</a><a class="he-outline" href="{{url_for('horas_extras_calendario')}}"><i class="bi bi-calendar2-week"></i> Calendario</a><a class="he-outline" href="{{url_for('exportar_horas_extras', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-file-earmark-excel"></i> Exportar</a><a class="he-outline" href="{{url_for('exportar_horas_extras_pago', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-cash-coin"></i> Pago</a></div>
         <details class="he-details" open><summary><i class="bi bi-plus-circle"></i> Registrar individual</summary><div class="inside"><form method="post" id="frmHE"><div class="he-row"><div><label>Fecha</label><input type="date" name="fecha" class="form-control" value="{{today}}" required></div><div><label>DNI</label><input id="heDni" name="dni" maxlength="8" class="form-control" required></div></div><div id="heTrabStatus" class="he-mini mt-1">Digite 8 números para traer trabajador.</div><div class="he-row3 mt-2"><div><label>Total horas</label><input name="total_horas" class="form-control" value="0"></div><div><label>Auto</label><select name="auto_calcular" class="form-select"><option value="SI">SI</option><option value="NO">NO</option></select></div><div><label>Compensación</label><input name="compensacion" class="form-control" value="0"></div></div><div class="he-row3 mt-2"><div><label>HE 25</label><input name="he25" class="form-control" value="0"></div><div><label>HE 35</label><input name="he35" class="form-control" value="0"></div><div><label>HE 100</label><input name="he100" class="form-control" value="0"></div></div><div class="he-row mt-2"><div><label>Estado compensación</label><select name="estado_compensacion" class="form-select"><option>PENDIENTE</option><option>COMPENSADA</option><option>NO APLICA</option></select></div><div><label>Motivo</label><input name="motivo" class="form-control" placeholder="PLANILLA / GOCE"></div></div><label class="mt-2">Observación</label><input name="observacion" class="form-control"><button class="he-btn mt-2"><i class="bi bi-save"></i> Guardar y recalcular</button></form></div></details>
-        <details class="he-details"><summary><i class="bi bi-cloud-arrow-up"></i> Cargas masivas</summary><div class="inside"><form method="post" action="{{url_for('horas_extras_cargar_trabajadores')}}" enctype="multipart/form-data" class="he-form"><label>Actualizar trabajadores para HE</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="he-mini">No elimina cesados ni altera datos vacíos. Actualiza por DNI y agrega nuevos ingresos.</div><button class="he-btn mt-2"><i class="bi bi-people"></i> Cargar trabajadores</button></form><form method="post" action="{{url_for('horas_extras_cargar_masiva')}}" enctype="multipart/form-data" class="he-form"><label>Carga masiva horas extras / compensaciones</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="he-btn mt-2"><i class="bi bi-clock"></i> Cargar HE</button></form></div></details>
+        <details class="he-details"><summary><i class="bi bi-cloud-arrow-up"></i> Cargas masivas</summary><div class="inside"><form method="post" action="{{url_for('horas_extras_cargar_trabajadores')}}" enctype="multipart/form-data" class="he-form"><label>Base trabajadores activos / nuevos ingresos</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="he-mini">Actualiza por DNI y agrega nuevos. No elimina trabajadores ni cambia a INACTIVO por ausencia en esta base.</div><button class="he-btn mt-2"><i class="bi bi-people"></i> Cargar trabajadores</button></form><form method="post" action="{{url_for('horas_extras_cargar_cesados')}}" enctype="multipart/form-data" class="he-form"><label>Base trabajadores cesados</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="he-mini">Solo cambia estado a INACTIVO. No borra datos ni historial.</div><button class="he-btn mt-2"><i class="bi bi-person-x"></i> Cargar cesados</button></form><form method="post" action="{{url_for('horas_extras_cargar_masiva')}}" enctype="multipart/form-data" class="he-form"><label>Carga masiva horas extras / compensaciones</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="he-btn mt-2"><i class="bi bi-clock"></i> Cargar HE</button></form><form method="post" action="{{url_for('horas_extras_cargar_descansos_mes')}}" enctype="multipart/form-data" class="he-form"><label>Carga masiva descansos por mes</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="he-mini">Hoja DESCANSOS_MES: PERIODO+DNI+DIA_DESCANSO, o FECHA+DNI, o matriz 01...31 con X/SI.</div><button class="he-btn mt-2"><i class="bi bi-calendar-week"></i> Cargar descansos</button></form><form method="post" action="{{url_for('horas_extras_cargar_feriados_nacionales')}}" enctype="multipart/form-data" class="he-form"><label>Feriados nacionales generales</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control"><div class="he-mini">Sin archivo carga feriados Perú 2026. Con Excel usar FECHA y DESCRIPCION. Siempre se guarda sin DNI.</div><button class="he-btn mt-2"><i class="bi bi-flag"></i> Cargar feriados</button></form></div></details>
         <div class="he-section">Resumen por tipo</div><div class="he-card"><div class="he-row3"><div><small>HE 100%</small><br><b>{{fmt(resumen.saldo100)}} h</b></div><div><small>HE 35%</small><br><b>{{fmt(resumen.saldo35)}} h</b></div><div><small>HE 25%</small><br><b>{{fmt(resumen.saldo25)}} h</b></div></div><div class="he-mini mt-2">Saldo ya descuenta compensaciones aplicadas en orden: 100%, 35%, 25%.</div></div>
         <div class="he-section">Detalle para pago</div><div class="he-tablewrap"><table class="he-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Saldo 25</th><th>Saldo 35</th><th>Saldo 100</th><th>Monto 25</th><th>Monto 35</th><th>Monto 100</th><th>Total</th></tr></thead><tbody>{% for t in trabajadores %}<tr><td>{{t.dni}}</td><td>{{t.nombres}}</td><td>{{fmt(t.saldo25)}}</td><td>{{fmt(t.saldo35)}}</td><td>{{fmt(t.saldo100)}}</td><td>{{money(t.monto25)}}</td><td>{{money(t.monto35)}}</td><td>{{money(t.monto100)}}</td><td><b>{{money(t.monto_total)}}</b></td></tr>{% else %}<tr><td colspan="9" class="text-center text-muted">Sin datos para pago.</td></tr>{% endfor %}</tbody></table></div>
         <div class="he-section">Registros</div><form method="post" action="{{url_for('horas_extras_marcar_compensadas')}}" class="mb-2"><input type="hidden" name="q" value="{{q}}"><input type="hidden" name="desde" value="{{desde}}"><input type="hidden" name="hasta" value="{{hasta}}"><button class="he-outline" onclick="return confirm('¿Marcar como GOZADAS/COMPENSADAS las compensaciones filtradas?')"><i class="bi bi-check2-circle"></i> Marcar gozado según filtro</button></form><div class="he-tablewrap"><table class="he-table"><thead><tr><th>Fecha</th><th>DNI</th><th>Trabajador</th><th>Tipo</th><th>Gen 25</th><th>Gen 35</th><th>Gen 100</th><th>Comp.</th><th>Pago</th><th>Estado</th><th></th></tr></thead><tbody>{% for r in rows %}<tr><td>{{display_date(r.fecha)}}</td><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{{r.tipo_dia}}</td><td>{{fmt(r.he25_brutas)}}</td><td>{{fmt(r.he35_brutas)}}</td><td>{{fmt(r.he100_brutas)}}</td><td>{{fmt(r.compensacion)}}</td><td>{{money(r.monto_total)}}</td><td><span class="he-pill {% if r.estado_compensacion=='COMPENSADA' %}warn{% endif %}">{{r.estado_compensacion}}</span></td><td><a class="text-danger" href="{{url_for('horas_extras_eliminar', item_id=r.id)}}" onclick="return confirm('¿Eliminar registro?')"><i class="bi bi-trash"></i></a></td></tr>{% else %}<tr><td colspan="11" class="text-center text-muted">Sin registros.</td></tr>{% endfor %}</tbody></table></div>
@@ -13843,6 +13843,367 @@ except Exception as e:
     print('Migración Horas Extras 309 pendiente:', e)
 
 # ===================== FIN MODULO HORAS EXTRAS OMAR 309 =====================
+
+
+
+# ===================== PATCH HORAS EXTRAS 310: DESCANSOS, FERIADOS Y CESADOS =====================
+HE_COLUMN_ALIASES.update({
+    'MES':'PERIODO', 'ANIO':'ANIO', 'ANO':'ANIO', 'AÑO':'ANIO',
+    'FECHA_DESCANSO':'FECHA', 'DESCANSO_FECHA':'FECHA', 'FECHA_FERIADO':'FECHA',
+    'DIA':'DIA_DESCANSO', 'DIA_SEMANA':'DIA_DESCANSO', 'DIA_DE_DESCANSO':'DIA_DESCANSO',
+    'TRABAJADOR_CESADO':'NOMBRES', 'NOMBRES_CESADO':'NOMBRES',
+})
+
+
+def _he_estado_activo_text(value, actual='ACTIVO'):
+    txt = limpiar_texto(value or '').replace(' ', '_')
+    actual_txt = limpiar_texto(actual or 'ACTIVO')
+    if txt in ('ACTIVO', 'ACTIVE', 'ALTA', 'VIGENTE', 'REINGRESO', 'REINGRESANTE'):
+        return 'ACTIVO'
+    if txt in ('INACTIVO', 'CESADO', 'BAJA', 'CESE', 'CESADOS'):
+        return actual_txt or 'ACTIVO'
+    return actual_txt or 'ACTIVO'
+
+
+def _he_upsert_worker(data):
+    # Carga normal: actualiza/agrega. No borra trabajadores y no inactiva cesados.
+    _he_ensure_db()
+    dni = limpiar_dni(data.get('DNI'))
+    if len(dni) != 8:
+        raise ValueError('DNI inválido')
+    actual = _he_worker(dni) or {}
+    nombres = limpiar_texto(data.get('NOMBRES') or data.get('TRABAJADOR') or actual.get('nombres') or '')
+    if not nombres:
+        raise ValueError('Nombre vacío')
+    merged = {
+        'dni': dni,
+        'trabajador': nombres,
+        'empresa': limpiar_texto(data.get('EMPRESA') if data.get('EMPRESA') not in (None,'') else actual.get('empresa') or ''),
+        'area': limpiar_texto(data.get('AREA') if data.get('AREA') not in (None,'') else actual.get('area') or ''),
+        'cargo': limpiar_texto(data.get('CARGO') if data.get('CARGO') not in (None,'') else actual.get('cargo') or ''),
+        'actividad': limpiar_texto(data.get('ACTIVIDAD') if data.get('ACTIVIDAD') not in (None,'') else actual.get('actividad') or ''),
+        'planilla': limpiar_texto(data.get('PLANILLA') if data.get('PLANILLA') not in (None,'') else actual.get('planilla') or ''),
+        'regimen': limpiar_texto(data.get('REGIMEN') if data.get('REGIMEN') not in (None,'') else actual.get('regimen') or 'GENERAL'),
+        'remuneracion': _he_float(data.get('REMUNERACION'), actual.get('remuneracion') or 0),
+        'horas_mes': _he_float(data.get('HORAS_MES'), actual.get('horas_mes') or HE_DEFAULT_HORAS_MES) or HE_DEFAULT_HORAS_MES,
+        'dia_descanso': _he_norm(data.get('DIA_DESCANSO') if data.get('DIA_DESCANSO') not in (None,'') else actual.get('dia_descanso') or '').replace('_',' '),
+        'estado': _he_estado_activo_text(data.get('ESTADO'), actual.get('estado') or 'ACTIVO'),
+        'fecha_carga': now_str(), 'actualizado_en': now_str(),
+    }
+    exists = row_to_dict(execute('SELECT id FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if exists:
+        execute('UPDATE trabajadores SET trabajador=?, empresa=?, area=?, cargo=?, actividad=?, planilla=?, estado=?, fecha_carga=?, regimen=?, remuneracion=?, horas_mes=?, dia_descanso=?, actualizado_en=? WHERE dni=?',
+                (merged['trabajador'], merged['empresa'], merged['area'], merged['cargo'], merged['actividad'], merged['planilla'], merged['estado'], merged['fecha_carga'], merged['regimen'], merged['remuneracion'], merged['horas_mes'], merged['dia_descanso'], merged['actualizado_en'], dni), commit=True)
+        return 'actualizado'
+    execute('INSERT INTO trabajadores(dni, trabajador, empresa, area, cargo, actividad, planilla, estado, fecha_carga, regimen, remuneracion, horas_mes, dia_descanso, actualizado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            (dni, merged['trabajador'], merged['empresa'], merged['area'], merged['cargo'], merged['actividad'], merged['planilla'], 'ACTIVO', merged['fecha_carga'], merged['regimen'], merged['remuneracion'], merged['horas_mes'], merged['dia_descanso'], merged['actualizado_en']), commit=True)
+    return 'insertado'
+
+
+def _he_sheet_rows_any(file_storage, preferred_sheets=()):
+    wb = load_workbook(file_storage, data_only=True, read_only=True)
+    target = None
+    for name in preferred_sheets or ():
+        if name in wb.sheetnames:
+            target = name
+            break
+    if not target:
+        target = wb.sheetnames[0]
+    ws = wb[target]
+    raw = list(ws.iter_rows(values_only=True))
+    if not raw:
+        return []
+    headers = [_he_alias(c) for c in raw[0]]
+    rows = []
+    for rr in raw[1:]:
+        if not rr or all(v is None or str(v).strip()=='' for v in rr):
+            continue
+        item = {}
+        for i, h in enumerate(headers):
+            if h:
+                item[h] = rr[i] if i < len(rr) else ''
+        rows.append(item)
+    return rows
+
+
+def _he_insert_calendario(fecha, tipo, descripcion='', dni=''):
+    _he_ensure_db()
+    fecha_iso = _he_date(fecha)
+    if not fecha_iso:
+        raise ValueError('Fecha inválida')
+    tipo = limpiar_texto(tipo or 'DESCANSO_GENERAL')
+    if tipo in ('FERIADO', 'FERIADO NACIONAL'):
+        tipo = 'FERIADO_NACIONAL'
+    if tipo in ('DESCANSO', 'DESCANSO GENERAL'):
+        tipo = 'DESCANSO_GENERAL'
+    if tipo in ('DESCANSO TRABAJADOR', 'DESCANSO_PERSONAL'):
+        tipo = 'DESCANSO_TRABAJADOR'
+    if tipo not in ('FERIADO_NACIONAL', 'DESCANSO_GENERAL', 'DESCANSO_TRABAJADOR'):
+        raise ValueError('Tipo inválido')
+    # Punto solicitado: FERIADO_NACIONAL y DESCANSO_GENERAL son generales, sin trabajador.
+    if tipo in ('FERIADO_NACIONAL', 'DESCANSO_GENERAL'):
+        dni = ''
+    else:
+        dni = limpiar_dni(dni)
+        if len(dni) != 8:
+            raise ValueError('Para descanso por trabajador indique DNI de 8 dígitos')
+    descripcion = limpiar_texto(descripcion or tipo)
+    if is_pg():
+        execute('INSERT INTO calendario_especial(fecha,tipo,dni,descripcion,creado_en) VALUES(?,?,?,?,?) ON CONFLICT(fecha,tipo,dni) DO UPDATE SET descripcion=EXCLUDED.descripcion, creado_en=EXCLUDED.creado_en',
+                (fecha_iso, tipo, dni, descripcion, now_str()), commit=True)
+    else:
+        execute('INSERT OR REPLACE INTO calendario_especial(fecha,tipo,dni,descripcion,creado_en) VALUES(?,?,?,?,?)',
+                (fecha_iso, tipo, dni, descripcion, now_str()), commit=True)
+    return fecha_iso
+
+
+def _he_parse_period(value, anio=None):
+    if isinstance(value, (datetime, date)):
+        return value.strftime('%Y-%m')
+    txt = str(value or '').strip()
+    if txt.lower() in ('', 'nan', 'none', 'nat'):
+        return None
+    txt2 = txt.replace('.', '/').replace('-', '/')
+    for fmt in ('%Y/%m', '%m/%Y', '%Y/%m/%d', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(txt2[:10], fmt).strftime('%Y-%m')
+        except Exception:
+            pass
+    if re.fullmatch(r'\d{6}', txt):
+        y1, m1 = txt[:4], txt[4:]
+        if 1900 <= int(y1) <= 2100 and 1 <= int(m1) <= 12:
+            return f'{y1}-{int(m1):02d}'
+        m2, y2 = txt[:2], txt[2:]
+        if 1900 <= int(y2) <= 2100 and 1 <= int(m2) <= 12:
+            return f'{y2}-{int(m2):02d}'
+    if anio:
+        mes = int(_he_float(value, 0)); year = int(_he_float(anio, 0))
+        if 1 <= mes <= 12 and 1900 <= year <= 2100:
+            return f'{year}-{mes:02d}'
+    return None
+
+
+def _he_weekday_index(value):
+    key = _he_norm(value).replace('_', ' ')
+    mapa = {'LUNES':0,'LUN':0,'MARTES':1,'MAR':1,'MIERCOLES':2,'MIE':2,'JUEVES':3,'JUE':3,'VIERNES':4,'VIE':4,'SABADO':5,'SAB':5,'DOMINGO':6,'DOM':6}
+    return mapa.get(key)
+
+
+def _he_dates_for_month_weekday(periodo, dia_descanso):
+    periodo = _he_parse_period(periodo)
+    wd = _he_weekday_index(dia_descanso)
+    if not periodo or wd is None:
+        return []
+    y, m = map(int, periodo.split('-'))
+    return [date(y, m, dd).strftime('%Y-%m-%d') for dd in range(1, calendar.monthrange(y, m)[1]+1) if date(y, m, dd).weekday() == wd]
+
+
+def _he_matrix_day_from_key(key):
+    k = _he_norm(key)
+    if re.fullmatch(r'\d{1,2}', k):
+        n = int(k); return n if 1 <= n <= 31 else None
+    m = re.fullmatch(r'DIA_?(\d{1,2})', k)
+    if m:
+        n = int(m.group(1)); return n if 1 <= n <= 31 else None
+    return None
+
+
+def _he_marked(value):
+    txt = str(value or '').strip().upper()
+    if txt in ('', 'NAN', 'NONE', 'NAT', 'NO', '0', 'FALSE'):
+        return False
+    return txt in ('SI', 'SÍ', 'S', 'X', 'D', 'DESCANSO', 'DESC', '1', 'TRUE', 'VERDADERO') or bool(txt)
+
+
+def _he_import_cesados(file_storage):
+    if not file_storage or not file_storage.filename.lower().endswith(('.xlsx','.xlsm')):
+        return 0,0,0,'Suba un Excel .xlsx válido con hoja CESADOS.'
+    try:
+        rows = _he_sheet_rows_any(file_storage, ('CESADOS','TRABAJADORES_CESADOS','BAJAS'))
+    except Exception as e:
+        return 0,0,0,f'No se pudo leer el Excel de cesados: {e}'
+    upd=ins=omi=0
+    for r in rows:
+        dni = limpiar_dni(r.get('DNI'))
+        if len(dni) != 8:
+            omi += 1; continue
+        nombres = limpiar_texto(r.get('NOMBRES') or r.get('TRABAJADOR') or '')
+        actual = row_to_dict(execute('SELECT id FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+        if actual:
+            execute("UPDATE trabajadores SET estado='INACTIVO', actualizado_en=?, fecha_carga=? WHERE dni=?", (now_str(), now_str(), dni), commit=True)
+            upd += 1
+        else:
+            execute('INSERT INTO trabajadores(dni, trabajador, empresa, area, cargo, actividad, planilla, estado, fecha_carga, regimen, remuneracion, horas_mes, dia_descanso, actualizado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    (dni, nombres or 'TRABAJADOR CESADO', '', '', '', '', '', 'INACTIVO', now_str(), '', 0, HE_DEFAULT_HORAS_MES, '', now_str()), commit=True)
+            ins += 1
+    return upd, ins, omi, ''
+
+
+def _he_import_feriados_nacionales(file_storage=None):
+    ok=omi=0
+    if file_storage and getattr(file_storage, 'filename', ''):
+        if not file_storage.filename.lower().endswith(('.xlsx','.xlsm')):
+            return 0,0,'Suba un Excel .xlsx válido o use el botón sin archivo.'
+        try:
+            rows = _he_sheet_rows_any(file_storage, ('FERIADOS_NACIONALES','FERIADOS'))
+        except Exception as e:
+            return 0,0,f'No se pudo leer el Excel de feriados: {e}'
+        for r in rows:
+            try:
+                fecha = _he_date(r.get('FECHA'))
+                if not fecha:
+                    omi += 1; continue
+                _he_insert_calendario(fecha, 'FERIADO_NACIONAL', r.get('DESCRIPCION') or r.get('MOTIVO') or 'FERIADO NACIONAL', '')
+                ok += 1
+            except Exception as e:
+                print('Feriado omitido:', e); omi += 1
+    else:
+        for fecha, desc in HE_FERIADOS_PERU_2026:
+            try:
+                _he_insert_calendario(fecha, 'FERIADO_NACIONAL', desc, '')
+                ok += 1
+            except Exception:
+                omi += 1
+    return ok, omi, ''
+
+
+def _he_import_descansos_mes(file_storage):
+    if not file_storage or not file_storage.filename.lower().endswith(('.xlsx','.xlsm')):
+        return 0,0,'Suba un Excel .xlsx válido con hoja DESCANSOS_MES.'
+    try:
+        rows = []
+        for _sh in ('DESCANSOS_MES','DIAS_DESCANSO','DESCANSOS','DESCANSOS_MATRIZ'):
+            try:
+                if hasattr(file_storage, 'stream'):
+                    file_storage.stream.seek(0)
+                rows.extend(_he_sheet_rows_any(file_storage, (_sh,)))
+            except Exception:
+                pass
+        if not rows:
+            if hasattr(file_storage, 'stream'):
+                file_storage.stream.seek(0)
+            rows = _he_sheet_rows_any(file_storage, ('DESCANSOS_MES','DIAS_DESCANSO','DESCANSOS','DESCANSOS_MATRIZ'))
+    except Exception as e:
+        return 0,0,f'No se pudo leer el Excel de descansos: {e}'
+    ok=omi=0
+    for r in rows:
+        try:
+            dni = limpiar_dni(r.get('DNI'))
+            desc = r.get('DESCRIPCION') or r.get('OBSERVACION') or 'DESCANSO MENSUAL'
+            fecha = _he_date(r.get('FECHA'))
+            if fecha:
+                tipo = 'DESCANSO_TRABAJADOR' if len(dni) == 8 else 'DESCANSO_GENERAL'
+                _he_insert_calendario(fecha, tipo, desc, dni)
+                ok += 1; continue
+            periodo = _he_parse_period(r.get('PERIODO'), r.get('ANIO'))
+            dia_descanso = r.get('DIA_DESCANSO') or r.get('DIA')
+            fechas = _he_dates_for_month_weekday(periodo, dia_descanso) if periodo and dia_descanso else []
+            if fechas and len(dni) == 8:
+                for f in fechas:
+                    _he_insert_calendario(f, 'DESCANSO_TRABAJADOR', f'DESCANSO {dia_descanso}', dni)
+                    ok += 1
+                continue
+            if periodo and len(dni) == 8:
+                y, m = map(int, periodo.split('-'))
+                last = calendar.monthrange(y, m)[1]
+                any_mark = False
+                for key, value in r.items():
+                    day = _he_matrix_day_from_key(key)
+                    if day and day <= last and _he_marked(value):
+                        _he_insert_calendario(date(y, m, day).strftime('%Y-%m-%d'), 'DESCANSO_TRABAJADOR', 'DESCANSO MENSUAL', dni)
+                        ok += 1; any_mark = True
+                if any_mark:
+                    continue
+            omi += 1
+        except Exception as e:
+            print('Descanso omitido:', e); omi += 1
+    return ok, omi, ''
+
+
+def horas_extras_cargar_cesados():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    upd, ins, omi, err = _he_import_cesados(request.files.get('archivo'))
+    flash(err if err else f'Base de cesados procesada: {upd} pasaron a INACTIVO, {ins} insertados como INACTIVO, {omi} omitidos. No se borró historial.', 'danger' if err else 'success')
+    return redirect(url_for('horas_extras_modulo'))
+
+
+def horas_extras_cargar_descansos_mes():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    ok, omi, err = _he_import_descansos_mes(request.files.get('archivo'))
+    flash(err if err else f'Descansos mensuales cargados: {ok} fechas registradas/actualizadas, {omi} filas omitidas.', 'danger' if err else 'success')
+    return redirect(request.referrer or url_for('horas_extras_modulo'))
+
+
+def horas_extras_cargar_feriados_nacionales():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    archivo = request.files.get('archivo')
+    ok, omi, err = _he_import_feriados_nacionales(archivo if archivo and archivo.filename else None)
+    flash(err if err else f'Feriados nacionales cargados como GENERAL: {ok} registrados/actualizados, {omi} omitidos. DNI siempre queda vacío.', 'danger' if err else 'success')
+    return redirect(request.referrer or url_for('horas_extras_modulo'))
+
+
+def horas_extras_plantilla_310():
+    _he_ensure_db()
+    wb = Workbook()
+    ws = wb.active; ws.title = 'INSTRUCCIONES'
+    ws.append(['PASO','DESCRIPCION'])
+    for r in [
+        (1, 'TRABAJADORES: actualiza/agrega activos por DNI. No elimina ausentes y no cambia a INACTIVO.'),
+        (2, 'CESADOS: subir DNI de cesados. Solo cambia estado a INACTIVO, sin borrar datos ni históricos.'),
+        (3, 'CARGA_MASIVA_HE: AUTO_CALCULAR=SI calcula 25%, 35% o 100% según calendario.'),
+        (4, 'DESCANSOS_MES: usar PERIODO + DNI + DIA_DESCANSO; o FECHA + DNI; o matriz 01...31 con X/SI.'),
+        (5, 'FERIADOS_NACIONALES: son generales. No colocar DNI; el sistema lo deja vacío.'),
+    ]:
+        ws.append(r)
+    ws = wb.create_sheet('TRABAJADORES')
+    ws.append(['DNI','NOMBRES','EMPRESA','AREA','CARGO','REGIMEN','REMUNERACION','HORAS_MES','DIA_DESCANSO','ESTADO'])
+    ws.append(['74324033','OMAR AZABACHE LUJAN','AQUANQA','REMUNERACIONES','ANALISTA','GENERAL',2500,240,'DOMINGO','ACTIVO'])
+    ws = wb.create_sheet('CESADOS')
+    ws.append(['DNI','NOMBRES','FECHA_CESE','OBSERVACION'])
+    ws.append(['12345678','TRABAJADOR CESADO','31/07/2026','SOLO CAMBIA ESTADO A INACTIVO'])
+    ws = wb.create_sheet('CARGA_MASIVA_HE')
+    ws.append(['FECHA','DNI','TOTAL_HORAS','AUTO_CALCULAR','HE_100','HE_35','HE_25','COMPENSACION','MOTIVO','OBSERVACION','ESTADO_COMPENSACION'])
+    ws.append([datetime.now().strftime('%d/%m/%Y'),'74324033',4,'SI',0,0,0,0,'CIERRE PLANILLA','EJEMPLO PAGO','NO APLICA'])
+    ws.append([datetime.now().strftime('%d/%m/%Y'),'74324033',0,'NO',0,0,0,2,'COMPENSACION','HORAS A DESCANSO','PENDIENTE'])
+    ws = wb.create_sheet('DESCANSOS_MES')
+    ws.append(['PERIODO','DNI','DIA_DESCANSO','DESCRIPCION'])
+    ws.append([datetime.now().strftime('%Y-%m'),'74324033','DOMINGO','GENERA TODOS LOS DOMINGOS DEL MES'])
+    ws.append([])
+    ws.append(['FECHA','DNI','DESCRIPCION'])
+    ws.append([datetime.now().strftime('%d/%m/%Y'),'74324033','DESCANSO ESPECIFICO'])
+    ws = wb.create_sheet('DESCANSOS_MATRIZ')
+    ws.append(['PERIODO','DNI'] + [f'{i:02d}' for i in range(1, 32)])
+    sample = [datetime.now().strftime('%Y-%m'), '74324033'] + ['' for _ in range(31)]
+    for idx in (2, 9, 16, 23):
+        sample[idx] = 'X'
+    ws.append(sample)
+    ws = wb.create_sheet('FERIADOS_NACIONALES')
+    ws.append(['FECHA','DESCRIPCION'])
+    for f,d in HE_FERIADOS_PERU_2026:
+        ws.append([_he_display_date(f), d])
+    for sheet in wb.worksheets:
+        for col in sheet.columns:
+            try:
+                sheet.column_dimensions[col[0].column_letter].width = min(max(max(len(str(c.value or '')) for c in col)+2, 12), 45)
+            except Exception:
+                pass
+    out = BytesIO(); wb.save(out); out.seek(0)
+    return send_file(out, as_attachment=True, download_name='plantilla_horas_extras_v2.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+_he_add_route('/horas-extras/cargar-cesados', 'horas_extras_cargar_cesados', horas_extras_cargar_cesados, ['POST'])
+_he_add_route('/horas-extras/cargar-descansos-mes', 'horas_extras_cargar_descansos_mes', horas_extras_cargar_descansos_mes, ['POST'])
+_he_add_route('/horas-extras/cargar-feriados-nacionales', 'horas_extras_cargar_feriados_nacionales', horas_extras_cargar_feriados_nacionales, ['POST'])
+app.view_functions['horas_extras_plantilla'] = horas_extras_plantilla_310
+
+try:
+    _he_ensure_db()
+except Exception as e:
+    print('Migración Horas Extras 310 pendiente:', e)
+# =================== FIN PATCH HORAS EXTRAS 310 ===================
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
