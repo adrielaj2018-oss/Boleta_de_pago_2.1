@@ -13094,6 +13094,756 @@ app.view_functions['contratacion_config'] = contratacion_config_314
 
 # ===================== FIN PATCH CONTRATACIÓN 316 OMAR =====================
 
+# ======================= MODULO HORAS EXTRAS OMAR 309 =======================
+# Módulo web integrado desde horas_extras_moderno_v8.py.
+# Respeta el formato móvil verde/blanco del app principal y evita tocar otros módulos.
+
+import unicodedata as _he_ud
+
+HE_DEFAULT_HORAS_MES = 240.0
+
+HE_FERIADOS_PERU_2026 = [
+    ("2026-01-01", "Año Nuevo"),
+    ("2026-04-02", "Jueves Santo"),
+    ("2026-04-03", "Viernes Santo"),
+    ("2026-05-01", "Día del Trabajo"),
+    ("2026-06-07", "Batalla de Arica y Día de la Bandera"),
+    ("2026-06-29", "San Pedro y San Pablo"),
+    ("2026-07-23", "Día de la Fuerza Aérea del Perú"),
+    ("2026-07-28", "Fiestas Patrias"),
+    ("2026-07-29", "Fiestas Patrias"),
+    ("2026-08-06", "Batalla de Junín"),
+    ("2026-08-30", "Santa Rosa de Lima"),
+    ("2026-10-08", "Combate de Angamos"),
+    ("2026-11-01", "Día de Todos los Santos"),
+    ("2026-12-08", "Inmaculada Concepción"),
+    ("2026-12-09", "Batalla de Ayacucho"),
+    ("2026-12-25", "Navidad"),
+]
+
+HE_DIAS_SEMANA = {0:"LUNES",1:"MARTES",2:"MIERCOLES",3:"JUEVES",4:"VIERNES",5:"SABADO",6:"DOMINGO"}
+
+HE_COLUMN_ALIASES = {
+    "DNI":"DNI", "DOCUMENTO":"DNI", "NRO_DOCUMENTO":"DNI", "NUMERO_DOCUMENTO":"DNI", "NRO_DOC":"DNI",
+    "APELLIDOS_Y_NOMBRES":"NOMBRES", "TRABAJADOR":"NOMBRES", "NOMBRES":"NOMBRES", "NOMBRE":"NOMBRES",
+    "EMPRESA":"EMPRESA", "AREA":"AREA", "CARGO":"CARGO", "PUESTO":"CARGO", "ACTIVIDAD":"ACTIVIDAD", "PLANILLA":"PLANILLA",
+    "REGIMEN":"REGIMEN", "REGIMEN_LABORAL":"REGIMEN", "REMUNERACION":"REMUNERACION", "BASICO":"REMUNERACION", "SUELDO":"REMUNERACION", "REMUNERACION_BASICA":"REMUNERACION",
+    "HORAS_MES":"HORAS_MES", "HORAS_BASE":"HORAS_MES", "HORAS_MENSUALES":"HORAS_MES",
+    "DIA_DESCANSO":"DIA_DESCANSO", "DESCANSO":"DIA_DESCANSO", "DESCANSO_SEMANAL":"DIA_DESCANSO",
+    "ESTADO":"ESTADO", "FECHA":"FECHA", "PERIODO":"PERIODO",
+    "TOTAL_HORAS":"TOTAL_HORAS", "HORAS_TOTALES":"TOTAL_HORAS", "HORAS":"TOTAL_HORAS",
+    "HE_25":"HE_25", "HORAS_25":"HE_25", "HORAS_EXTRAS_25":"HE_25", "HE25":"HE_25", "H25":"HE_25",
+    "HE_35":"HE_35", "HORAS_35":"HE_35", "HORAS_EXTRAS_35":"HE_35", "HE35":"HE_35", "H35":"HE_35",
+    "HE_100":"HE_100", "HORAS_100":"HE_100", "HORAS_EXTRAS_100":"HE_100", "HE100":"HE_100", "H100":"HE_100",
+    "COMPENSACION":"COMPENSACION", "HORAS_COMPENSACION":"COMPENSACION", "HORAS_A_COMPENSAR":"COMPENSACION", "COMPENSADO":"COMPENSACION",
+    "AUTO_CALCULAR":"AUTO_CALCULAR", "MOTIVO":"MOTIVO", "OBSERVACION":"OBSERVACION", "OBSERVACIONES":"OBSERVACION",
+    "ESTADO_COMPENSACION":"ESTADO_COMPENSACION", "TIPO":"TIPO", "DESCRIPCION":"DESCRIPCION",
+}
+
+
+def _he_norm(value):
+    text = str(value or '').strip().upper()
+    text = _he_ud.normalize('NFKD', text).encode('ASCII', 'ignore').decode('ASCII')
+    text = re.sub(r'[^A-Z0-9]+', '_', text)
+    return text.strip('_')
+
+
+def _he_float(value, default=0.0):
+    if value is None:
+        return default
+    text = str(value).strip()
+    if text.lower() in ('', 'nan', 'none', 'nat'):
+        return default
+    text = text.replace('S/', '').replace('s/', '').strip()
+    if ',' in text and '.' in text:
+        if text.rfind(',') > text.rfind('.'):
+            text = text.replace('.', '').replace(',', '.')
+        else:
+            text = text.replace(',', '')
+    else:
+        text = text.replace(',', '.')
+    text = re.sub(r'[^0-9.\-]', '', text)
+    try:
+        return float(text)
+    except Exception:
+        return default
+
+
+def _he_bool(value):
+    return str(value or '').strip().upper() in ('SI','SÍ','S','YES','Y','1','TRUE','VERDADERO')
+
+
+def _he_date(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d')
+    if isinstance(value, date):
+        return value.strftime('%Y-%m-%d')
+    text = str(value).strip()
+    if text.lower() in ('', 'nan', 'none', 'nat'):
+        return None
+    if re.fullmatch(r'\d+(\.0)?', text):
+        try:
+            n = int(float(text))
+            if 20000 < n < 80000:
+                base = __import__('datetime').date(1899, 12, 30)
+                return (base + __import__('datetime').timedelta(days=n)).strftime('%Y-%m-%d')
+        except Exception:
+            pass
+    for fmt in ('%Y-%m-%d','%d/%m/%Y','%d-%m-%Y','%d.%m.%Y','%Y/%m/%d'):
+        try:
+            return datetime.strptime(text[:10], fmt).strftime('%Y-%m-%d')
+        except Exception:
+            continue
+    return None
+
+
+def _he_display_date(value):
+    iso = _he_date(value)
+    if not iso:
+        return ''
+    try:
+        return datetime.strptime(iso, '%Y-%m-%d').strftime('%d/%m/%Y')
+    except Exception:
+        return iso
+
+
+def _he_periodo(fecha_iso):
+    try:
+        return datetime.strptime(fecha_iso, '%Y-%m-%d').strftime('%Y-%m')
+    except Exception:
+        return datetime.now().strftime('%Y-%m')
+
+
+def _he_money(value):
+    return f"S/ {float(value or 0):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+
+def _he_fmt(value, dec=2):
+    try:
+        return f"{float(value or 0):.{dec}f}"
+    except Exception:
+        return f"{0:.{dec}f}"
+
+
+def _he_ensure_db():
+    conn = get_conn(); cur = conn.cursor()
+    idtype = "SERIAL PRIMARY KEY" if is_pg() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    for col, ddl in [
+        ('regimen','TEXT'), ('remuneracion','REAL DEFAULT 0'), ('horas_mes','REAL DEFAULT 240'),
+        ('dia_descanso',"TEXT DEFAULT ''"), ('actualizado_en','TEXT')
+    ]:
+        _add_column_if_missing(cur, 'trabajadores', col, ddl)
+    cur.execute(qmark(f"""CREATE TABLE IF NOT EXISTS horas_extras(
+        id {idtype}, fecha TEXT NOT NULL, periodo TEXT NOT NULL, dni TEXT NOT NULL,
+        nombres TEXT, area TEXT, cargo TEXT, regimen TEXT, remuneracion REAL DEFAULT 0,
+        horas_mes REAL DEFAULT 240, valor_hora REAL DEFAULT 0,
+        he25 REAL DEFAULT 0, he35 REAL DEFAULT 0, he100 REAL DEFAULT 0,
+        he25_brutas REAL DEFAULT 0, he35_brutas REAL DEFAULT 0, he100_brutas REAL DEFAULT 0,
+        compensacion REAL DEFAULT 0, comp_aplicada_100 REAL DEFAULT 0, comp_aplicada_35 REAL DEFAULT 0,
+        comp_aplicada_25 REAL DEFAULT 0, comp_saldo REAL DEFAULT 0,
+        monto25 REAL DEFAULT 0, monto35 REAL DEFAULT 0, monto100 REAL DEFAULT 0, monto_total REAL DEFAULT 0,
+        tipo_dia TEXT DEFAULT 'ORDINARIO', es_feriado INTEGER DEFAULT 0, es_descanso INTEGER DEFAULT 0,
+        feriado_descanso_desc TEXT DEFAULT '', motivo TEXT, observacion TEXT,
+        estado_compensacion TEXT DEFAULT 'PENDIENTE', creado_por TEXT, creado_en TEXT
+    )"""))
+    cur.execute(qmark(f"""CREATE TABLE IF NOT EXISTS calendario_especial(
+        id {idtype}, fecha TEXT NOT NULL, tipo TEXT NOT NULL, dni TEXT DEFAULT '', descripcion TEXT, creado_en TEXT,
+        UNIQUE(fecha, tipo, dni)
+    )"""))
+    for col, ddl in [
+        ('he100','REAL DEFAULT 0'),('he25_brutas','REAL DEFAULT 0'),('he35_brutas','REAL DEFAULT 0'),('he100_brutas','REAL DEFAULT 0'),
+        ('comp_aplicada_100','REAL DEFAULT 0'),('comp_aplicada_35','REAL DEFAULT 0'),('comp_aplicada_25','REAL DEFAULT 0'),('comp_saldo','REAL DEFAULT 0'),
+        ('monto100','REAL DEFAULT 0'),('tipo_dia',"TEXT DEFAULT 'ORDINARIO'"),('es_feriado','INTEGER DEFAULT 0'),('es_descanso','INTEGER DEFAULT 0'),
+        ('feriado_descanso_desc',"TEXT DEFAULT ''"),('creado_por','TEXT')
+    ]:
+        _add_column_if_missing(cur, 'horas_extras', col, ddl)
+    conn.commit(); cur.close(); conn.close()
+    for f, d in HE_FERIADOS_PERU_2026:
+        try:
+            if is_pg():
+                execute('INSERT INTO calendario_especial(fecha,tipo,dni,descripcion,creado_en) VALUES(?,?,?,?,?) ON CONFLICT(fecha,tipo,dni) DO NOTHING', (f,'FERIADO_NACIONAL','',d,now_str()), commit=True)
+            else:
+                execute('INSERT OR IGNORE INTO calendario_especial(fecha,tipo,dni,descripcion,creado_en) VALUES(?,?,?,?,?)', (f,'FERIADO_NACIONAL','',d,now_str()), commit=True)
+        except Exception:
+            pass
+
+
+def _he_sheet_to_rows(file_storage, preferred_sheet=None):
+    wb = load_workbook(file_storage, data_only=True, read_only=True)
+    if preferred_sheet and preferred_sheet in wb.sheetnames:
+        ws = wb[preferred_sheet]
+    else:
+        ws = wb[wb.sheetnames[0]]
+    raw = list(ws.iter_rows(values_only=True))
+    if not raw:
+        return []
+    headers = [_he_alias(c) for c in raw[0]]
+    rows = []
+    for rr in raw[1:]:
+        if not rr or all(v is None or str(v).strip()=='' for v in rr):
+            continue
+        item = {}
+        for i, h in enumerate(headers):
+            if not h:
+                continue
+            item[h] = rr[i] if i < len(rr) else ''
+        rows.append(item)
+    return rows
+
+
+def _he_alias(col):
+    n = _he_norm(col)
+    return HE_COLUMN_ALIASES.get(n, n)
+
+
+def _he_worker(dni):
+    _he_ensure_db()
+    d = limpiar_dni(dni)
+    if not d:
+        return None
+    try:
+        row = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (d,), fetchone=True))
+    except Exception:
+        row = None
+    if not row:
+        return None
+    nombres = row.get('trabajador') or row.get('nombres') or row.get('nombre') or ''
+    return {
+        'dni': row.get('dni') or d,
+        'nombres': nombres,
+        'trabajador': nombres,
+        'empresa': row.get('empresa') or '',
+        'area': row.get('area') or '',
+        'cargo': row.get('cargo') or '',
+        'actividad': row.get('actividad') or '',
+        'planilla': row.get('planilla') or '',
+        'regimen': row.get('regimen') or row.get('regimen_laboral') or row.get('planilla') or 'GENERAL',
+        'remuneracion': _he_float(row.get('remuneracion'), 0),
+        'horas_mes': _he_float(row.get('horas_mes'), HE_DEFAULT_HORAS_MES) or HE_DEFAULT_HORAS_MES,
+        'dia_descanso': row.get('dia_descanso') or '',
+        'estado': row.get('estado') or 'ACTIVO',
+    }
+
+
+def _he_upsert_worker(data):
+    _he_ensure_db()
+    dni = limpiar_dni(data.get('DNI'))
+    if len(dni) != 8:
+        raise ValueError('DNI inválido')
+    actual = _he_worker(dni) or {}
+    nombres = limpiar_texto(data.get('NOMBRES') or data.get('TRABAJADOR') or actual.get('nombres') or '')
+    if not nombres:
+        raise ValueError('Nombre vacío')
+    merged = {
+        'dni': dni,
+        'trabajador': nombres,
+        'empresa': limpiar_texto(data.get('EMPRESA') if data.get('EMPRESA') not in (None,'') else actual.get('empresa') or ''),
+        'area': limpiar_texto(data.get('AREA') if data.get('AREA') not in (None,'') else actual.get('area') or ''),
+        'cargo': limpiar_texto(data.get('CARGO') if data.get('CARGO') not in (None,'') else actual.get('cargo') or ''),
+        'actividad': limpiar_texto(data.get('ACTIVIDAD') if data.get('ACTIVIDAD') not in (None,'') else actual.get('actividad') or ''),
+        'planilla': limpiar_texto(data.get('PLANILLA') if data.get('PLANILLA') not in (None,'') else actual.get('planilla') or ''),
+        'regimen': limpiar_texto(data.get('REGIMEN') if data.get('REGIMEN') not in (None,'') else actual.get('regimen') or 'GENERAL'),
+        'remuneracion': _he_float(data.get('REMUNERACION'), actual.get('remuneracion') or 0),
+        'horas_mes': _he_float(data.get('HORAS_MES'), actual.get('horas_mes') or HE_DEFAULT_HORAS_MES) or HE_DEFAULT_HORAS_MES,
+        'dia_descanso': _he_norm(data.get('DIA_DESCANSO') if data.get('DIA_DESCANSO') not in (None,'') else actual.get('dia_descanso') or '').replace('_',' '),
+        'estado': limpiar_texto(data.get('ESTADO') if data.get('ESTADO') not in (None,'') else actual.get('estado') or 'ACTIVO'),
+        'fecha_carga': now_str(), 'actualizado_en': now_str(),
+    }
+    exists = row_to_dict(execute('SELECT id FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if exists:
+        execute('''UPDATE trabajadores SET trabajador=?, empresa=?, area=?, cargo=?, actividad=?, planilla=?, estado=?, fecha_carga=?, regimen=?, remuneracion=?, horas_mes=?, dia_descanso=?, actualizado_en=? WHERE dni=?''',
+                (merged['trabajador'], merged['empresa'], merged['area'], merged['cargo'], merged['actividad'], merged['planilla'], merged['estado'], merged['fecha_carga'], merged['regimen'], merged['remuneracion'], merged['horas_mes'], merged['dia_descanso'], merged['actualizado_en'], dni), commit=True)
+        return 'actualizado'
+    execute('''INSERT INTO trabajadores(dni, trabajador, empresa, area, cargo, actividad, planilla, estado, fecha_carga, regimen, remuneracion, horas_mes, dia_descanso, actualizado_en)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            (dni, merged['trabajador'], merged['empresa'], merged['area'], merged['cargo'], merged['actividad'], merged['planilla'], merged['estado'], merged['fecha_carga'], merged['regimen'], merged['remuneracion'], merged['horas_mes'], merged['dia_descanso'], merged['actualizado_en']), commit=True)
+    return 'insertado'
+
+
+def _he_dia_semana(fecha_iso):
+    try:
+        return HE_DIAS_SEMANA[datetime.strptime(fecha_iso, '%Y-%m-%d').weekday()]
+    except Exception:
+        return ''
+
+
+def _he_tipo_dia(fecha_iso, dni):
+    _he_ensure_db()
+    dni = limpiar_dni(dni)
+    desc = []
+    es_feriado = False
+    es_descanso = False
+    try:
+        rows = rows_to_dict(execute("""SELECT * FROM calendario_especial
+            WHERE fecha=? AND (tipo IN ('FERIADO_NACIONAL','DESCANSO_GENERAL') OR (tipo='DESCANSO_TRABAJADOR' AND dni=?))""", (fecha_iso, dni), fetchall=True))
+    except Exception:
+        rows = []
+    for r in rows:
+        if r.get('tipo') == 'FERIADO_NACIONAL': es_feriado = True
+        if r.get('tipo') in ('DESCANSO_GENERAL','DESCANSO_TRABAJADOR'): es_descanso = True
+        desc.append(r.get('descripcion') or r.get('tipo') or '')
+    trab = _he_worker(dni)
+    if trab and trab.get('dia_descanso'):
+        if _he_norm(trab.get('dia_descanso')).replace('_',' ') == _he_dia_semana(fecha_iso):
+            es_descanso = True
+            desc.append('DÍA DESCANSO ' + str(trab.get('dia_descanso')))
+    tipo = 'FERIADO' if es_feriado else ('DESCANSO' if es_descanso else 'ORDINARIO')
+    return {'tipo_dia': tipo, 'es_feriado': int(es_feriado), 'es_descanso': int(es_descanso), 'descripcion': ' | '.join([d for d in desc if d])}
+
+
+def _he_distribuir_comp(gen100, gen35, gen25, comp_total):
+    pendiente = max(_he_float(comp_total), 0.0)
+    comp100 = min(pendiente, max(_he_float(gen100), 0.0)); pendiente -= comp100
+    comp35 = min(pendiente, max(_he_float(gen35), 0.0)); pendiente -= comp35
+    comp25 = min(pendiente, max(_he_float(gen25), 0.0)); pendiente -= comp25
+    return {
+        'comp100': comp100, 'comp35': comp35, 'comp25': comp25,
+        'saldo100': max(_he_float(gen100) - comp100, 0.0),
+        'saldo35': max(_he_float(gen35) - comp35, 0.0),
+        'saldo25': max(_he_float(gen25) - comp25, 0.0),
+        'comp_no_aplicada': max(pendiente, 0.0),
+    }
+
+
+def _he_calcular(fecha, dni, total_horas=0, he25=0, he35=0, he100=0, compensacion=0, auto_calcular=False):
+    fecha_iso = _he_date(fecha) or today_str()
+    total_horas = max(_he_float(total_horas), 0.0)
+    he25_b = max(_he_float(he25), 0.0)
+    he35_b = max(_he_float(he35), 0.0)
+    he100_b = max(_he_float(he100), 0.0)
+    comp = max(_he_float(compensacion), 0.0)
+    tipo = _he_tipo_dia(fecha_iso, dni)
+    if auto_calcular and total_horas > 0:
+        if tipo['es_feriado'] or tipo['es_descanso']:
+            he100_b = total_horas; he25_b = 0.0; he35_b = 0.0
+        else:
+            he25_b = min(total_horas, 2.0)
+            he35_b = max(total_horas - 2.0, 0.0)
+            he100_b = 0.0
+    d = _he_distribuir_comp(he100_b, he35_b, he25_b, comp)
+    return {
+        'tipo_dia': tipo['tipo_dia'], 'es_feriado': tipo['es_feriado'], 'es_descanso': tipo['es_descanso'], 'feriado_descanso_desc': tipo['descripcion'],
+        'he25_brutas': he25_b, 'he35_brutas': he35_b, 'he100_brutas': he100_b, 'compensacion': comp,
+        'comp_aplicada_100': d['comp100'], 'comp_aplicada_35': d['comp35'], 'comp_aplicada_25': d['comp25'], 'comp_saldo': d['comp_no_aplicada'],
+        'he25_pago': d['saldo25'], 'he35_pago': d['saldo35'], 'he100_pago': d['saldo100'],
+    }
+
+
+def _he_insert(fecha, dni, total_horas=0, he25=0, he35=0, he100=0, compensacion=0, auto_calcular=False, motivo='', observacion='', estado_compensacion='PENDIENTE'):
+    _he_ensure_db()
+    trab = _he_worker(dni)
+    if not trab:
+        raise ValueError(f'DNI {limpiar_dni(dni)} no existe en la base de trabajadores')
+    fecha_iso = _he_date(fecha)
+    if not fecha_iso:
+        raise ValueError('Fecha inválida')
+    calc = _he_calcular(fecha_iso, dni, total_horas, he25, he35, he100, compensacion, auto_calcular)
+    rem = _he_float(trab.get('remuneracion'), 0.0)
+    horas_mes = _he_float(trab.get('horas_mes'), HE_DEFAULT_HORAS_MES) or HE_DEFAULT_HORAS_MES
+    valor_hora = rem / horas_mes if horas_mes else 0.0
+    monto25 = calc['he25_pago'] * valor_hora * 1.25
+    monto35 = calc['he35_pago'] * valor_hora * 1.35
+    monto100 = calc['he100_pago'] * valor_hora * 2.00
+    monto_total = monto25 + monto35 + monto100
+    estado_compensacion = limpiar_texto(estado_compensacion or 'PENDIENTE')
+    if calc['compensacion'] <= 0:
+        estado_compensacion = 'NO APLICA'
+    execute('''INSERT INTO horas_extras
+        (fecha,periodo,dni,nombres,area,cargo,regimen,remuneracion,horas_mes,valor_hora,he25,he35,he100,he25_brutas,he35_brutas,he100_brutas,compensacion,comp_aplicada_100,comp_aplicada_35,comp_aplicada_25,comp_saldo,monto25,monto35,monto100,monto_total,tipo_dia,es_feriado,es_descanso,feriado_descanso_desc,motivo,observacion,estado_compensacion,creado_por,creado_en)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        (fecha_iso,_he_periodo(fecha_iso),trab['dni'],trab['nombres'],trab.get('area'),trab.get('cargo'),trab.get('regimen'),rem,horas_mes,valor_hora,calc['he25_pago'],calc['he35_pago'],calc['he100_pago'],calc['he25_brutas'],calc['he35_brutas'],calc['he100_brutas'],calc['compensacion'],calc['comp_aplicada_100'],calc['comp_aplicada_35'],calc['comp_aplicada_25'],calc['comp_saldo'],monto25,monto35,monto100,monto_total,calc['tipo_dia'],calc['es_feriado'],calc['es_descanso'],calc['feriado_descanso_desc'],limpiar_texto(motivo),limpiar_texto(observacion),estado_compensacion,session.get('usuario') or '',now_str()), commit=True)
+
+
+def _he_where(filtro='', desde='', hasta=''):
+    params = []
+    where = []
+    f = str(filtro or '').strip().upper()
+    if f:
+        dni = limpiar_dni(f)
+        where.append('(dni LIKE ? OR UPPER(nombres) LIKE ? OR UPPER(area) LIKE ? OR UPPER(cargo) LIKE ?)')
+        params += [f'%{dni}%', f'%{f}%', f'%{f}%', f'%{f}%']
+    d1 = _he_date(desde)
+    d2 = _he_date(hasta)
+    if d1:
+        where.append('fecha>=?'); params.append(d1)
+    if d2:
+        where.append('fecha<=?'); params.append(d2)
+    sql = (' WHERE ' + ' AND '.join(where)) if where else ''
+    return sql, params
+
+
+def _he_list(filtro='', desde='', hasta='', limit=500):
+    _he_ensure_db()
+    where, params = _he_where(filtro, desde, hasta)
+    rows = rows_to_dict(execute(f'SELECT * FROM horas_extras {where} ORDER BY fecha DESC, id DESC LIMIT ?', params + [int(limit)], fetchall=True))
+    return rows
+
+
+def _he_resumen_saldos(rows):
+    gen100 = sum(_he_float(r.get('he100_brutas')) for r in rows)
+    gen35 = sum(_he_float(r.get('he35_brutas')) for r in rows)
+    gen25 = sum(_he_float(r.get('he25_brutas')) for r in rows)
+    comp_total = sum(_he_float(r.get('compensacion')) for r in rows)
+    d = _he_distribuir_comp(gen100, gen35, gen25, comp_total)
+    gozado = sum(_he_float(r.get('compensacion')) for r in rows if str(r.get('estado_compensacion') or '').upper() == 'COMPENSADA')
+    total_generado = gen100 + gen35 + gen25
+    total_compensado = d['comp100'] + d['comp35'] + d['comp25']
+    saldo_total = d['saldo100'] + d['saldo35'] + d['saldo25']
+    return {
+        'gen100': gen100, 'gen35': gen35, 'gen25': gen25,
+        'comp100': d['comp100'], 'comp35': d['comp35'], 'comp25': d['comp25'],
+        'saldo100': d['saldo100'], 'saldo35': d['saldo35'], 'saldo25': d['saldo25'],
+        'total_generado': total_generado, 'total_compensado': total_compensado, 'total_gozado': gozado,
+        'saldo_total': saldo_total, 'comp_no_aplicada': d['comp_no_aplicada'], 'registros': len(rows)
+    }
+
+
+def _he_resumen_trabajadores(rows):
+    grupos = {}
+    for r in rows:
+        key = (r.get('dni'), r.get('nombres'), r.get('area'), r.get('cargo'))
+        it = grupos.setdefault(key, {'dni':r.get('dni'), 'nombres':r.get('nombres'), 'area':r.get('area'), 'cargo':r.get('cargo'), 'gen100':0.0,'gen35':0.0,'gen25':0.0,'comp':0.0,'gozado':0.0,'valor_hora':0.0,'registros':0})
+        it['gen100'] += _he_float(r.get('he100_brutas'))
+        it['gen35'] += _he_float(r.get('he35_brutas'))
+        it['gen25'] += _he_float(r.get('he25_brutas'))
+        it['comp'] += _he_float(r.get('compensacion'))
+        if str(r.get('estado_compensacion') or '').upper() == 'COMPENSADA':
+            it['gozado'] += _he_float(r.get('compensacion'))
+        it['valor_hora'] = _he_float(r.get('valor_hora'), it.get('valor_hora') or 0)
+        it['registros'] += 1
+    out = []
+    for it in grupos.values():
+        d = _he_distribuir_comp(it['gen100'], it['gen35'], it['gen25'], it['comp'])
+        vh = _he_float(it.get('valor_hora'), 0)
+        monto25 = d['saldo25'] * vh * 1.25
+        monto35 = d['saldo35'] * vh * 1.35
+        monto100 = d['saldo100'] * vh * 2.00
+        out.append({**it, 'generado':it['gen100']+it['gen35']+it['gen25'], 'compensado':d['comp100']+d['comp35']+d['comp25'],
+                    'saldo25':d['saldo25'], 'saldo35':d['saldo35'], 'saldo100':d['saldo100'], 'saldo':d['saldo25']+d['saldo35']+d['saldo100'],
+                    'monto25':monto25, 'monto35':monto35, 'monto100':monto100, 'monto_total':monto25+monto35+monto100, 'comp_no_aplicada':d['comp_no_aplicada']})
+    return sorted(out, key=lambda x: (-x['saldo'], x.get('nombres') or ''))
+
+
+def _he_import_workers(file_storage):
+    if not file_storage or not file_storage.filename.lower().endswith(('.xlsx','.xlsm')):
+        return 0,0,0,'Suba un Excel .xlsx válido.'
+    try:
+        rows = _he_sheet_to_rows(file_storage, 'TRABAJADORES')
+    except Exception as e:
+        return 0,0,0,f'No se pudo leer el Excel: {e}'
+    ins=upd=omi=0
+    for r in rows:
+        try:
+            res = _he_upsert_worker(r)
+            if res == 'insertado': ins += 1
+            else: upd += 1
+        except Exception:
+            omi += 1
+    return ins, upd, omi, ''
+
+
+def _he_import_mass(file_storage):
+    if not file_storage or not file_storage.filename.lower().endswith(('.xlsx','.xlsm')):
+        return 0,0,'Suba un Excel .xlsx válido.'
+    try:
+        rows = _he_sheet_to_rows(file_storage, 'CARGA_MASIVA_HE')
+    except Exception as e:
+        return 0,0,f'No se pudo leer el Excel: {e}'
+    ok=omi=0
+    for r in rows:
+        try:
+            fecha = _he_date(r.get('FECHA'))
+            dni = limpiar_dni(r.get('DNI'))
+            if not fecha or len(dni) != 8:
+                omi += 1; continue
+            _he_insert(fecha, dni, r.get('TOTAL_HORAS'), r.get('HE_25'), r.get('HE_35'), r.get('HE_100'), r.get('COMPENSACION'), _he_bool(r.get('AUTO_CALCULAR')), r.get('MOTIVO'), r.get('OBSERVACION'), r.get('ESTADO_COMPENSACION') or 'PENDIENTE')
+            ok += 1
+        except Exception as e:
+            print('Carga HE omitida:', e)
+            omi += 1
+    return ok, omi, ''
+
+
+def _he_css():
+    return r'''
+    <style>
+      html,body{background:#fff!important;overflow-x:hidden!important}.shell{max-width:430px!important;width:100%!important;margin:0 auto!important;padding:6px 8px 24px!important;background:#fff!important}
+      .he-phone{max-width:390px;margin:0 auto}.he-app{background:#fff;border:1px solid #e4e8e4;border-radius:14px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.07);margin-bottom:12px}
+      .he-head{height:86px;background:#25773a;color:#fff;display:flex;align-items:center;justify-content:center;position:relative}.he-head a.back{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff!important;text-decoration:none;font-size:32px}.he-head .ttl{font-size:18px;font-weight:950;text-align:center;text-transform:uppercase}.he-head .mini{display:block;font-size:10px;font-weight:850;color:#dffbea;margin-top:2px}.he-body{padding:12px;background:#fff}.he-note{border:1px solid #b8d7ff;background:#eef6ff;color:#0b2e83;border-radius:11px;padding:9px 10px;font-size:11px;font-weight:850;line-height:1.35;margin-bottom:10px}.he-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:8px 0}.he-kpi{background:#10964e;color:#fff;border-radius:8px;text-align:center;padding:7px 4px;box-shadow:0 6px 12px rgba(16,150,78,.16)}.he-kpi small{display:block;font-size:8.8px;font-weight:950;color:#effff3;line-height:1.05}.he-kpi b{display:block;font-size:18px;font-weight:950;line-height:1.05;margin-top:4px;color:#fff}.he-form{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:10px;margin:8px 0}.he-form label{font-size:10.5px;font-weight:950;color:#176a35;margin-bottom:3px}.he-form .form-control,.he-form .form-select{height:36px!important;border-radius:9px!important;font-size:12px!important;font-weight:850}.he-row{display:grid;grid-template-columns:1fr 1fr;gap:7px}.he-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}.he-btn{height:39px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:#fff!important;font-weight:950;font-size:12px;width:100%;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px}.he-outline{height:37px;border-radius:9px;background:#fff;border:1px solid #08713b;color:#08713b!important;font-weight:900;font-size:11px;width:100%;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px}.he-danger{background:#dc2626!important;border-color:#dc2626!important}.he-section{font-size:13px;font-weight:950;color:#08713b;text-transform:uppercase;margin:11px 1px 7px}.he-tablewrap{border:1px solid #e5e7eb;border-radius:10px;overflow:auto;background:#fff;max-height:340px}.he-table{width:100%;min-width:720px;border-collapse:collapse}.he-table th{background:#f8fafc;color:#12223b;font-size:10px;font-weight:950;padding:7px;border-bottom:1px solid #e5e7eb}.he-table td{font-size:10.5px;color:#334155;padding:7px;border-bottom:1px solid #f1f5f9;font-weight:750}.he-pill{display:inline-block;border-radius:999px;background:#dcfce7;color:#08713b;padding:3px 7px;font-size:9px;font-weight:950}.he-pill.warn{background:#fff7ed;color:#c2410c}.he-pill.bad{background:#fee2e2;color:#b91c1c}.he-card{border:1px solid #e5ede5;border-radius:11px;padding:10px;background:#fff;margin:7px 0}.he-card b{font-size:12px;color:#0f5132}.he-card small{font-size:10px;color:#64748b;font-weight:850}.he-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.he-details{border:1px solid #d7eadc;border-radius:11px;margin:8px 0;background:#fff;overflow:hidden}.he-details summary{cursor:pointer;list-style:none;padding:10px 11px;background:#ecfdf5;color:#08713b;font-size:12px;font-weight:950}.he-details summary::-webkit-details-marker{display:none}.he-details .inside{padding:10px}.he-mini{font-size:9.5px;color:#64748b;font-weight:850;line-height:1.25}.he-total-pay{background:#0f5132;color:#fff;border-radius:10px;padding:10px;text-align:center;margin:8px 0}.he-total-pay small{display:block;font-size:10px;color:#d1fae5;font-weight:900}.he-total-pay b{font-size:22px;color:#fff;font-weight:950}
+      @media(max-width:420px){.he-body{padding:10px}.he-row3{grid-template-columns:1fr 1fr}.he-table{min-width:650px}.he-kpi b{font-size:16px}}
+    </style>'''
+
+
+def _he_default_filters():
+    today = date.today()
+    desde = request.args.get('desde') or today.replace(day=1).strftime('%Y-%m-%d')
+    hasta = request.args.get('hasta') or today.strftime('%Y-%m-%d')
+    filtro = request.args.get('q') or ''
+    if session.get('module_role') == 'usuario' and session.get('dni'):
+        filtro = session.get('dni')
+    return filtro, desde, hasta
+
+
+def horas_extras_modulo():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    _he_ensure_db()
+    if request.method == 'POST':
+        try:
+            dni = limpiar_dni(request.form.get('dni'))
+            _he_insert(request.form.get('fecha') or today_str(), dni, request.form.get('total_horas'), request.form.get('he25'), request.form.get('he35'), request.form.get('he100'), request.form.get('compensacion'), request.form.get('auto_calcular') == 'SI', request.form.get('motivo'), request.form.get('observacion'), request.form.get('estado_compensacion') or 'PENDIENTE')
+            flash('Registro guardado. El pago fue recalculado al 25%, 35% y/o 100% según corresponda.', 'success')
+        except Exception as e:
+            flash(str(e), 'danger')
+        return redirect(url_for('horas_extras_modulo'))
+    q, desde, hasta = _he_default_filters()
+    rows = _he_list(q, desde, hasta, 500)
+    resumen = _he_resumen_saldos(rows)
+    trabajadores = _he_resumen_trabajadores(rows)
+    pago_total = sum(_he_float(t.get('monto_total')) for t in trabajadores)
+    body = _he_css() + r'''
+    <div class="he-phone"><div class="he-app">
+      <div class="he-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl"><i class="bi bi-clock-history"></i> Horas Extras</div><span class="mini">control, compensación y pago</span></div></div>
+      <div class="he-body">
+        <div class="he-note"><b>Regla automática:</b> día ordinario: primeras 2 horas al 25% y saldo al 35%. Feriado/descanso: 100%. La compensación descuenta primero 100%, luego 35% y finalmente 25%.</div>
+        <form class="he-form" method="get"><div class="he-row"><div><label>Desde</label><input type="date" name="desde" class="form-control" value="{{desde}}"></div><div><label>Hasta</label><input type="date" name="hasta" class="form-control" value="{{hasta}}"></div></div><label class="mt-2">Buscar DNI / trabajador / área / cargo</label><input class="form-control" name="q" value="{{q}}" placeholder="DNI o nombre"><button class="he-btn mt-2"><i class="bi bi-search"></i> Filtrar</button></form>
+        <div class="he-kpis"><div class="he-kpi"><small>Generado</small><b>{{fmt(resumen.total_generado)}}</b></div><div class="he-kpi"><small>Compensado</small><b>{{fmt(resumen.total_compensado)}}</b></div><div class="he-kpi"><small>Gozado</small><b>{{fmt(resumen.total_gozado)}}</b></div><div class="he-kpi"><small>Saldo</small><b>{{fmt(resumen.saldo_total)}}</b></div><div class="he-kpi"><small>Registros</small><b>{{resumen.registros}}</b></div><div class="he-kpi"><small>No aplicada</small><b>{{fmt(resumen.comp_no_aplicada)}}</b></div></div>
+        <div class="he-total-pay"><small>Detalle final para pago luego de compensaciones</small><b>{{money(pago_total)}}</b></div>
+        <div class="he-actions"><a class="he-outline" href="{{url_for('horas_extras_plantilla')}}"><i class="bi bi-download"></i> Plantilla</a><a class="he-outline" href="{{url_for('horas_extras_calendario')}}"><i class="bi bi-calendar2-week"></i> Calendario</a><a class="he-outline" href="{{url_for('exportar_horas_extras', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-file-earmark-excel"></i> Exportar</a><a class="he-outline" href="{{url_for('exportar_horas_extras_pago', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-cash-coin"></i> Pago</a></div>
+        <details class="he-details" open><summary><i class="bi bi-plus-circle"></i> Registrar individual</summary><div class="inside"><form method="post" id="frmHE"><div class="he-row"><div><label>Fecha</label><input type="date" name="fecha" class="form-control" value="{{today}}" required></div><div><label>DNI</label><input id="heDni" name="dni" maxlength="8" class="form-control" required></div></div><div id="heTrabStatus" class="he-mini mt-1">Digite 8 números para traer trabajador.</div><div class="he-row3 mt-2"><div><label>Total horas</label><input name="total_horas" class="form-control" value="0"></div><div><label>Auto</label><select name="auto_calcular" class="form-select"><option value="SI">SI</option><option value="NO">NO</option></select></div><div><label>Compensación</label><input name="compensacion" class="form-control" value="0"></div></div><div class="he-row3 mt-2"><div><label>HE 25</label><input name="he25" class="form-control" value="0"></div><div><label>HE 35</label><input name="he35" class="form-control" value="0"></div><div><label>HE 100</label><input name="he100" class="form-control" value="0"></div></div><div class="he-row mt-2"><div><label>Estado compensación</label><select name="estado_compensacion" class="form-select"><option>PENDIENTE</option><option>COMPENSADA</option><option>NO APLICA</option></select></div><div><label>Motivo</label><input name="motivo" class="form-control" placeholder="PLANILLA / GOCE"></div></div><label class="mt-2">Observación</label><input name="observacion" class="form-control"><button class="he-btn mt-2"><i class="bi bi-save"></i> Guardar y recalcular</button></form></div></details>
+        <details class="he-details"><summary><i class="bi bi-cloud-arrow-up"></i> Cargas masivas</summary><div class="inside"><form method="post" action="{{url_for('horas_extras_cargar_trabajadores')}}" enctype="multipart/form-data" class="he-form"><label>Actualizar trabajadores para HE</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="he-mini">No elimina cesados ni altera datos vacíos. Actualiza por DNI y agrega nuevos ingresos.</div><button class="he-btn mt-2"><i class="bi bi-people"></i> Cargar trabajadores</button></form><form method="post" action="{{url_for('horas_extras_cargar_masiva')}}" enctype="multipart/form-data" class="he-form"><label>Carga masiva horas extras / compensaciones</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="he-btn mt-2"><i class="bi bi-clock"></i> Cargar HE</button></form></div></details>
+        <div class="he-section">Resumen por tipo</div><div class="he-card"><div class="he-row3"><div><small>HE 100%</small><br><b>{{fmt(resumen.saldo100)}} h</b></div><div><small>HE 35%</small><br><b>{{fmt(resumen.saldo35)}} h</b></div><div><small>HE 25%</small><br><b>{{fmt(resumen.saldo25)}} h</b></div></div><div class="he-mini mt-2">Saldo ya descuenta compensaciones aplicadas en orden: 100%, 35%, 25%.</div></div>
+        <div class="he-section">Detalle para pago</div><div class="he-tablewrap"><table class="he-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Saldo 25</th><th>Saldo 35</th><th>Saldo 100</th><th>Monto 25</th><th>Monto 35</th><th>Monto 100</th><th>Total</th></tr></thead><tbody>{% for t in trabajadores %}<tr><td>{{t.dni}}</td><td>{{t.nombres}}</td><td>{{fmt(t.saldo25)}}</td><td>{{fmt(t.saldo35)}}</td><td>{{fmt(t.saldo100)}}</td><td>{{money(t.monto25)}}</td><td>{{money(t.monto35)}}</td><td>{{money(t.monto100)}}</td><td><b>{{money(t.monto_total)}}</b></td></tr>{% else %}<tr><td colspan="9" class="text-center text-muted">Sin datos para pago.</td></tr>{% endfor %}</tbody></table></div>
+        <div class="he-section">Registros</div><form method="post" action="{{url_for('horas_extras_marcar_compensadas')}}" class="mb-2"><input type="hidden" name="q" value="{{q}}"><input type="hidden" name="desde" value="{{desde}}"><input type="hidden" name="hasta" value="{{hasta}}"><button class="he-outline" onclick="return confirm('¿Marcar como GOZADAS/COMPENSADAS las compensaciones filtradas?')"><i class="bi bi-check2-circle"></i> Marcar gozado según filtro</button></form><div class="he-tablewrap"><table class="he-table"><thead><tr><th>Fecha</th><th>DNI</th><th>Trabajador</th><th>Tipo</th><th>Gen 25</th><th>Gen 35</th><th>Gen 100</th><th>Comp.</th><th>Pago</th><th>Estado</th><th></th></tr></thead><tbody>{% for r in rows %}<tr><td>{{display_date(r.fecha)}}</td><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{{r.tipo_dia}}</td><td>{{fmt(r.he25_brutas)}}</td><td>{{fmt(r.he35_brutas)}}</td><td>{{fmt(r.he100_brutas)}}</td><td>{{fmt(r.compensacion)}}</td><td>{{money(r.monto_total)}}</td><td><span class="he-pill {% if r.estado_compensacion=='COMPENSADA' %}warn{% endif %}">{{r.estado_compensacion}}</span></td><td><a class="text-danger" href="{{url_for('horas_extras_eliminar', item_id=r.id)}}" onclick="return confirm('¿Eliminar registro?')"><i class="bi bi-trash"></i></a></td></tr>{% else %}<tr><td colspan="11" class="text-center text-muted">Sin registros.</td></tr>{% endfor %}</tbody></table></div>
+      </div></div></div>
+      <script>(function(){const d=document.getElementById('heDni'),st=document.getElementById('heTrabStatus');async function look(){let v=(d.value||'').replace(/\D/g,'').slice(-8);d.value=v;if(v.length<8){st.textContent='Digite 8 números para traer trabajador.';return;}try{let r=await fetch('/api/horas-extras/trabajador/'+v,{cache:'no-store'});let j=await r.json();if(j.ok){st.innerHTML='✓ <b>'+j.trabajador.nombres+'</b> · '+(j.trabajador.area||'')+' · Valor hora '+j.valor_hora;st.style.color='#08713b';}else{st.textContent='DNI no encontrado. Cárguelo en trabajadores.';st.style.color='#b91c1c';}}catch(e){st.textContent='Error consultando trabajador.';}}if(d)d.addEventListener('input',look);})();</script>
+    '''
+    return render_page(body, q=q, desde=desde, hasta=hasta, today=today_str(), rows=rows, resumen=resumen, trabajadores=trabajadores, pago_total=pago_total, fmt=_he_fmt, money=_he_money, display_date=_he_display_date, title='Horas Extras')
+
+horas_extras_modulo.methods = ['GET','POST']
+
+
+def horas_extras_cargar_trabajadores():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    ins, upd, omi, err = _he_import_workers(request.files.get('archivo'))
+    flash(err if err else f'Trabajadores HE: {ins} nuevos, {upd} actualizados, {omi} omitidos. No se eliminaron bajas ni se borraron datos vacíos.', 'danger' if err else 'success')
+    return redirect(url_for('horas_extras_modulo'))
+
+
+def horas_extras_cargar_masiva():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    ok, omi, err = _he_import_mass(request.files.get('archivo'))
+    flash(err if err else f'Carga HE procesada: {ok} registros, {omi} omitidos.', 'danger' if err else 'success')
+    return redirect(url_for('horas_extras_modulo'))
+
+
+def horas_extras_eliminar(item_id):
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    _he_ensure_db()
+    execute('DELETE FROM horas_extras WHERE id=?', (item_id,), commit=True)
+    flash('Registro eliminado.', 'success')
+    return redirect(request.referrer or url_for('horas_extras_modulo'))
+
+
+def horas_extras_marcar_compensadas():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    _he_ensure_db()
+    q = request.form.get('q') or ''
+    desde = request.form.get('desde') or ''
+    hasta = request.form.get('hasta') or ''
+    where, params = _he_where(q, desde, hasta)
+    sql = f"UPDATE horas_extras SET estado_compensacion='COMPENSADA' {where}"
+    if where:
+        sql += " AND COALESCE(compensacion,0)>0"
+    else:
+        sql += " WHERE COALESCE(compensacion,0)>0"
+    execute(sql, params, commit=True)
+    flash('Compensaciones filtradas marcadas como GOZADAS/COMPENSADAS. El resumen de pago se recalcula automáticamente.', 'success')
+    return redirect(url_for('horas_extras_modulo', q=q, desde=desde, hasta=hasta))
+
+
+def horas_extras_calendario():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    _he_ensure_db()
+    if request.method == 'POST':
+        try:
+            fecha = _he_date(request.form.get('fecha'))
+            tipo = limpiar_texto(request.form.get('tipo') or 'DESCANSO_GENERAL')
+            dni = limpiar_dni(request.form.get('dni')) if tipo == 'DESCANSO_TRABAJADOR' else ''
+            desc = limpiar_texto(request.form.get('descripcion') or tipo)
+            if not fecha:
+                raise ValueError('Fecha inválida')
+            if tipo == 'DESCANSO_TRABAJADOR' and len(dni) != 8:
+                raise ValueError('Para descanso por trabajador indique DNI de 8 dígitos')
+            if is_pg():
+                execute('INSERT INTO calendario_especial(fecha,tipo,dni,descripcion,creado_en) VALUES(?,?,?,?,?) ON CONFLICT(fecha,tipo,dni) DO UPDATE SET descripcion=EXCLUDED.descripcion', (fecha,tipo,dni,desc,now_str()), commit=True)
+            else:
+                execute('INSERT OR REPLACE INTO calendario_especial(fecha,tipo,dni,descripcion,creado_en) VALUES(?,?,?,?,?)', (fecha,tipo,dni,desc,now_str()), commit=True)
+            flash('Calendario actualizado.', 'success')
+        except Exception as e:
+            flash(str(e), 'danger')
+        return redirect(url_for('horas_extras_calendario'))
+    rows = rows_to_dict(execute('SELECT * FROM calendario_especial ORDER BY fecha DESC, tipo, dni LIMIT 300', fetchall=True))
+    body = _he_css() + r'''
+    <div class="he-phone"><div class="he-app"><div class="he-head"><a class="back" href="{{url_for('horas_extras_modulo')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl">Calendario HE</div><span class="mini">feriados y descansos</span></div></div><div class="he-body"><div class="he-note">Aquí se definen feriados, descansos generales y descansos por trabajador. Esto activa cálculo HE 100% cuando corresponda.</div><form method="post" class="he-form"><div class="he-row"><div><label>Fecha</label><input type="date" name="fecha" value="{{today}}" class="form-control"></div><div><label>Tipo</label><select name="tipo" class="form-select"><option>FERIADO_NACIONAL</option><option>DESCANSO_GENERAL</option><option>DESCANSO_TRABAJADOR</option></select></div></div><label class="mt-2">DNI si es descanso trabajador</label><input name="dni" maxlength="8" class="form-control"><label class="mt-2">Descripción</label><input name="descripcion" class="form-control"><button class="he-btn mt-2"><i class="bi bi-save"></i> Guardar fecha</button></form><div class="he-section">Fechas configuradas</div><div class="he-tablewrap"><table class="he-table"><thead><tr><th>Fecha</th><th>Tipo</th><th>DNI</th><th>Descripción</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{display_date(r.fecha)}}</td><td>{{r.tipo}}</td><td>{{r.dni}}</td><td>{{r.descripcion}}</td></tr>{% else %}<tr><td colspan="4" class="text-muted text-center">Sin fechas.</td></tr>{% endfor %}</tbody></table></div></div></div></div>'''
+    return render_page(body, rows=rows, today=today_str(), display_date=_he_display_date, title='Calendario HE')
+
+horas_extras_calendario.methods = ['GET','POST']
+
+
+def horas_extras_plantilla():
+    _he_ensure_db()
+    wb = Workbook()
+    ws = wb.active; ws.title = 'INSTRUCCIONES'
+    ws.append(['PASO','DESCRIPCION'])
+    for r in [
+        (1, 'Cargue primero TRABAJADORES. Si un campo viene vacío, el sistema conserva el dato existente.'),
+        (2, 'Cargue CARGA_MASIVA_HE o registre individualmente desde la app.'),
+        (3, 'AUTO_CALCULAR=SI: ordinario 2 primeras al 25% y saldo al 35%. Feriado/descanso al 100%.'),
+        (4, 'COMPENSACION descuenta primero HE_100, luego HE_35 y finalmente HE_25.'),
+        (5, 'Estado COMPENSADA equivale a gozado. PENDIENTE queda por gozar.'),
+    ]: ws.append(r)
+    ws = wb.create_sheet('TRABAJADORES')
+    ws.append(['DNI','NOMBRES','EMPRESA','AREA','CARGO','REGIMEN','REMUNERACION','HORAS_MES','DIA_DESCANSO','ESTADO'])
+    ws.append(['74324033','OMAR AZABACHE LUJAN','AQUANQA','REMUNERACIONES','ANALISTA','GENERAL',2500,240,'DOMINGO','ACTIVO'])
+    ws = wb.create_sheet('CARGA_MASIVA_HE')
+    ws.append(['FECHA','DNI','TOTAL_HORAS','AUTO_CALCULAR','HE_100','HE_35','HE_25','COMPENSACION','MOTIVO','OBSERVACION','ESTADO_COMPENSACION'])
+    ws.append([datetime.now().strftime('%d/%m/%Y'),'74324033',4,'SI',0,0,0,0,'CIERRE PLANILLA','EJEMPLO PAGO','NO APLICA'])
+    ws.append([datetime.now().strftime('%d/%m/%Y'),'74324033',0,'NO',0,0,0,2,'COMPENSACION','HORAS A DESCANSO','PENDIENTE'])
+    ws = wb.create_sheet('FERIADOS')
+    ws.append(['FECHA','TIPO','DNI','DESCRIPCION'])
+    for f,d in HE_FERIADOS_PERU_2026: ws.append([_he_display_date(f),'FERIADO_NACIONAL','',d])
+    ws = wb.create_sheet('DIAS_DESCANSO')
+    ws.append(['FECHA','TIPO','DNI','DESCRIPCION'])
+    ws.append([datetime.now().strftime('%d/%m/%Y'),'DESCANSO_GENERAL','','DESCANSO GENERAL EJEMPLO'])
+    for sheet in wb.worksheets:
+        for col in sheet.columns:
+            try:
+                sheet.column_dimensions[col[0].column_letter].width = min(max(max(len(str(c.value or '')) for c in col)+2, 12), 45)
+            except Exception:
+                pass
+    out = BytesIO(); wb.save(out); out.seek(0)
+    return send_file(out, as_attachment=True, download_name='plantilla_horas_extras.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+def exportar_horas_extras():
+    q, desde, hasta = _he_default_filters()
+    rows = _he_list(q, desde, hasta, 50000)
+    headers = ['FECHA','PERIODO','DNI','NOMBRES','AREA','CARGO','REGIMEN','REMUNERACION','HORAS_MES','VALOR_HORA','HE25_PAGO','HE35_PAGO','HE100_PAGO','HE25_BRUTAS','HE35_BRUTAS','HE100_BRUTAS','COMPENSACION','COMP_APLICADA_100','COMP_APLICADA_35','COMP_APLICADA_25','COMP_SALDO','MONTO25','MONTO35','MONTO100','MONTO_TOTAL','TIPO_DIA','ESTADO_COMPENSACION','MOTIVO','OBSERVACION','CREADO_EN']
+    data = []
+    for r in rows:
+        data.append({'fecha':r.get('fecha'),'periodo':r.get('periodo'),'dni':r.get('dni'),'nombres':r.get('nombres'),'area':r.get('area'),'cargo':r.get('cargo'),'regimen':r.get('regimen'),'remuneracion':r.get('remuneracion'),'horas_mes':r.get('horas_mes'),'valor_hora':r.get('valor_hora'),'he25_pago':r.get('he25'),'he35_pago':r.get('he35'),'he100_pago':r.get('he100'),'he25_brutas':r.get('he25_brutas'),'he35_brutas':r.get('he35_brutas'),'he100_brutas':r.get('he100_brutas'),'compensacion':r.get('compensacion'),'comp_aplicada_100':r.get('comp_aplicada_100'),'comp_aplicada_35':r.get('comp_aplicada_35'),'comp_aplicada_25':r.get('comp_aplicada_25'),'comp_saldo':r.get('comp_saldo'),'monto25':r.get('monto25'),'monto35':r.get('monto35'),'monto100':r.get('monto100'),'monto_total':r.get('monto_total'),'tipo_dia':r.get('tipo_dia'),'estado_compensacion':r.get('estado_compensacion'),'motivo':r.get('motivo'),'observacion':r.get('observacion'),'creado_en':r.get('creado_en')})
+    return excel_response(headers, data, f'horas_extras_{desde}_a_{hasta}.xlsx', 'HORAS_EXTRAS')
+
+
+def exportar_horas_extras_pago():
+    q, desde, hasta = _he_default_filters()
+    rows = _he_list(q, desde, hasta, 50000)
+    trabajadores = _he_resumen_trabajadores(rows)
+    headers = ['DNI','NOMBRES','AREA','CARGO','GENERADO','COMPENSADO','GOZADO','SALDO_25','SALDO_35','SALDO_100','SALDO_TOTAL','MONTO25','MONTO35','MONTO100','MONTO_TOTAL','COMP_NO_APLICADA','REGISTROS']
+    data = []
+    for t in trabajadores:
+        data.append({'dni':t.get('dni'),'nombres':t.get('nombres'),'area':t.get('area'),'cargo':t.get('cargo'),'generado':t.get('generado'),'compensado':t.get('compensado'),'gozado':t.get('gozado'),'saldo_25':t.get('saldo25'),'saldo_35':t.get('saldo35'),'saldo_100':t.get('saldo100'),'saldo_total':t.get('saldo'),'monto25':t.get('monto25'),'monto35':t.get('monto35'),'monto100':t.get('monto100'),'monto_total':t.get('monto_total'),'comp_no_aplicada':t.get('comp_no_aplicada'),'registros':t.get('registros')})
+    return excel_response(headers, data, f'detalle_pago_horas_extras_{desde}_a_{hasta}.xlsx', 'DETALLE_PAGO')
+
+
+def api_horas_extras_trabajador(dni):
+    t = _he_worker(dni)
+    if not t:
+        return jsonify(ok=False, msg='DNI no encontrado')
+    vh = (_he_float(t.get('remuneracion')) / (_he_float(t.get('horas_mes'), HE_DEFAULT_HORAS_MES) or HE_DEFAULT_HORAS_MES)) if t else 0
+    return jsonify(ok=True, trabajador=t, valor_hora=_he_money(vh))
+
+
+def horas_extras_config():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    extras = [
+        {'icon':'bi-clock-history','title':'Registro horas extras','desc':'Dashboard, registro y pago.', 'href':_safe_url_303('horas_extras_modulo') if '_safe_url_303' in globals() else url_for('horas_extras_modulo')},
+        {'icon':'bi-file-earmark-excel','title':'Plantilla horas extras','desc':'Trabajadores, carga masiva y calendario.', 'href':_safe_url_303('horas_extras_plantilla') if '_safe_url_303' in globals() else url_for('horas_extras_plantilla')},
+        {'icon':'bi-calendar2-week','title':'Calendario especial','desc':'Feriados y descansos.', 'href':_safe_url_303('horas_extras_calendario') if '_safe_url_303' in globals() else url_for('horas_extras_calendario')},
+    ]
+    if '_config_page_modulo_303' in globals():
+        return _config_page_modulo_303('horas_extras', extras, 'Horas Extras usa la base central de trabajadores y agrega remuneración, horas mes y descanso semanal sin eliminar ni alterar registros existentes.')
+    return redirect(url_for('horas_extras_modulo'))
+
+
+def _he_add_route(rule, endpoint, view, methods=None):
+    methods = methods or ['GET']
+    try:
+        if endpoint in app.view_functions:
+            app.view_functions[endpoint] = view
+        else:
+            app.add_url_rule(rule, endpoint, view, methods=methods)
+    except Exception:
+        app.view_functions[endpoint] = view
+
+_he_add_route('/horas-extras', 'horas_extras_modulo', horas_extras_modulo, ['GET','POST'])
+_he_add_route('/horas-extras/cargar-trabajadores', 'horas_extras_cargar_trabajadores', horas_extras_cargar_trabajadores, ['POST'])
+_he_add_route('/horas-extras/cargar-masiva', 'horas_extras_cargar_masiva', horas_extras_cargar_masiva, ['POST'])
+_he_add_route('/horas-extras/<int:item_id>/eliminar', 'horas_extras_eliminar', horas_extras_eliminar, ['GET'])
+_he_add_route('/horas-extras/marcar-compensadas', 'horas_extras_marcar_compensadas', horas_extras_marcar_compensadas, ['POST'])
+_he_add_route('/horas-extras/calendario', 'horas_extras_calendario', horas_extras_calendario, ['GET','POST'])
+_he_add_route('/horas-extras/plantilla', 'horas_extras_plantilla', horas_extras_plantilla, ['GET'])
+_he_add_route('/exportar/horas-extras', 'exportar_horas_extras', exportar_horas_extras, ['GET'])
+_he_add_route('/exportar/horas-extras-pago', 'exportar_horas_extras_pago', exportar_horas_extras_pago, ['GET'])
+_he_add_route('/api/horas-extras/trabajador/<dni>', 'api_horas_extras_trabajador', api_horas_extras_trabajador, ['GET'])
+_he_add_route('/horas-extras/config', 'horas_extras_config', horas_extras_config, ['GET'])
+
+try:
+    MODULOS_303['horas_extras'] = {'titulo':'Horas Extras', 'icon':'bi-clock-history', 'back':'horas_extras_modulo'}
+    CONFIG_ENDPOINTS_303['horas_extras'] = 'horas_extras_config'
+except Exception:
+    pass
+try:
+    _OLD_MODULE_TARGETS_HE309 = _module_targets_293
+    def _module_targets_293():
+        d = _OLD_MODULE_TARGETS_HE309()
+        d['horas_extras'] = ('Horas Extras','bi-clock-history','horas_extras_modulo','horas_extras_modulo')
+        return d
+except Exception:
+    pass
+
+
+def home_309_he():
+    if '_asegurar_sesion_admin_305' in globals():
+        _asegurar_sesion_admin_305()
+    elif not session.get('usuario'):
+        return redirect(url_for('inicio'))
+    is_admin = _is_admin_292() if '_is_admin_292' in globals() else True
+    body = """
+    <div class="desktop-grid"><div class="phone-wrap"><div class="green-hero" style="min-height:220px"><div class="green-top"><a class="text-white text-decoration-none" href="{{url_for('soporte')}}"><i class="bi bi-headset"></i> Soporte</a>{% if is_admin %}<a class="text-white text-decoration-none" href="{{url_for('configuraciones')}}"><i class="bi bi-gear"></i> Config.</a>{% else %}<span></span>{% endif %}</div><div class="avatar"><i class="bi bi-person-circle"></i></div><div class="login-name">{{ session.get('nombres','ADMINISTRADOR') }}</div><div class="white-input mt-3"></div></div>
+      <div class="top-actions">
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='tareo')}}"><i class="bi bi-list-check"></i>TAREO</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='asistencia')}}"><i class="bi bi-fingerprint"></i>ASIST.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='transporte')}}"><i class="bi bi-bus-front"></i>TRANSP.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='contratacion')}}"><i class="bi bi-person-plus"></i>CONTRAT.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='boleta')}}"><i class="bi bi-file-earmark-text"></i>BOLETA</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='vacaciones')}}"><i class="bi bi-calendar-check"></i>VACAC.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='renovacion')}}"><i class="bi bi-arrow-repeat"></i>RENOV.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='horas_extras')}}"><i class="bi bi-clock-history"></i>H. EXTRAS</a>
+        {% if is_admin %}<a class="tile text-decoration-none" href="{{url_for('reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i>REPORTES<br>TAREO</a>{% endif %}
+        {% if is_admin %}<a class="tile text-decoration-none" href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-repeat"></i>SINC.</a>{% endif %}
+      </div><div class="leaf"></div><div class="bottom-sync"><i class="bi bi-arrow-repeat"></i> Actualizado hasta: {{ now }}</div><a href="{{url_for('logout')}}" class="bottom-out"><i class="bi bi-box-arrow-right"></i></a></div>
+      <div class="desk-panel"><h1 class="header-title">APP MÓVIL</h1><div class="card-pro p-4 mb-3"><h4 class="fw-bold text-success mb-1">Panel integrado RR.HH.</h4><div class="text-muted small">Se agregó el módulo de Horas Extras con compensación, goce y detalle de pago.</div></div></div></div>"""
+    return render_page(body, now=now_str(), is_admin=is_admin, title='APP MOVIL')
+
+app.view_functions['home'] = home_309_he
+
+try:
+    _he_ensure_db()
+except Exception as e:
+    print('Migración Horas Extras 309 pendiente:', e)
+
+# ===================== FIN MODULO HORAS EXTRAS OMAR 309 =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
