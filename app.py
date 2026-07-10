@@ -15264,6 +15264,212 @@ except Exception as _e313:
     print('HE313 no pudo reemplazar endpoint:', _e313)
 # =================== FIN PATCH HORAS EXTRAS 313 ===================
 
+
+
+# ===================== PATCH HORAS EXTRAS 314: UI REGISTRO / FILTRO INTEGRADO =====================
+# Mejora solicitada: tipo HORAS EXTRAS vs COMPENSACION con bloqueo de campos,
+# nombre del trabajador visible al digitar DNI, y resumen/detalle unido al filtro.
+
+def _he_filtro_trabajador_314(q):
+    try:
+        d = limpiar_dni(q)
+        if len(d) == 8:
+            return _he_worker(d)
+    except Exception:
+        pass
+    return None
+
+
+def horas_extras_modulo_v314():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    _he_ensure_db()
+
+    if request.method == 'POST':
+        try:
+            dni = limpiar_dni(request.form.get('dni'))
+            tipo_registro = limpiar_texto(request.form.get('tipo_registro') or 'HORAS_EXTRAS')
+            if tipo_registro in ('COMPENSACION', 'COMPENSACIÓN'):
+                total_horas = 0
+                he25 = 0
+                he35 = 0
+                he100 = 0
+                compensacion = request.form.get('compensacion') or 0
+                auto = False
+                estado_comp = request.form.get('estado_compensacion') or 'PENDIENTE'
+                motivo = request.form.get('motivo') or 'COMPENSACION / GOCE'
+            else:
+                total_horas = request.form.get('total_horas') or 0
+                he25 = request.form.get('he25') or 0
+                he35 = request.form.get('he35') or 0
+                he100 = request.form.get('he100') or 0
+                compensacion = 0
+                auto = request.form.get('auto_calcular') == 'SI'
+                estado_comp = 'NO APLICA'
+                motivo = request.form.get('motivo') or 'PLANILLA / PAGO'
+            _he_insert(
+                request.form.get('fecha') or today_str(), dni,
+                total_horas, he25, he35, he100, compensacion,
+                auto, motivo, request.form.get('observacion'), estado_comp
+            )
+            if tipo_registro in ('COMPENSACION', 'COMPENSACIÓN'):
+                flash('Compensación guardada. Se recalculó el saldo descontando 100%, luego 35% y finalmente 25%.', 'success')
+            else:
+                flash('Horas extras guardadas. El pago fue recalculado al 25%, 35% y/o 100% según corresponda.', 'success')
+        except Exception as e:
+            flash(str(e), 'danger')
+        return redirect(url_for('horas_extras_modulo'))
+
+    q, desde, hasta = _he_default_filters()
+    rows = _he_list(q, desde, hasta, 500)
+    resumen = _he_resumen_saldos(rows)
+    trabajadores = _he_resumen_trabajadores(rows)
+    pago_total = sum(_he_float(t.get('monto_total')) for t in trabajadores)
+    filtro_trabajador = _he_filtro_trabajador_314(q)
+
+    extra_css = r"""
+    <style>
+      .he-filter-box{border:1px solid #cfe7d6;background:#fbfffc;border-radius:14px;padding:10px;margin:9px 0 11px;box-shadow:0 5px 14px rgba(0,0,0,.035)}
+      .he-filter-box .he-form{border:0;margin:0;padding:0;background:transparent}.he-filter-head{display:flex;align-items:center;gap:7px;color:#08713b;font-size:12.5px;font-weight:950;margin-bottom:8px}.he-filter-worker{margin-top:7px;border:1px solid #cfe7d6;background:#ecfdf5;color:#065f32;border-radius:9px;padding:7px 9px;font-size:10.5px;font-weight:950;min-height:32px;display:flex;align-items:center;gap:6px}.he-filter-worker.empty{background:#f8fafc;color:#64748b;border-color:#e5e7eb}.he-res-mini{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:9px 0}.he-res-mini .box{border:1px solid #e2e8f0;background:#fff;border-radius:10px;padding:8px 4px;text-align:center}.he-res-mini small{display:block;color:#475569;font-size:9px;font-weight:950}.he-res-mini b{display:block;color:#065f32;font-size:14px;font-weight:950;margin-top:3px}.he-pay-table{width:100%;min-width:640px;border-collapse:collapse}.he-pay-table th{font-size:9.5px;background:#f8fafc;color:#0f172a;font-weight:950;padding:7px;border-bottom:1px solid #e5e7eb}.he-pay-table td{font-size:10px;padding:7px;border-bottom:1px solid #f1f5f9;font-weight:800;color:#334155}.he-worker-input{background:#ecfdf5!important;color:#065f32!important;font-weight:950!important}.he-locked{background:#f1f5f9!important;color:#94a3b8!important;border-color:#dbe3ea!important;cursor:not-allowed!important}.he-mode-help{border:1px solid #bbf7d0;background:#f0fdf4;color:#166534;border-radius:10px;padding:7px 9px;font-size:10px;font-weight:850;line-height:1.28}.he-inline-title{font-size:12px;font-weight:950;color:#08713b;text-transform:uppercase;margin:10px 0 6px}.he-reg-row{display:grid;grid-template-columns:1fr 1fr;gap:7px}.he-reg-row .full{grid-column:1/-1}.he-action-mini{display:flex;gap:6px;align-items:center;justify-content:flex-end}.he-action-mini a{font-size:14px;text-decoration:none}.he-tag-blue{background:#dbeafe!important;color:#1d4ed8!important}.he-tag-green{background:#dcfce7!important;color:#08713b!important}
+      @media(min-width:900px){.shell{max-width:1180px!important}.he-phone{max-width:1120px!important}.he-main-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;align-items:start}.he-app{border-radius:18px}.he-tablewrap{max-height:430px}.he-reg-row{grid-template-columns:1fr 1fr 1.35fr}.he-reg-row .full{grid-column:auto}.he-row3{grid-template-columns:repeat(3,1fr)!important}.he-actions{grid-template-columns:repeat(4,1fr)}}
+    </style>"""
+
+    body = _he_css() + extra_css + r"""
+    <div class="he-phone"><div class="he-app">
+      <div class="he-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl"><i class="bi bi-clock-history"></i> Horas Extras</div><span class="mini">control, compensación y pago</span></div></div>
+      <div class="he-body">
+        <div class="he-note"><b>Regla automática:</b> en día ordinario, las 2 primeras horas van al 25% y el saldo al 35%. En feriado o descanso, va al 100%. La compensación descuenta primero 100%, luego 35% y finalmente 25%.</div>
+        <div class="he-actions"><a class="he-outline" href="{{url_for('horas_extras_plantilla')}}"><i class="bi bi-download"></i> Plantilla</a><a class="he-outline" href="{{url_for('horas_extras_calendario')}}"><i class="bi bi-calendar2-week"></i> Calendario</a><a class="he-outline" href="{{url_for('exportar_horas_extras', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-file-earmark-excel"></i> Exportar</a><a class="he-outline" href="{{url_for('exportar_horas_extras_pago', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-cash-coin"></i> Pago</a></div>
+
+        <div class="he-main-grid">
+          <div>
+            <details class="he-details" open><summary><i class="bi bi-plus-circle"></i> Registrar individual</summary><div class="inside">
+              <form method="post" id="frmHE">
+                <div class="he-reg-row">
+                  <div><label>Fecha</label><input type="date" name="fecha" class="form-control" value="{{today}}" required></div>
+                  <div><label>DNI</label><input id="heDni" name="dni" maxlength="8" class="form-control" required inputmode="numeric" autocomplete="off"></div>
+                  <div class="full"><label>Trabajador</label><input id="heTrabNombre" class="form-control he-worker-input" readonly placeholder="Se mostrará al digitar DNI"></div>
+                </div>
+                <div id="heTrabStatus" class="he-mini mt-1">Digite 8 números para traer trabajador.</div>
+
+                <div class="he-row mt-2">
+                  <div><label>Tipo de registro</label><select id="heTipoRegistro" name="tipo_registro" class="form-select"><option value="HORAS_EXTRAS">HORAS EXTRAS</option><option value="COMPENSACION">COMPENSACIÓN / GOCE</option></select></div>
+                  <div><label>Estado compensación</label><select id="heEstadoComp" name="estado_compensacion" class="form-select"><option>PENDIENTE</option><option>COMPENSADA</option><option>NO APLICA</option></select></div>
+                </div>
+
+                <div class="he-row3 mt-2">
+                  <div><label>Total horas</label><input id="heTotalHoras" name="total_horas" class="form-control" value="0" inputmode="decimal"></div>
+                  <div><label>Auto</label><select id="heAuto" name="auto_calcular" class="form-select"><option value="SI">SI</option><option value="NO">NO</option></select></div>
+                  <div><label>Compensación</label><input id="heCompensacion" name="compensacion" class="form-control" value="0" inputmode="decimal"></div>
+                </div>
+                <div class="he-row3 mt-2">
+                  <div><label>HE 25</label><input id="he25" name="he25" class="form-control" value="0" inputmode="decimal"></div>
+                  <div><label>HE 35</label><input id="he35" name="he35" class="form-control" value="0" inputmode="decimal"></div>
+                  <div><label>HE 100</label><input id="he100" name="he100" class="form-control" value="0" inputmode="decimal"></div>
+                </div>
+                <div id="heModeHelp" class="he-mode-help mt-2"><i class="bi bi-info-circle"></i> Modo horas extras: la compensación queda bloqueada y en cero.</div>
+                <div class="he-row mt-2"><div><label>Motivo</label><input name="motivo" class="form-control" placeholder="PLANILLA / GOCE"></div><div><label>Observación</label><input name="observacion" class="form-control" placeholder="Opcional"></div></div>
+                <button class="he-btn mt-2"><i class="bi bi-save"></i> Guardar y recalcular</button>
+              </form>
+            </div></details>
+
+            <details class="he-details"><summary><i class="bi bi-cloud-arrow-up"></i> Cargas masivas</summary><div class="inside">
+              <form method="post" action="{{url_for('horas_extras_cargar_trabajadores')}}" enctype="multipart/form-data" class="he-form"><label>Base trabajadores activos / nuevos ingresos</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="he-mini">Actualiza por DNI y agrega nuevos. No elimina trabajadores ni cambia a INACTIVO por ausencia en esta base.</div><button class="he-btn mt-2"><i class="bi bi-people"></i> Cargar trabajadores</button></form>
+              <form method="post" action="{{url_for('horas_extras_cargar_cesados')}}" enctype="multipart/form-data" class="he-form"><label>Base trabajadores cesados</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="he-mini">Solo cambia estado a INACTIVO. No borra datos ni historial.</div><button class="he-btn mt-2"><i class="bi bi-person-x"></i> Cargar cesados</button></form>
+              <form method="post" action="{{url_for('horas_extras_cargar_masiva')}}" enctype="multipart/form-data" class="he-form"><label>Carga masiva horas extras / compensaciones</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="he-btn mt-2"><i class="bi bi-clock"></i> Cargar HE</button></form>
+              <form method="post" action="{{url_for('horas_extras_cargar_descansos_mes')}}" enctype="multipart/form-data" class="he-form"><label>Carga masiva descansos por mes</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="he-mini">Hoja DESCANSOS_MES: PERIODO+DNI+DIA_DESCANSO, o FECHA+DNI, o matriz 01...31 con X/SI.</div><button class="he-btn mt-2"><i class="bi bi-calendar-week"></i> Cargar descansos</button></form>
+              <form method="post" action="{{url_for('horas_extras_cargar_feriados_nacionales')}}" enctype="multipart/form-data" class="he-form"><label>Feriados nacionales generales</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control"><div class="he-mini">Sin archivo carga feriados Perú 2026. Con Excel usar FECHA y DESCRIPCION. Siempre se guarda sin DNI.</div><button class="he-btn mt-2"><i class="bi bi-flag"></i> Cargar feriados</button></form>
+            </div></details>
+          </div>
+
+          <div>
+            <div class="he-filter-box">
+              <div class="he-filter-head"><i class="bi bi-search"></i> Filtrar registros</div>
+              <form method="get" class="he-form">
+                <div class="he-row"><div><label>Desde</label><input type="date" name="desde" class="form-control" value="{{desde}}"></div><div><label>Hasta</label><input type="date" name="hasta" class="form-control" value="{{hasta}}"></div></div>
+                <label class="mt-2">DNI / trabajador / área / cargo</label><input id="heFiltroQ" class="form-control" name="q" value="{{q}}" placeholder="DNI o nombre" autocomplete="off">
+                <div id="heFiltroNombre" class="he-filter-worker {% if not filtro_trabajador %}empty{% endif %}">{% if filtro_trabajador %}<i class="bi bi-person-check"></i> {{filtro_trabajador.dni}} - {{filtro_trabajador.nombres}}{% else %}<i class="bi bi-person"></i> Digita un DNI para mostrar el trabajador filtrado.{% endif %}</div>
+                <button class="he-btn mt-2"><i class="bi bi-search"></i> Filtrar</button>
+              </form>
+
+              <div class="he-inline-title">Resumen por tipo</div>
+              <div class="he-res-mini"><div class="box"><small>HE 100%</small><b>{{fmt(resumen.saldo100)}} h</b></div><div class="box"><small>HE 35%</small><b>{{fmt(resumen.saldo35)}} h</b></div><div class="box"><small>HE 25%</small><b>{{fmt(resumen.saldo25)}} h</b></div></div>
+              <div class="he-mini">Saldo ya descuenta compensaciones aplicadas en orden: 100%, 35%, 25%.</div>
+              <div class="he-total-pay"><small>Total para pago del filtro</small><b>{{money(pago_total)}}</b></div>
+
+              <div class="he-inline-title">Detalle para pago</div>
+              <div class="he-tablewrap"><table class="he-pay-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Saldo 100</th><th>Monto 100</th><th>Saldo 35</th><th>Monto 35</th><th>Saldo 25</th><th>Monto 25</th><th>Total</th></tr></thead><tbody>{% for t in trabajadores %}<tr><td>{{t.dni}}</td><td>{{t.nombres}}</td><td>{{fmt(t.saldo100)}}</td><td>{{money(t.monto100)}}</td><td>{{fmt(t.saldo35)}}</td><td>{{money(t.monto35)}}</td><td>{{fmt(t.saldo25)}}</td><td>{{money(t.monto25)}}</td><td><b>{{money(t.monto_total)}}</b></td></tr>{% else %}<tr><td colspan="9" class="text-center text-muted">Sin datos para pago.</td></tr>{% endfor %}</tbody></table></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="he-kpis"><div class="he-kpi"><small>Generado</small><b>{{fmt(resumen.total_generado)}}</b></div><div class="he-kpi"><small>Compensado</small><b>{{fmt(resumen.total_compensado)}}</b></div><div class="he-kpi"><small>Gozado</small><b>{{fmt(resumen.total_gozado)}}</b></div><div class="he-kpi"><small>Saldo</small><b>{{fmt(resumen.saldo_total)}}</b></div><div class="he-kpi"><small>Registros</small><b>{{resumen.registros}}</b></div><div class="he-kpi"><small>No aplicada</small><b>{{fmt(resumen.comp_no_aplicada)}}</b></div></div>
+
+        <div class="he-section">Registros</div>
+        <form method="post" action="{{url_for('horas_extras_marcar_compensadas')}}" class="mb-2"><input type="hidden" name="q" value="{{q}}"><input type="hidden" name="desde" value="{{desde}}"><input type="hidden" name="hasta" value="{{hasta}}"><button class="he-outline" onclick="return confirm('¿Marcar como GOZADAS/COMPENSADAS las compensaciones filtradas?')"><i class="bi bi-check2-circle"></i> Marcar gozado según filtro</button></form>
+        <div class="he-tablewrap"><table class="he-table"><thead><tr><th>Fecha</th><th>DNI</th><th>Trabajador</th><th>Tipo reg.</th><th>Día</th><th>Gen 25</th><th>Gen 35</th><th>Gen 100</th><th>Comp.</th><th>Pago</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{display_date(r.fecha)}}</td><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{% if fmt(r.compensacion) != '0.00' %}<span class="he-pill he-tag-blue">COMPENSACIÓN</span>{% else %}<span class="he-pill he-tag-green">HORAS EXTRAS</span>{% endif %}</td><td>{{r.tipo_dia}}</td><td>{{fmt(r.he25_brutas)}}</td><td>{{fmt(r.he35_brutas)}}</td><td>{{fmt(r.he100_brutas)}}</td><td>{{fmt(r.compensacion)}}</td><td>{{money(r.monto_total)}}</td><td><span class="he-pill {% if r.estado_compensacion=='COMPENSADA' %}warn{% endif %}">{{r.estado_compensacion}}</span></td><td><div class="he-action-mini"><a class="text-danger" href="{{url_for('horas_extras_eliminar', item_id=r.id)}}" onclick="return confirm('¿Eliminar registro?')"><i class="bi bi-trash"></i></a></div></td></tr>{% else %}<tr><td colspan="12" class="text-center text-muted">Sin registros.</td></tr>{% endfor %}</tbody></table></div>
+      </div></div></div>
+      <script>
+      (function(){
+        const $ = (id)=>document.getElementById(id);
+        const frm=$('frmHE'), dni=$('heDni'), st=$('heTrabStatus'), nombre=$('heTrabNombre'), tipo=$('heTipoRegistro'), help=$('heModeHelp'), filtro=$('heFiltroQ'), filtroNom=$('heFiltroNombre');
+        function onlyDni(v){return String(v||'').replace(/\D/g,'').slice(-8)}
+        function setLocked(el, locked){if(!el)return; el.disabled=!!locked; el.classList.toggle('he-locked',!!locked)}
+        function setVal(id,v){const e=$(id); if(e)e.value=v}
+        function mode(){
+          const isComp = tipo && tipo.value==='COMPENSACION';
+          ['heTotalHoras','heAuto','he25','he35','he100'].forEach(id=>setLocked($(id),isComp));
+          setLocked($('heCompensacion'),!isComp);
+          setLocked($('heEstadoComp'),!isComp);
+          if(isComp){
+            setVal('heTotalHoras','0'); setVal('he25','0'); setVal('he35','0'); setVal('he100','0'); if($('heAuto'))$('heAuto').value='NO'; if($('heEstadoComp'))$('heEstadoComp').value='PENDIENTE';
+            help.innerHTML='<i class="bi bi-lock"></i> Modo compensación: Total horas, Auto y HE 25/35/100 quedan bloqueados. Solo se registra la compensación/goce.';
+          }else{
+            setVal('heCompensacion','0'); if($('heEstadoComp'))$('heEstadoComp').value='NO APLICA';
+            help.innerHTML='<i class="bi bi-lock"></i> Modo horas extras: la compensación queda bloqueada y en cero.';
+          }
+        }
+        async function lookupDni(v, targetStatus, targetName){
+          let d=onlyDni(v); if(targetName===nombre && dni)dni.value=d;
+          if(d.length<8){ if(targetStatus)targetStatus.textContent='Digite 8 números para traer trabajador.'; if(targetName)targetName.value=''; return null; }
+          try{
+            let r=await fetch('/api/horas-extras/trabajador/'+d,{cache:'no-store',credentials:'same-origin'}); let j=await r.json();
+            if(j.ok){
+              const t=j.trabajador||{}, nom=t.nombres||t.trabajador||'';
+              if(targetStatus){targetStatus.innerHTML='✓ <b>'+nom+'</b> · '+(t.area||'')+' · Valor hora '+j.valor_hora; targetStatus.style.color='#08713b';}
+              if(targetName){targetName.value=nom;}
+              return {dni:d,nombre:nom,area:t.area||'',cargo:t.cargo||''};
+            }else{
+              if(targetStatus){targetStatus.textContent='DNI no encontrado. Cárguelo en trabajadores.'; targetStatus.style.color='#b91c1c';}
+              if(targetName){targetName.value='';}
+            }
+          }catch(e){ if(targetStatus){targetStatus.textContent='Error consultando trabajador.'; targetStatus.style.color='#b91c1c';} }
+          return null;
+        }
+        async function lookupFiltro(){
+          if(!filtro||!filtroNom)return; let d=onlyDni(filtro.value); if(d.length<8){filtroNom.classList.add('empty'); filtroNom.innerHTML='<i class="bi bi-person"></i> Digita un DNI para mostrar el trabajador filtrado.'; return;}
+          const res=await lookupDni(d,null,null);
+          if(res){filtroNom.classList.remove('empty'); filtroNom.innerHTML='<i class="bi bi-person-check"></i> '+res.dni+' - '+res.nombre;}
+          else{filtroNom.classList.add('empty'); filtroNom.innerHTML='<i class="bi bi-exclamation-circle"></i> DNI no encontrado en trabajadores.';}
+        }
+        if(tipo)tipo.addEventListener('change',mode); mode();
+        if(dni)dni.addEventListener('input',()=>lookupDni(dni.value,st,nombre));
+        if(filtro){filtro.addEventListener('input',lookupFiltro); if(onlyDni(filtro.value).length===8) setTimeout(lookupFiltro,200);}
+        if(frm)frm.addEventListener('submit',function(){ if(tipo && tipo.value==='COMPENSACION'){['heTotalHoras','heAuto','he25','he35','he100'].forEach(id=>{const e=$(id); if(e)e.disabled=false;});}else{const c=$('heCompensacion'); if(c)c.disabled=false; const ec=$('heEstadoComp'); if(ec)ec.disabled=false;} });
+      })();
+      </script>
+    """
+    return render_page(body, q=q, desde=desde, hasta=hasta, today=today_str(), rows=rows, resumen=resumen,
+                       trabajadores=trabajadores, pago_total=pago_total, fmt=_he_fmt, money=_he_money,
+                       display_date=_he_display_date, filtro_trabajador=filtro_trabajador, title='Horas Extras')
+
+horas_extras_modulo_v314.methods = ['GET','POST']
+try:
+    app.view_functions['horas_extras_modulo'] = horas_extras_modulo_v314
+except Exception as _e314:
+    print('HE314 no pudo reemplazar módulo:', _e314)
+# =================== FIN PATCH HORAS EXTRAS 314 ===================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
