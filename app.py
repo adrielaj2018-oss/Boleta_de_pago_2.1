@@ -15335,6 +15335,309 @@ except Exception as _e313:
     print('HE313 no pudo reemplazar endpoint:', _e313)
 # =================== FIN PATCH HORAS EXTRAS 313 ===================
 
+# =================== PATCH HORAS EXTRAS 314 ===================
+def _he_regla_texto_v314(calc):
+    desc = (calc.get('feriado_descanso_desc') or '').strip()
+    if calc.get('es_feriado') or calc.get('es_descanso'):
+        base = 'Aplica HE 100% por día de descanso / feriado según la configuración del calendario.'
+        if calc.get('es_feriado') and calc.get('es_descanso'):
+            base = 'Aplica HE 100% por feriado y día de descanso coincidentes.'
+        elif calc.get('es_feriado'):
+            base = 'Aplica HE 100% por feriado.'
+        elif calc.get('es_descanso'):
+            base = 'Aplica HE 100% por día de descanso.'
+        return (base + (' ' + desc if desc else '')).strip()
+    return 'Día ordinario: las primeras 2 horas van al 25% y las horas siguientes al 35%.'
+
+
+def _he_calcular_v314(fecha, dni, total_horas=0, he25=0, he35=0, he100=0, compensacion=0, auto_calcular=False):
+    fecha_iso = _he_date(fecha) or today_str()
+    total_horas = max(_he_float(total_horas), 0.0)
+    he25_b = max(_he_float(he25), 0.0)
+    he35_b = max(_he_float(he35), 0.0)
+    he100_b = max(_he_float(he100), 0.0)
+    comp = max(_he_float(compensacion), 0.0)
+    tipo = _he_tipo_dia(fecha_iso, dni)
+    if auto_calcular and total_horas > 0:
+        if tipo['es_feriado'] or tipo['es_descanso']:
+            he100_b = total_horas
+            he25_b = 0.0
+            he35_b = 0.0
+        else:
+            he25_b = min(total_horas, 2.0)
+            he35_b = max(total_horas - 2.0, 0.0)
+            he100_b = 0.0
+    d = _he_distribuir_comp(he100_b, he35_b, he25_b, comp)
+    out = {
+        'tipo_dia': tipo['tipo_dia'], 'es_feriado': tipo['es_feriado'], 'es_descanso': tipo['es_descanso'], 'feriado_descanso_desc': tipo['descripcion'],
+        'he25_brutas': round(he25_b, 2), 'he35_brutas': round(he35_b, 2), 'he100_brutas': round(he100_b, 2), 'compensacion': round(comp, 2),
+        'comp_aplicada_100': round(d['comp100'], 2), 'comp_aplicada_35': round(d['comp35'], 2), 'comp_aplicada_25': round(d['comp25'], 2), 'comp_saldo': round(d['comp_no_aplicada'], 2),
+        'he25_pago': round(d['saldo25'], 2), 'he35_pago': round(d['saldo35'], 2), 'he100_pago': round(d['saldo100'], 2),
+    }
+    out['regla_texto'] = _he_regla_texto_v314(out)
+    return out
+
+
+_he_calcular = _he_calcular_v314
+
+
+def _he_series_v314(rows):
+    daily = {}
+    for r in rows or []:
+        fecha = _he_date(r.get('fecha')) or ''
+        if not fecha:
+            continue
+        it = daily.setdefault(fecha, {'generado':0.0,'compensado':0.0,'pago':0.0,'registros':0})
+        it['generado'] += _he_float(r.get('he25_brutas')) + _he_float(r.get('he35_brutas')) + _he_float(r.get('he100_brutas'))
+        it['compensado'] += _he_float(r.get('comp_aplicada_25')) + _he_float(r.get('comp_aplicada_35')) + _he_float(r.get('comp_aplicada_100'))
+        it['pago'] += _he_float(r.get('monto_total'))
+        it['registros'] += 1
+    labels, generado, compensado, saldo, pago = [], [], [], [], []
+    running = 0.0
+    for fecha in sorted(daily.keys()):
+        labels.append(_he_display_date(fecha))
+        g = round(daily[fecha]['generado'], 2)
+        c = round(daily[fecha]['compensado'], 2)
+        running = round(running + g - c, 2)
+        generado.append(g)
+        compensado.append(c)
+        saldo.append(running)
+        pago.append(round(daily[fecha]['pago'], 2))
+    return {'labels': labels, 'generado': generado, 'compensado': compensado, 'saldo': saldo, 'pago': pago}
+
+
+def api_horas_extras_calculo_v314():
+    if not session.get('usuario'):
+        return jsonify(ok=False, msg='Sesión no válida'), 401
+    dni = limpiar_dni(request.args.get('dni'))
+    fecha = request.args.get('fecha') or today_str()
+    total_horas = request.args.get('total_horas') or 0
+    he25 = request.args.get('he25') or 0
+    he35 = request.args.get('he35') or 0
+    he100 = request.args.get('he100') or 0
+    compensacion = request.args.get('compensacion') or 0
+    auto = str(request.args.get('auto_calcular') or 'SI').upper() == 'SI'
+    trab = _he_worker(dni) if dni else None
+    if not trab:
+        return jsonify(ok=False, msg='DNI no encontrado')
+    calc = _he_calcular(fecha, dni, total_horas, he25, he35, he100, compensacion, auto)
+    rem = _he_float(trab.get('remuneracion'))
+    horas_mes = _he_float(trab.get('horas_mes'), HE_DEFAULT_HORAS_MES) or HE_DEFAULT_HORAS_MES
+    valor_hora = rem / horas_mes if horas_mes else 0
+    pago = {
+        'monto25': round(calc['he25_pago'] * valor_hora * 1.25, 2),
+        'monto35': round(calc['he35_pago'] * valor_hora * 1.35, 2),
+        'monto100': round(calc['he100_pago'] * valor_hora * 2.00, 2),
+    }
+    pago['monto_total'] = round(pago['monto25'] + pago['monto35'] + pago['monto100'], 2)
+    return jsonify(ok=True, trabajador=trab, valor_hora=_he_money(valor_hora), valor_hora_num=round(valor_hora, 4), calc=calc, pago=pago)
+
+
+def horas_extras_modulo_v314():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    _he_ensure_db()
+    if request.method == 'POST':
+        try:
+            dni = limpiar_dni(request.form.get('dni'))
+            _he_insert(
+                request.form.get('fecha') or today_str(), dni,
+                request.form.get('total_horas'), request.form.get('he25'), request.form.get('he35'), request.form.get('he100'),
+                request.form.get('compensacion'), request.form.get('auto_calcular') == 'SI',
+                request.form.get('motivo'), request.form.get('observacion'), request.form.get('estado_compensacion') or 'PENDIENTE'
+            )
+            flash('Registro guardado correctamente.', 'success')
+        except Exception as e:
+            flash(str(e), 'danger')
+        return redirect(url_for('horas_extras_modulo') + '?vista=registro')
+
+    q, desde, hasta = _he_default_filters()
+    vista = (request.args.get('vista') or 'inicio').strip().lower()
+    rows = _he_list(q, desde, hasta, 500)
+    resumen = _he_resumen_saldos(rows)
+    trabajadores = _he_resumen_trabajadores(rows)
+    pago_total = sum(_he_float(t.get('monto_total')) for t in trabajadores)
+    chart_data = json.dumps(_he_series_v314(rows), ensure_ascii=False)
+
+    body = _he_css() + r'''
+    <style>
+      .he-classic{max-width:390px;margin:0 auto;background:#fff;border:1px solid #dfe7df;border-radius:15px;overflow:hidden;box-shadow:0 8px 22px #00000012}
+      .he-classic-head{background:#08763c;color:#fff;min-height:155px;padding:14px 18px 22px;position:relative;text-align:center}
+      .he-classic-head .back{position:absolute;left:16px;top:31px;color:#fff;font-size:35px;text-decoration:none}.he-classic-head .cfg{position:absolute;right:12px;top:22px;border:1px solid #dff8e8;border-radius:14px;padding:7px 11px;color:#fff;text-decoration:none;font-size:12px;font-weight:900}
+      .he-classic-head .ico{font-size:42px;line-height:1;margin-top:13px}.he-classic-head h1{font-size:19px;font-weight:950;margin:8px 0 0;text-transform:uppercase}.he-classic-body{padding:18px}
+      .he-menu-title{font-size:16px;font-weight:950;color:#08763c;text-transform:uppercase;margin:8px 0 11px}.he-menu-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 11px}.he-menu-card{min-height:98px;border:0;border-radius:12px;background:#08763c;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;text-align:center;padding:8px 4px;box-shadow:0 7px 14px #08763c24;font-family:inherit}.he-menu-card i{font-size:29px;line-height:1;margin-bottom:8px}.he-menu-card span{font-size:11px;font-weight:950;line-height:1.12}
+      .he-classic-note{margin:18px 0 14px;background:#eef6ff;border:1px solid #9fc7ff;color:#0b2e83;border-radius:12px;padding:11px 12px;font-size:11px;font-weight:850;line-height:1.35}.he-mini-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.he-mini-kpi{background:#0d9e50;color:#fff;border-radius:11px;text-align:center;padding:8px 4px}.he-mini-kpi small{display:block;font-size:8px;font-weight:900}.he-mini-kpi b{font-size:18px}.he-operativo{margin-top:14px;border:1px solid #cfe6d4;background:#f6fff8;border-radius:13px;padding:12px}.he-operativo h3{font-size:13px;font-weight:950;color:#08763c;margin:0 0 7px}.he-operativo div{font-size:11px;font-weight:850;color:#183f25}
+      .he-process{display:none}.he-process.active{display:block}.he-process-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}.he-process-head button{width:35px;height:35px;border:0;border-radius:50%;background:#e9f7ed;color:#08763c;font-size:20px}.he-process-head h2{font-size:16px;font-weight:950;color:#08763c;margin:0;text-transform:uppercase}.he-choice{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:9px 0}.he-choice button{border:1px solid #9bcfaa;background:#fff;color:#08763c;border-radius:10px;padding:10px 5px;font-weight:950;font-size:11px}.he-choice button.active{background:#08763c;color:#fff}.he-lock-note{background:#fff7e6;border:1px solid #f4c66d;color:#7a4a00;border-radius:9px;padding:8px;font-size:10px;font-weight:850;margin:8px 0}.he-disabled{opacity:.45;pointer-events:none}.he-process .he-form{margin-top:0}.he-process .he-tablewrap{max-height:420px}
+      .he-helper{border:1px solid #cfe6d4;background:#f6fff8;border-radius:12px;padding:10px;margin:8px 0}.he-helper .hl{font-size:10px;font-weight:950;color:#08763c;text-transform:uppercase}.he-helper .hv{font-size:12px;font-weight:900;color:#173c24}.he-helper-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.he-distrib{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:8px}.he-distrib .box{border:1px solid #dcebdd;background:#fff;border-radius:10px;padding:8px 4px;text-align:center}.he-distrib .box small{display:block;font-size:8px;font-weight:950;color:#08763c}.he-distrib .box b{display:block;font-size:14px;font-weight:950;color:#183f25;margin-top:3px}.he-rule{margin-top:8px;background:#fff;border:1px dashed #93c5a3;border-radius:10px;padding:8px 9px;font-size:10px;font-weight:850;color:#285036;line-height:1.35}
+      .he-chart-card{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:10px;margin:8px 0}.he-chart-card h4{font-size:12px;font-weight:950;color:#08763c;margin:0 0 3px}.he-chart-card p{font-size:10px;font-weight:800;color:#64748b;margin:0 0 8px}.he-canvas{width:100%;height:190px;border:1px solid #edf3ee;background:#fff;border-radius:10px}.he-legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}.he-legend span{font-size:10px;font-weight:850;color:#334155;display:inline-flex;align-items:center;gap:5px}.he-dot{width:10px;height:10px;border-radius:50%}.he-report-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:8px}.he-report-kpis .he-card{margin:0}
+      @media(max-width:420px){.he-classic-body{padding:15px}.he-menu-grid{gap:9px}.he-menu-card{min-height:91px}.he-menu-card span{font-size:10px}.he-distrib{grid-template-columns:repeat(2,1fr)}.he-helper-grid,.he-report-kpis{grid-template-columns:1fr}.he-canvas{height:210px}}
+    </style>
+    <div class="he-classic">
+      <div class="he-classic-head">
+        <a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a>
+        <a class="cfg" href="{{url_for('horas_extras_config')}}"><i class="bi bi-gear"></i> Config.</a>
+        <div class="ico"><i class="bi bi-clock-history"></i></div><h1>Módulo Horas Extras</h1>
+      </div>
+      <div class="he-classic-body">
+        <section id="heInicio" class="he-process {% if vista=='inicio' %}active{% endif %}">
+          <div class="he-menu-title">Módulos</div>
+          <div class="he-menu-grid">
+            <button class="he-menu-card" onclick="abrirProceso('registro')"><i class="bi bi-pencil-square"></i><span>Registro</span></button>
+            <button class="he-menu-card" onclick="abrirProceso('cargas')"><i class="bi bi-cloud-arrow-up"></i><span>Cargas</span></button>
+            <a class="he-menu-card" href="{{url_for('horas_extras_calendario')}}"><i class="bi bi-calendar2-week"></i><span>Calendario</span></a>
+          </div>
+          <div class="he-menu-title mt-4">Operación</div>
+          <div class="he-menu-grid">
+            <button class="he-menu-card" onclick="abrirProceso('control')"><i class="bi bi-clipboard-data"></i><span>Control</span></button>
+            <button class="he-menu-card" onclick="abrirProceso('pago')"><i class="bi bi-cash-coin"></i><span>Pago</span></button>
+            <button class="he-menu-card" onclick="abrirProceso('reportes')"><i class="bi bi-file-earmark-bar-graph"></i><span>Reportes</span></button>
+          </div>
+          <div class="he-classic-note"><i class="bi bi-info-circle-fill"></i> <b>Regla mejorada:</b> ahora la distribución automática considera <b>día ordinario</b> (2 primeras horas al 25% y saldo al 35%) y <b>feriados / descansos</b> (todo al 100%), según normativa peruana y el calendario configurado.</div>
+          <div class="he-mini-kpis"><div class="he-mini-kpi"><small>GENERADO</small><b>{{fmt(resumen.total_generado)}}</b></div><div class="he-mini-kpi"><small>COMPENSADO</small><b>{{fmt(resumen.total_compensado)}}</b></div><div class="he-mini-kpi"><small>SALDO</small><b>{{fmt(resumen.saldo_total)}}</b></div></div>
+          <div class="he-operativo"><h3>RESUMEN OPERATIVO</h3><div>{{resumen.registros}} registro(s) · {{fmt(resumen.total_gozado)}} h gozadas.<br>Pago pendiente calculado: <b>{{money(pago_total)}}</b>.</div></div>
+        </section>
+
+        <section id="heRegistro" class="he-process {% if vista=='registro' %}active{% endif %}">
+          <div class="he-process-head"><button onclick="abrirProceso('inicio')"><i class="bi bi-chevron-left"></i></button><h2>Registrar</h2></div>
+          <div class="he-choice"><button type="button" id="tipoHE" class="active" onclick="seleccionarTipo('HE')"><i class="bi bi-clock"></i> Horas extras</button><button type="button" id="tipoCOMP" onclick="seleccionarTipo('COMP')"><i class="bi bi-arrow-repeat"></i> Compensación</button></div>
+          <div id="heLockNote" class="he-lock-note">Modo Horas extras activo. La compensación está bloqueada.</div>
+          <form method="post" id="frmHE" class="he-form">
+            <div class="he-row"><div><label>Fecha</label><input type="date" name="fecha" id="heFecha" class="form-control" value="{{today}}" required></div><div><label>DNI</label><input id="heDni" name="dni" maxlength="8" inputmode="numeric" class="form-control" required></div></div>
+            <div id="heTrabStatus" class="he-mini mt-1">Digite 8 números para traer trabajador.</div>
+            <div class="he-helper">
+              <div class="he-helper-grid">
+                <div><div class="hl">Trabajador</div><div class="hv" id="heTrabajador">-</div></div>
+                <div><div class="hl">Valor hora</div><div class="hv" id="heValorHora">S/ 0,00</div></div>
+                <div><div class="hl">Tipo de día</div><div class="hv" id="heTipoDia">ORDINARIO</div></div>
+                <div><div class="hl">Descanso configurado</div><div class="hv" id="heDescanso">-</div></div>
+              </div>
+              <div class="he-rule" id="heReglaInfo">La distribución automática aplicará 25% / 35% o 100% según el calendario y el día de descanso del trabajador.</div>
+              <div class="he-distrib">
+                <div class="box"><small>TOTAL</small><b id="pvTotal">0.00</b></div>
+                <div class="box"><small>HE 25%</small><b id="pv25">0.00</b></div>
+                <div class="box"><small>HE 35%</small><b id="pv35">0.00</b></div>
+                <div class="box"><small>HE 100%</small><b id="pv100">0.00</b></div>
+              </div>
+            </div>
+            <div id="bloqueHE">
+              <div class="he-row mt-2"><div><label>Total horas</label><input name="total_horas" id="total_horas" type="number" min="0" step="0.01" class="form-control" value="0"></div><div><label>Cálculo automático</label><select name="auto_calcular" id="auto_calcular" class="form-select"><option value="SI">SI</option><option value="NO">NO</option></select></div></div>
+              <div class="he-row3 mt-2"><div><label>HE 25%</label><input name="he25" id="he25" type="number" min="0" step="0.01" class="form-control" value="0"></div><div><label>HE 35%</label><input name="he35" id="he35" type="number" min="0" step="0.01" class="form-control" value="0"></div><div><label>HE 100%</label><input name="he100" id="he100" type="number" min="0" step="0.01" class="form-control" value="0"></div></div>
+            </div>
+            <div id="bloqueCOMP" class="he-disabled"><div class="he-row mt-2"><div><label>Horas a compensar</label><input name="compensacion" id="compensacion" type="number" min="0" step="0.01" class="form-control" value="0" disabled></div><div><label>Estado compensación</label><select name="estado_compensacion" id="estado_compensacion" class="form-select" disabled><option>PENDIENTE</option><option>COMPENSADA</option><option>NO APLICA</option></select></div></div></div>
+            <div class="he-row mt-2"><div><label>Motivo</label><input name="motivo" class="form-control" placeholder="PLANILLA / GOCE"></div><div><label>Observación</label><input name="observacion" class="form-control"></div></div>
+            <button class="he-btn mt-2"><i class="bi bi-save"></i> Guardar registro</button>
+          </form>
+        </section>
+
+        <section id="heCargas" class="he-process {% if vista=='cargas' %}active{% endif %}"><div class="he-process-head"><button onclick="abrirProceso('inicio')"><i class="bi bi-chevron-left"></i></button><h2>Cargas</h2></div>
+          <form method="post" action="{{url_for('horas_extras_cargar_trabajadores')}}" enctype="multipart/form-data" class="he-form"><label>Trabajadores activos / nuevos</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="he-mini">Actualiza por DNI y agrega nuevos. No elimina historial.</div><button class="he-btn mt-2"><i class="bi bi-people"></i> Cargar trabajadores</button></form>
+          <form method="post" action="{{url_for('horas_extras_cargar_cesados')}}" enctype="multipart/form-data" class="he-form"><label>Trabajadores cesados</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="he-btn mt-2"><i class="bi bi-person-x"></i> Cargar cesados</button></form>
+          <form method="post" action="{{url_for('horas_extras_cargar_masiva')}}" enctype="multipart/form-data" class="he-form"><label>Horas extras / compensaciones</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="he-mini">Cada fila debe contener horas extras o compensación, nunca ambas. Si AUTO_CALCULAR=SI, se aplicará 25/35 o 100 según el día.</div><button class="he-btn mt-2"><i class="bi bi-clock"></i> Cargar registros</button></form>
+          <form method="post" action="{{url_for('horas_extras_cargar_descansos_mes')}}" enctype="multipart/form-data" class="he-form"><label>Descansos por mes</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="he-btn mt-2"><i class="bi bi-calendar-week"></i> Cargar descansos</button></form>
+        </section>
+
+        <section id="heControl" class="he-process {% if vista=='control' %}active{% endif %}"><div class="he-process-head"><button onclick="abrirProceso('inicio')"><i class="bi bi-chevron-left"></i></button><h2>Control</h2></div>
+          <form class="he-form" method="get"><input type="hidden" name="vista" value="control"><div class="he-row"><div><label>Desde</label><input type="date" name="desde" class="form-control" value="{{desde}}"></div><div><label>Hasta</label><input type="date" name="hasta" class="form-control" value="{{hasta}}"></div></div><label class="mt-2">Buscar</label><input class="form-control" name="q" value="{{q}}" placeholder="DNI, nombre, área o cargo"><button class="he-btn mt-2"><i class="bi bi-search"></i> Filtrar</button></form>
+          <div class="he-kpis"><div class="he-kpi"><small>Generado</small><b>{{fmt(resumen.total_generado)}}</b></div><div class="he-kpi"><small>Compensado</small><b>{{fmt(resumen.total_compensado)}}</b></div><div class="he-kpi"><small>Saldo</small><b>{{fmt(resumen.saldo_total)}}</b></div></div>
+          <div class="he-chart-card"><h4>Evolución de horas</h4><p>Líneas de seguimiento del periodo filtrado: generado, compensado y saldo acumulado.</p><canvas id="chartHoras" class="he-canvas" width="340" height="190"></canvas><div class="he-legend"><span><i class="he-dot" style="background:#0d9e50"></i> Generado</span><span><i class="he-dot" style="background:#2563eb"></i> Compensado</span><span><i class="he-dot" style="background:#dc2626"></i> Saldo acumulado</span></div></div>
+          <div class="he-tablewrap"><table class="he-table"><thead><tr><th>Fecha</th><th>DNI</th><th>Trabajador</th><th>25%</th><th>35%</th><th>100%</th><th>Comp.</th><th>Estado</th><th>Tipo día</th><th></th></tr></thead><tbody>{% for r in rows %}<tr><td>{{display_date(r.fecha)}}</td><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{{fmt(r.he25_brutas)}}</td><td>{{fmt(r.he35_brutas)}}</td><td>{{fmt(r.he100_brutas)}}</td><td>{{fmt(r.compensacion)}}</td><td>{{r.estado_compensacion}}</td><td>{{r.tipo_dia}}</td><td><a class="text-danger" href="{{url_for('horas_extras_eliminar', item_id=r.id)}}" onclick="return confirm('¿Eliminar registro?')"><i class="bi bi-trash"></i></a></td></tr>{% else %}<tr><td colspan="10">Sin registros.</td></tr>{% endfor %}</tbody></table></div>
+        </section>
+
+        <section id="hePago" class="he-process {% if vista=='pago' %}active{% endif %}"><div class="he-process-head"><button onclick="abrirProceso('inicio')"><i class="bi bi-chevron-left"></i></button><h2>Pago</h2></div><div class="he-total-pay"><small>Total calculado para pago</small><b>{{money(pago_total)}}</b></div><div class="he-chart-card"><h4>Evolución del pago estimado</h4><p>Montos proyectados por día según el saldo pendiente de pago.</p><canvas id="chartPago" class="he-canvas" width="340" height="190"></canvas><div class="he-legend"><span><i class="he-dot" style="background:#f59e0b"></i> Pago estimado</span></div></div><div class="he-tablewrap"><table class="he-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Saldo 25</th><th>Saldo 35</th><th>Saldo 100</th><th>Total</th></tr></thead><tbody>{% for t in trabajadores %}<tr><td>{{t.dni}}</td><td>{{t.nombres}}</td><td>{{fmt(t.saldo25)}}</td><td>{{fmt(t.saldo35)}}</td><td>{{fmt(t.saldo100)}}</td><td><b>{{money(t.monto_total)}}</b></td></tr>{% else %}<tr><td colspan="6">Sin datos.</td></tr>{% endfor %}</tbody></table></div><a class="he-btn mt-2" href="{{url_for('exportar_horas_extras_pago', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-file-earmark-excel"></i> Exportar pago</a></section>
+
+        <section id="heReportes" class="he-process {% if vista=='reportes' %}active{% endif %}"><div class="he-process-head"><button onclick="abrirProceso('inicio')"><i class="bi bi-chevron-left"></i></button><h2>Reportes</h2></div><div class="he-actions"><a class="he-outline" href="{{url_for('horas_extras_plantilla')}}"><i class="bi bi-download"></i> Plantilla</a><a class="he-outline" href="{{url_for('exportar_horas_extras', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-file-earmark-excel"></i> Registros</a><a class="he-outline" href="{{url_for('exportar_horas_extras_pago', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-cash-coin"></i> Pago</a><a class="he-outline" href="{{url_for('horas_extras_calendario')}}"><i class="bi bi-calendar2-week"></i> Calendario</a></div><div class="he-report-kpis"><div class="he-card"><small>Último filtro</small><b>{{display_date(desde)}} al {{display_date(hasta)}}</b></div><div class="he-card"><small>Total pago proyectado</small><b>{{money(pago_total)}}</b></div><div class="he-card"><small>Horas generadas</small><b>{{fmt(resumen.total_generado)}}</b></div><div class="he-card"><small>Horas compensadas / gozadas</small><b>{{fmt(resumen.total_compensado)}} / {{fmt(resumen.total_gozado)}}</b></div></div></section>
+      </div>
+    </div>
+    <script>
+    (function(){
+      const map={inicio:'heInicio',registro:'heRegistro',cargas:'heCargas',control:'heControl',pago:'hePago',reportes:'heReportes'};
+      const chartData = {{chart_data|safe}};
+      function fmt2(v){ const n=parseFloat(v||0); return (isNaN(n)?0:n).toFixed(2); }
+      window.abrirProceso=function(n){document.querySelectorAll('.he-process').forEach(x=>x.classList.remove('active'));const e=document.getElementById(map[n]||map.inicio);if(e)e.classList.add('active');history.replaceState(null,'','?vista='+n);window.scrollTo({top:0,behavior:'smooth'});setTimeout(()=>{drawCharts();},80);};
+      window.seleccionarTipo=function(tipo){const he=tipo==='HE', bHE=document.getElementById('bloqueHE'),bC=document.getElementById('bloqueCOMP');document.getElementById('tipoHE').classList.toggle('active',he);document.getElementById('tipoCOMP').classList.toggle('active',!he);bHE.classList.toggle('he-disabled',!he);bC.classList.toggle('he-disabled',he);['total_horas','auto_calcular','he25','he35','he100'].forEach(id=>{const e=document.getElementById(id);if(!e)return;e.disabled=!he;if(!he&&e.tagName!=='SELECT')e.value='0';});['compensacion','estado_compensacion'].forEach(id=>{const e=document.getElementById(id);if(!e)return;e.disabled=he;if(he&&id==='compensacion')e.value='0';});document.getElementById('heLockNote').textContent=he?'Modo Horas extras activo. La compensación está bloqueada.':'Modo Compensación activo. Las horas extras están bloqueadas.'; actualizarPreview();};
+      async function actualizarTrabajador(){
+        const d=(document.getElementById('heDni')?.value||'').replace(/\D/g,'').slice(0,8);
+        const st=document.getElementById('heTrabStatus');
+        if(d.length!==8){ if(st) st.textContent='Digite 8 números para traer trabajador.'; document.getElementById('heTrabajador').textContent='-'; document.getElementById('heValorHora').textContent='S/ 0,00'; document.getElementById('heDescanso').textContent='-'; return; }
+        try{
+          const r=await fetch('/api/horas-extras/trabajador/'+d,{cache:'no-store'}); const j=await r.json();
+          if(j.ok){ const t=j.trabajador||{}; if(st) st.innerHTML='✓ '+(t.nombres||t.trabajador||'TRABAJADOR')+' - '+(t.area||'SIN ÁREA')+' / '+(t.cargo||'SIN CARGO'); document.getElementById('heTrabajador').textContent=t.nombres||t.trabajador||'-'; document.getElementById('heValorHora').textContent=j.valor_hora||'S/ 0,00'; document.getElementById('heDescanso').textContent=t.dia_descanso||'-'; }
+          else { if(st) st.textContent='✕ '+(j.msg||'DNI no encontrado'); document.getElementById('heTrabajador').textContent='-'; document.getElementById('heValorHora').textContent='S/ 0,00'; document.getElementById('heDescanso').textContent='-'; }
+        }catch(e){ if(st) st.textContent='Error consultando DNI'; }
+      }
+      async function actualizarPreview(){
+        const d=(document.getElementById('heDni')?.value||'').replace(/\D/g,'').slice(0,8);
+        if(d.length!==8){return;}
+        const params = new URLSearchParams({
+          fecha: document.getElementById('heFecha')?.value || '',
+          dni: d,
+          total_horas: document.getElementById('total_horas')?.value || '0',
+          auto_calcular: document.getElementById('auto_calcular')?.value || 'SI',
+          he25: document.getElementById('he25')?.value || '0',
+          he35: document.getElementById('he35')?.value || '0',
+          he100: document.getElementById('he100')?.value || '0',
+          compensacion: document.getElementById('compensacion')?.value || '0'
+        });
+        try{
+          const r=await fetch('/api/horas-extras/calculo?'+params.toString(),{cache:'no-store'}); const j=await r.json();
+          if(!j.ok) return;
+          const c=j.calc||{};
+          const auto=(document.getElementById('auto_calcular')?.value||'SI')==='SI';
+          const heActivo=document.getElementById('tipoHE')?.classList.contains('active');
+          document.getElementById('heTipoDia').textContent=(c.tipo_dia||'ORDINARIO') + ((c.feriado_descanso_desc||'') ? ' - ' + c.feriado_descanso_desc : '');
+          document.getElementById('heReglaInfo').textContent=c.regla_texto || 'Regla de cálculo automática.';
+          document.getElementById('pvTotal').textContent=fmt2((document.getElementById('total_horas')?.value||0));
+          document.getElementById('pv25').textContent=fmt2(c.he25_brutas||0);
+          document.getElementById('pv35').textContent=fmt2(c.he35_brutas||0);
+          document.getElementById('pv100').textContent=fmt2(c.he100_brutas||0);
+          if(heActivo && auto){
+            document.getElementById('he25').value=fmt2(c.he25_brutas||0);
+            document.getElementById('he35').value=fmt2(c.he35_brutas||0);
+            document.getElementById('he100').value=fmt2(c.he100_brutas||0);
+          }
+        }catch(e){}
+      }
+      function drawLineChart(id, series){
+        const cvs=document.getElementById(id); if(!cvs) return; const ctx=cvs.getContext('2d'); const DPR=window.devicePixelRatio||1; const cssW=cvs.clientWidth||340, cssH=cvs.clientHeight||190; cvs.width=cssW*DPR; cvs.height=cssH*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); ctx.clearRect(0,0,cssW,cssH);
+        const labels=series.labels||[]; const dataset=series.datasets||[];
+        ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,cssW,cssH);
+        const left=32,right=8,top=12,bottom=28,w=cssW-left-right,h=cssH-top-bottom;
+        let maxV=0; dataset.forEach(s=>(s.data||[]).forEach(v=>{v=parseFloat(v||0); if(v>maxV)maxV=v;})); if(maxV<=0) maxV=1;
+        ctx.strokeStyle='#e5e7eb'; ctx.lineWidth=1;
+        for(let i=0;i<5;i++){ const y=top + (h*i/4); ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(left+w,y); ctx.stroke(); const v=(maxV-(maxV*i/4)); ctx.fillStyle='#64748b'; ctx.font='9px sans-serif'; ctx.fillText(v.toFixed(0), 2, y+3); }
+        const step=labels.length>1 ? w/(labels.length-1) : 0;
+        dataset.forEach(s=>{ const data=s.data||[]; ctx.strokeStyle=s.color; ctx.lineWidth=2; ctx.beginPath(); data.forEach((val,idx)=>{ const x=left + (labels.length>1 ? idx*step : w/2); const y=top + h - ((parseFloat(val||0)/maxV)*h); if(idx===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); ctx.stroke(); ctx.fillStyle=s.color; data.forEach((val,idx)=>{ const x=left + (labels.length>1 ? idx*step : w/2); const y=top + h - ((parseFloat(val||0)/maxV)*h); ctx.beginPath(); ctx.arc(x,y,2.6,0,Math.PI*2); ctx.fill(); }); });
+        ctx.fillStyle='#64748b'; ctx.font='9px sans-serif'; labels.forEach((lb,idx)=>{ const x=left + (labels.length>1 ? idx*step : w/2); if(idx===0 || idx===labels.length-1 || labels.length<=7 || idx%Math.ceil(labels.length/6)===0){ ctx.save(); ctx.translate(x, cssH-8); ctx.rotate(-0.32); ctx.fillText(lb,0,0); ctx.restore(); } });
+        if(!labels.length){ ctx.fillStyle='#64748b'; ctx.font='12px sans-serif'; ctx.fillText('Sin datos para graficar', cssW/2-50, cssH/2); }
+      }
+      function drawCharts(){
+        drawLineChart('chartHoras', {labels: chartData.labels||[], datasets:[{data:chartData.generado||[], color:'#0d9e50'},{data:chartData.compensado||[], color:'#2563eb'},{data:chartData.saldo||[], color:'#dc2626'}]});
+        drawLineChart('chartPago', {labels: chartData.labels||[], datasets:[{data:chartData.pago||[], color:'#f59e0b'}]});
+      }
+      const dni=document.getElementById('heDni'); ['input','change'].forEach(evt=>{ dni&&dni.addEventListener(evt, ()=>{actualizarTrabajador(); actualizarPreview();}); ['heFecha','total_horas','auto_calcular','he25','he35','he100','compensacion'].forEach(id=>{ const e=document.getElementById(id); e&&e.addEventListener(evt, actualizarPreview);}); });
+      const f=document.getElementById('frmHE'); if(f) f.addEventListener('submit', function(ev){ const comp=parseFloat((document.getElementById('compensacion')||{}).value||0), hs=['total_horas','he25','he35','he100'].reduce((a,id)=>a+parseFloat((document.getElementById(id)||{}).value||0),0); if(comp>0&&hs>0){ev.preventDefault();alert('No puede registrar horas extras y compensación a la vez.');}});
+      actualizarTrabajador(); actualizarPreview(); drawCharts();
+    })();
+    </script>
+    '''
+    return render_page(body, q=q, desde=desde, hasta=hasta, rows=rows, resumen=resumen, trabajadores=trabajadores, pago_total=pago_total,
+                       today=today_str(), money=_he_money, fmt=_he_fmt, display_date=_he_display_date, vista=vista, title='Horas Extras', chart_data=chart_data)
+
+
+try:
+    _he_add_route('/api/horas-extras/calculo', 'api_horas_extras_calculo', api_horas_extras_calculo_v314, ['GET'])
+except Exception:
+    try:
+        app.view_functions['api_horas_extras_calculo'] = api_horas_extras_calculo_v314
+    except Exception:
+        pass
+
+try:
+    app.view_functions['horas_extras_modulo'] = horas_extras_modulo_v314
+except Exception:
+    pass
+# =================== FIN PATCH HORAS EXTRAS 314 ===================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
