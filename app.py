@@ -13605,7 +13605,7 @@ def horas_extras_modulo():
     pago_total = sum(_he_float(t.get('monto_total')) for t in trabajadores)
     body = _he_css() + r'''
     <div class="he-phone"><div class="he-app">
-      <div class="he-head"><a class="back" href="{{url_for('horas_extras_modulo')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl"><i class="bi bi-clock-history"></i> Horas Extras</div><span class="mini">control, compensación y pago</span></div></div>
+      <div class="he-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl"><i class="bi bi-clock-history"></i> Horas Extras</div><span class="mini">control, compensación y pago</span></div></div>
       <div class="he-body">
         <div class="he-note"><b>Regla automática:</b> día ordinario: primeras 2 horas al 25% y saldo al 35%. Feriado/descanso: 100%. La compensación descuenta primero 100%, luego 35% y finalmente 25%. Feriados nacionales son generales, sin DNI; cesados se cargan aparte para cambiar solo a INACTIVO.</div>
         <form class="he-form" method="get"><div class="he-row"><div><label>Desde</label><input type="date" name="desde" class="form-control" value="{{desde}}"></div><div><label>Hasta</label><input type="date" name="hasta" class="form-control" value="{{hasta}}"></div></div><label class="mt-2">Buscar DNI / trabajador / área / cargo</label><input class="form-control" name="q" value="{{q}}" placeholder="DNI o nombre"><button class="he-btn mt-2"><i class="bi bi-search"></i> Filtrar</button></form>
@@ -15336,7 +15336,7 @@ def horas_extras_modulo_v314():
 
     body = _he_css() + extra_css + r"""
     <div class="he-phone"><div class="he-app">
-      <div class="he-head"><a class="back" href="{{url_for('horas_extras_modulo')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl"><i class="bi bi-clock-history"></i> Horas Extras</div><span class="mini">control, compensación y pago</span></div></div>
+      <div class="he-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div><div class="ttl"><i class="bi bi-clock-history"></i> Horas Extras</div><span class="mini">control, compensación y pago</span></div></div>
       <div class="he-body">
         <div class="he-note"><b>Regla automática:</b> en día ordinario, las 2 primeras horas van al 25% y el saldo al 35%. En feriado o descanso, va al 100%. La compensación descuenta primero 100%, luego 35% y finalmente 25%.</div>
         <div class="he-actions"><a class="he-outline" href="{{url_for('horas_extras_plantilla')}}"><i class="bi bi-download"></i> Plantilla</a><a class="he-outline" href="{{url_for('horas_extras_calendario')}}"><i class="bi bi-calendar2-week"></i> Calendario</a><a class="he-outline" href="{{url_for('exportar_horas_extras', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-file-earmark-excel"></i> Exportar</a><a class="he-outline" href="{{url_for('exportar_horas_extras_pago', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-cash-coin"></i> Pago</a></div>
@@ -15470,235 +15470,226 @@ except Exception as _e314:
     print('HE314 no pudo reemplazar módulo:', _e314)
 # =================== FIN PATCH HORAS EXTRAS 314 ===================
 
+# ===================== PATCH HORAS EXTRAS 315: MODO ANTIGUO + REGISTRO ÚNICO =====================
+# 1) Restablece el panel principal antiguo (mosaico de módulos).
+# 2) Al ingresar a H. EXTRAS muestra solamente Registrar individual.
+# 3) Mantiene bloqueo automático entre HORAS EXTRAS y COMPENSACIÓN.
 
-# =================== PATCH HORAS EXTRAS 315: PORTADA POR PROCESOS ===================
-# Vista tipo Módulo Transporte: al entrar a Horas Extras se muestra portada por procesos.
-# La pantalla operativa anterior queda disponible en /horas-extras/registros.
 
-def _he_menu_css_315():
-    return r'''
+def horas_extras_registro_unico_315():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    _he_ensure_db()
+
+    if request.method == 'POST':
+        try:
+            dni = limpiar_dni(request.form.get('dni'))
+            tipo_registro = limpiar_texto(request.form.get('tipo_registro') or 'HORAS_EXTRAS')
+            fecha = request.form.get('fecha') or today_str()
+
+            if tipo_registro in ('COMPENSACION', 'COMPENSACIÓN'):
+                total_horas = 0
+                he25 = 0
+                he35 = 0
+                he100 = 0
+                compensacion = request.form.get('compensacion') or 0
+                auto = False
+                estado_comp = request.form.get('estado_compensacion') or 'PENDIENTE'
+                motivo = request.form.get('motivo') or 'COMPENSACION / GOCE'
+            else:
+                total_horas = request.form.get('total_horas') or 0
+                he25 = request.form.get('he25') or 0
+                he35 = request.form.get('he35') or 0
+                he100 = request.form.get('he100') or 0
+                compensacion = 0
+                auto = request.form.get('auto_calcular') == 'SI'
+                estado_comp = 'NO APLICA'
+                motivo = request.form.get('motivo') or 'PLANILLA / PAGO'
+
+            _he_insert(
+                fecha, dni, total_horas, he25, he35, he100, compensacion,
+                auto, motivo, request.form.get('observacion'), estado_comp
+            )
+            if tipo_registro in ('COMPENSACION', 'COMPENSACIÓN'):
+                flash('Compensación guardada correctamente y saldo recalculado.', 'success')
+            else:
+                flash('Horas extras guardadas correctamente y pago recalculado.', 'success')
+        except Exception as e:
+            flash(str(e), 'danger')
+        return redirect(url_for('horas_extras_modulo'))
+
+    body = _he_css() + r'''
     <style>
-      .shell{max-width:100%!important;padding:0!important;background:#f6f8f6!important;}
-      .he315-wrap{width:100%!important;max-width:430px!important;margin:0 auto!important;padding:0 8px 18px!important;}
-      .he315-app{max-width:390px;margin:8px auto 16px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 10px 28px rgba(0,0,0,.12);border:1px solid #e8eee8;}
-      .he315-hero{height:156px;background:linear-gradient(135deg,#075d2a,#137a37);color:white;position:relative;text-align:center;padding-top:18px;border-radius:18px 18px 0 0;}
-      .he315-hero .back{position:absolute;left:18px;top:30px;color:white;text-decoration:none;font-size:42px;line-height:1;font-weight:300;}
-      .he315-hero .config{position:absolute;right:14px;top:20px;border:1px solid rgba(255,255,255,.65);border-radius:14px;color:white;text-decoration:none;padding:8px 10px;font-weight:900;font-size:13px;display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.08)}
-      .he315-hero .main-icon{font-size:54px;line-height:1;margin-top:2px;display:block;color:#fff;}
-      .he315-hero h1{font-size:20px;letter-spacing:.4px;font-weight:950;margin:8px 0 0;text-transform:uppercase;color:#fff;}
-      .he315-card{background:#fff;margin-top:-16px;border-radius:20px 20px 0 0;padding:28px 18px 22px;position:relative;z-index:2;}
-      .he315-section{color:#07642d;font-size:20px;font-weight:950;letter-spacing:.4px;text-transform:uppercase;margin:4px 0 17px;}
-      .he315-section.oper{font-size:18px;margin-top:28px;margin-bottom:14px;}
-      .he315-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
-      .he315-tile{background:linear-gradient(135deg,#07642d,#0b7a38);color:white!important;text-decoration:none;border-radius:13px;min-height:98px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 9px 16px rgba(0,0,0,.15);padding:9px 6px;font-weight:950;font-size:12px;line-height:1.14;}
-      .he315-tile i{font-size:34px;line-height:1;margin-bottom:9px;color:white!important;}
-      .he315-tile:hover{filter:brightness(1.04);transform:translateY(-1px);}
-      .he315-info{margin:20px 0 16px;border:1px solid #bfdbfe;background:#eff6ff;color:#0b2e83;border-radius:12px;padding:13px 14px;display:grid;grid-template-columns:38px 1fr;gap:10px;align-items:center;font-weight:950;font-size:13px;line-height:1.38;}
-      .he315-info i{width:30px;height:30px;background:#2563eb;color:#fff;border-radius:999px;display:grid;place-items:center;font-size:17px;}
-      .he315-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:10px 0 16px;}
-      .he315-kpi{background:#10964e;color:white;border-radius:10px;text-align:center;padding:10px 4px;box-shadow:0 8px 16px rgba(16,150,78,.18);}
-      .he315-kpi small{display:block;color:#effff3;font-weight:950;font-size:11px;line-height:1.05;}
-      .he315-kpi b{display:block;color:white;font-size:27px;font-weight:950;line-height:1;margin-top:5px;}
-      .he315-summary{border:1px solid #cfe6d4;background:#fbfffc;border-radius:13px;padding:13px 13px 14px;margin-top:6px;}
-      .he315-summary h3{margin:0 0 10px;color:#08713b;font-size:17px;text-transform:uppercase;font-weight:950;}
-      .he315-summary p{margin:3px 0;color:#173b24;font-weight:900;font-size:13px;line-height:1.32;}
-      .he315-mini-top{display:flex;justify-content:space-between;gap:8px;margin-bottom:10px;}
-      .he315-mini-top a{flex:1;height:35px;border-radius:999px;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;font-size:11px;font-weight:950;}
-      .he315-outline{border:1px solid #08713b;color:#08713b!important;background:#fff;height:36px;border-radius:10px;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;font-size:11px;font-weight:950;}
-      .he315-fill{border:1px solid #08713b;color:white!important;background:#08713b;}
-      .he315-form{border:1px solid #d7eadc;background:#fbfffc;border-radius:12px;padding:11px;margin:8px 0 11px;}
-      .he315-form label{font-size:11px;font-weight:950;color:#176a35;margin-bottom:4px;}
-      .he315-form .form-control,.he315-form .form-select{height:37px!important;border-radius:9px!important;font-size:12px!important;font-weight:850;}
-      .he315-btn{height:39px;border-radius:10px;background:#08713b;border:1px solid #08713b;color:white!important;font-weight:950;font-size:12px;width:100%;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:8px;}
-      .he315-list{border:1px solid #e5e7eb;border-radius:11px;overflow:auto;background:#fff;max-height:280px;margin-top:10px;}
-      .he315-table{width:100%;min-width:520px;border-collapse:collapse;}
-      .he315-table th{background:#f8fafc;color:#12223b;font-size:10px;font-weight:950;padding:7px;border-bottom:1px solid #e5e7eb;}
-      .he315-table td{font-size:10.5px;color:#334155;padding:7px;border-bottom:1px solid #f1f5f9;font-weight:750;}
-      @media(max-width:420px){.he315-wrap{padding:0 6px 16px!important}.he315-app{max-width:372px}.he315-card{padding:24px 17px 20px}.he315-grid{gap:10px}.he315-tile{min-height:96px;font-size:11px}.he315-tile i{font-size:31px}.he315-kpi b{font-size:24px}.he315-info{font-size:12px;padding:12px}.he315-hero h1{font-size:18px}}
+      .he-only-wrap{width:100%;max-width:530px;margin:0 auto;padding:8px 6px 18px}
+      .he-only-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+      .he-only-back{width:38px;height:38px;border-radius:999px;display:grid;place-items:center;text-decoration:none;color:#08713b;border:1px solid #cfe7d6;background:#fff;font-size:22px}
+      .he-only-title{font-size:15px;font-weight:950;color:#08713b;text-transform:uppercase;letter-spacing:.2px}
+      .he-reg-card{background:#fff;border:1px solid #cfe7d6;border-radius:15px;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,.06)}
+      .he-reg-head{background:#eafaf0;color:#08713b;font-size:14px;font-weight:950;padding:10px 13px;border-bottom:1px solid #d9eee0}
+      .he-reg-body{padding:12px}
+      .he-reg-grid-top{display:grid;grid-template-columns:1fr .78fr 1.28fr;gap:8px}
+      .he-reg-grid-two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+      .he-reg-grid-three{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:9px}
+      .he-reg-body label{display:block;color:#174e2b;font-size:11px;font-weight:900;margin-bottom:4px}
+      .he-reg-body .form-control,.he-reg-body .form-select{height:42px;border-radius:11px;font-size:13px;font-weight:850;border:1px solid #d7e6db;background:#fff}
+      .he-worker-name{background:#ecfdf5!important;color:#065f32!important;font-weight:950!important;text-transform:uppercase}
+      .he-locked{background:#eef3f7!important;color:#94a3b8!important;border-color:#dbe3ea!important;cursor:not-allowed!important}
+      .he-status{font-size:9.5px;font-weight:850;color:#64748b;margin-top:5px;min-height:14px}
+      .he-mode-help{margin-top:9px;border:1px solid #a7efbd;background:#effdf3;color:#08713b;border-radius:10px;padding:8px 10px;font-size:10px;font-weight:900;line-height:1.3}
+      .he-save-only{width:100%;height:48px;border:0;border-radius:12px;background:#087b3f;color:#fff;font-size:13px;font-weight:950;margin-top:10px}
+      .he-save-only:hover{background:#066a36}
+      @media(max-width:520px){
+        .he-only-wrap{max-width:100%;padding:4px}
+        .he-reg-grid-top{grid-template-columns:1.12fr .82fr 1.32fr;gap:7px}
+        .he-reg-grid-two,.he-reg-grid-three{gap:7px}
+        .he-reg-body{padding:11px}
+        .he-reg-body .form-control,.he-reg-body .form-select{height:41px;font-size:12px;padding:6px 9px}
+        .he-reg-body label{font-size:10px}
+      }
+      @media(max-width:380px){
+        .he-reg-grid-top{grid-template-columns:1fr 1fr}
+        .he-reg-grid-top .worker-col{grid-column:1/-1}
+      }
     </style>
-    '''
-
-
-def _he_count_safe_315(sql, params=()):
-    try:
-        _he_ensure_db()
-        return int(scalar(sql, params) or 0)
-    except Exception as e:
-        print('HE315 count error:', e)
-        return 0
-
-
-def _he_dashboard_values_315():
-    _he_ensure_db()
-    today = today_str()
-    trab = _he_count_safe_315("SELECT COUNT(*) FROM horas_extras_trabajadores WHERE COALESCE(estado,'ACTIVO') <> 'INACTIVO'")
-    regs = _he_count_safe_315("SELECT COUNT(*) FROM horas_extras")
-    fer = _he_count_safe_315("SELECT COUNT(*) FROM calendario_especial WHERE tipo='FERIADO_NACIONAL' AND COALESCE(dni,'')=''")
-    regs_hoy = _he_count_safe_315("SELECT COUNT(*) FROM horas_extras WHERE fecha=?", (today,))
-    comp_hoy = _he_count_safe_315("SELECT COUNT(*) FROM horas_extras WHERE fecha=? AND COALESCE(compensacion,0)>0", (today,))
-    return {'trabajadores':trab, 'registros':regs, 'feriados':fer, 'registros_hoy':regs_hoy, 'comp_hoy':comp_hoy}
-
-
-@login_required
-def horas_extras_home_procesos_v315():
-    vals = _he_dashboard_values_315()
-    body = _he_menu_css_315() + r'''
-    <div class="he315-wrap"><div class="he315-app">
-      <div class="he315-hero">
-        <a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a>
-        <a class="config" href="{{url_for('horas_extras_config')}}"><i class="bi bi-gear"></i> Config.</a>
-        <div class="main-icon"><i class="bi bi-clock-history"></i></div>
-        <h1>MÓDULO HORAS EXTRAS</h1>
+    <div class="he-only-wrap">
+      <div class="he-only-top">
+        <a class="he-only-back" href="{{url_for('home')}}" aria-label="Volver"><i class="bi bi-chevron-left"></i></a>
+        <div class="he-only-title"><i class="bi bi-clock-history"></i> Horas extras</div>
+        <span style="width:38px"></span>
       </div>
-      <div class="he315-card">
-        <div class="he315-section">Módulos</div>
-        <div class="he315-grid">
-          <a class="he315-tile" href="{{url_for('horas_extras_registros')}}"><i class="bi bi-person-badge"></i>Registro<br>individual</a>
-          <a class="he315-tile" href="{{url_for('horas_extras_trabajadores')}}"><i class="bi bi-people-fill"></i>Trabajadores</a>
-          <a class="he315-tile" href="{{url_for('horas_extras_calendario')}}"><i class="bi bi-calendar3"></i>Feriados /<br>Descansos</a>
+
+      <div class="he-reg-card">
+        <div class="he-reg-head"><i class="bi bi-plus-circle"></i> Registrar individual</div>
+        <div class="he-reg-body">
+          <form method="post" id="frmHE315" autocomplete="off">
+            <div class="he-reg-grid-top">
+              <div>
+                <label>Fecha</label>
+                <input type="date" name="fecha" class="form-control" value="{{today}}" required>
+              </div>
+              <div>
+                <label>DNI</label>
+                <input id="heDni315" name="dni" maxlength="8" inputmode="numeric" class="form-control" required>
+              </div>
+              <div class="worker-col">
+                <label>Trabajador</label>
+                <input id="heTrabNombre315" class="form-control he-worker-name" readonly placeholder="SE MOSTRARÁ AQUÍ">
+              </div>
+            </div>
+            <div id="heTrabStatus315" class="he-status">Digite 8 números para traer trabajador.</div>
+
+            <div class="he-reg-grid-two">
+              <div>
+                <label>Tipo de registro</label>
+                <select id="heTipo315" name="tipo_registro" class="form-select">
+                  <option value="HORAS_EXTRAS">HORAS EXTRAS</option>
+                  <option value="COMPENSACION">COMPENSACIÓN / GOCE</option>
+                </select>
+              </div>
+              <div>
+                <label>Estado compensación</label>
+                <select id="heEstado315" name="estado_compensacion" class="form-select">
+                  <option value="PENDIENTE">PENDIENTE</option>
+                  <option value="COMPENSADA">COMPENSADA</option>
+                  <option value="NO APLICA">NO APLICA</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="he-reg-grid-three">
+              <div><label>Total horas</label><input id="heTotal315" name="total_horas" value="0" inputmode="decimal" class="form-control"></div>
+              <div><label>Auto</label><select id="heAuto315" name="auto_calcular" class="form-select"><option value="SI">SI</option><option value="NO">NO</option></select></div>
+              <div><label>Compensación</label><input id="heComp315" name="compensacion" value="0" inputmode="decimal" class="form-control"></div>
+            </div>
+
+            <div class="he-reg-grid-three">
+              <div><label>HE 25</label><input id="he25315" name="he25" value="0" inputmode="decimal" class="form-control"></div>
+              <div><label>HE 35</label><input id="he35315" name="he35" value="0" inputmode="decimal" class="form-control"></div>
+              <div><label>HE 100</label><input id="he100315" name="he100" value="0" inputmode="decimal" class="form-control"></div>
+            </div>
+
+            <div id="heModeHelp315" class="he-mode-help"></div>
+
+            <div class="he-reg-grid-two">
+              <div><label>Motivo</label><input name="motivo" class="form-control" placeholder="PLANILLA / GOCE"></div>
+              <div><label>Observación</label><input name="observacion" class="form-control" placeholder="OPCIONAL"></div>
+            </div>
+
+            <button class="he-save-only" type="submit"><i class="bi bi-save"></i> Guardar y recalcular</button>
+          </form>
         </div>
-        <div class="he315-section oper">Operación</div>
-        <div class="he315-grid">
-          <a class="he315-tile" href="{{url_for('horas_extras_cargas')}}"><i class="bi bi-cloud-arrow-up"></i>Carga<br>masiva</a>
-          <a class="he315-tile" href="{{url_for('horas_extras_reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i>Reportes</a>
-          <a class="he315-tile" href="{{url_for('horas_extras_dashboard')}}"><i class="bi bi-speedometer2"></i>Dashboard /<br>Saldos</a>
-        </div>
-        <div class="he315-info"><i class="bi bi-info"></i><div>Base correcta: horas extras, compensaciones, feriados nacionales generales y descansos mensuales. El sistema calcula pago 25%, 35% y 100% según corresponda.</div></div>
-        <div class="he315-kpis">
-          <div class="he315-kpi"><small>Trabajadores</small><b>{{vals.trabajadores}}</b></div>
-          <div class="he315-kpi"><small>Registros</small><b>{{vals.registros}}</b></div>
-          <div class="he315-kpi"><small>Feriados</small><b>{{vals.feriados}}</b></div>
-        </div>
-        <div class="he315-summary">
-          <h3>Resumen operativo</h3>
-          <p>{{vals.registros_hoy}} registro(s) procesados hoy.</p>
-          <p>{{vals.comp_hoy}} compensación(es) aplicadas hoy.</p>
-        </div>
       </div>
-    </div></div>
+    </div>
+
+    <script>
+    (function(){
+      const $=id=>document.getElementById(id);
+      const frm=$('frmHE315'), dni=$('heDni315'), nombre=$('heTrabNombre315'), status=$('heTrabStatus315');
+      const tipo=$('heTipo315'), estado=$('heEstado315'), help=$('heModeHelp315');
+      const idsHE=['heTotal315','heAuto315','he25315','he35315','he100315'];
+      const comp=$('heComp315');
+      function digits(v){return String(v||'').replace(/\D/g,'').slice(0,8)}
+      function lock(el,on){if(!el)return;el.disabled=!!on;el.classList.toggle('he-locked',!!on)}
+      function val(id,v){const e=$(id);if(e)e.value=v}
+      function modo(){
+        const isComp=tipo && tipo.value==='COMPENSACION';
+        idsHE.forEach(id=>lock($(id),isComp));
+        lock(comp,!isComp); lock(estado,!isComp);
+        if(isComp){
+          val('heTotal315','0'); val('he25315','0'); val('he35315','0'); val('he100315','0');
+          if($('heAuto315'))$('heAuto315').value='NO';
+          if(estado)estado.value='PENDIENTE';
+          help.innerHTML='<i class="bi bi-lock"></i> Modo compensación: Total horas, Auto y HE 25/35/100 quedan bloqueados. Solo se registra la compensación/goce.';
+        }else{
+          if(comp)comp.value='0'; if(estado)estado.value='NO APLICA';
+          help.innerHTML='<i class="bi bi-lock"></i> Modo horas extras: la compensación queda bloqueada y en cero.';
+        }
+      }
+      async function buscar(){
+        if(!dni)return; const d=digits(dni.value); dni.value=d;
+        if(d.length<8){nombre.value='';status.textContent='Digite 8 números para traer trabajador.';status.style.color='#64748b';return;}
+        status.textContent='Buscando trabajador...';
+        try{
+          const r=await fetch('/api/horas-extras/trabajador/'+d,{cache:'no-store',credentials:'same-origin'});
+          const j=await r.json();
+          if(j.ok){
+            const t=j.trabajador||{}; const nom=t.nombres||t.trabajador||'';
+            nombre.value=nom; status.innerHTML='✓ <b>'+nom+'</b>'+(t.area?' · '+t.area:''); status.style.color='#08713b';
+          }else{nombre.value='';status.textContent='DNI no encontrado. Cárguelo en trabajadores.';status.style.color='#b91c1c';}
+        }catch(e){nombre.value='';status.textContent='Error consultando trabajador.';status.style.color='#b91c1c';}
+      }
+      if(tipo)tipo.addEventListener('change',modo); modo();
+      if(dni)dni.addEventListener('input',buscar);
+      if(frm)frm.addEventListener('submit',function(){
+        idsHE.forEach(id=>{const e=$(id);if(e)e.disabled=false;});
+        if(comp)comp.disabled=false; if(estado)estado.disabled=false;
+      });
+    })();
+    </script>
     '''
-    return render_page(body, vals=vals, title='Módulo Horas Extras')
+    return render_page(body, today=today_str(), title='Registrar horas extras')
 
-
-@login_required
-def horas_extras_trabajadores_v315():
-    _he_ensure_db()
-    try:
-        rows = rows_to_dict(execute("SELECT dni,nombres,area,cargo,regimen,remuneracion,horas_mes,dia_descanso,estado,actualizado_en FROM horas_extras_trabajadores ORDER BY actualizado_en DESC LIMIT 80", fetchall=True))
-    except Exception:
-        rows = []
-    total = _he_count_safe_315("SELECT COUNT(*) FROM horas_extras_trabajadores")
-    activos = _he_count_safe_315("SELECT COUNT(*) FROM horas_extras_trabajadores WHERE COALESCE(estado,'ACTIVO') <> 'INACTIVO'")
-    inactivos = max(total - activos, 0)
-    body = _he_menu_css_315() + r'''
-    <div class="he315-wrap"><div class="he315-app">
-      <div class="he315-hero">
-        <a class="back" href="{{url_for('horas_extras_modulo')}}"><i class="bi bi-chevron-left"></i></a>
-        <a class="config" href="{{url_for('horas_extras_plantilla')}}"><i class="bi bi-download"></i> Plantilla</a>
-        <div class="main-icon"><i class="bi bi-people-fill"></i></div><h1>TRABAJADORES HE</h1>
-      </div>
-      <div class="he315-card">
-        <div class="he315-section">Carga de base</div>
-        <form method="post" action="{{url_for('horas_extras_cargar_trabajadores')}}" enctype="multipart/form-data" class="he315-form"><label>Base trabajadores activos / nuevos ingresos</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="he315-btn"><i class="bi bi-people"></i> Cargar trabajadores</button></form>
-        <form method="post" action="{{url_for('horas_extras_cargar_cesados')}}" enctype="multipart/form-data" class="he315-form"><label>Base trabajadores cesados</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="he315-btn"><i class="bi bi-person-x"></i> Cargar cesados / inactivar</button></form>
-        <div class="he315-info"><i class="bi bi-info"></i><div>La base activa agrega o actualiza por DNI. No borra información. La base de cesados solo cambia estado a INACTIVO.</div></div>
-        <div class="he315-kpis"><div class="he315-kpi"><small>Total</small><b>{{total}}</b></div><div class="he315-kpi"><small>Activos</small><b>{{activos}}</b></div><div class="he315-kpi"><small>Inactivos</small><b>{{inactivos}}</b></div></div>
-        <div class="he315-section oper">Últimos trabajadores</div>
-        <div class="he315-list"><table class="he315-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Área</th><th>Cargo</th><th>Estado</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.dni}}</td><td>{{r.nombres}}</td><td>{{r.area}}</td><td>{{r.cargo}}</td><td>{{r.estado}}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted">Sin trabajadores cargados.</td></tr>{% endfor %}</tbody></table></div>
-      </div>
-    </div></div>
-    '''
-    return render_page(body, rows=rows, total=total, activos=activos, inactivos=inactivos, title='Trabajadores Horas Extras')
-
-
-@login_required
-def horas_extras_cargas_v315():
-    vals = _he_dashboard_values_315()
-    body = _he_menu_css_315() + r'''
-    <div class="he315-wrap"><div class="he315-app">
-      <div class="he315-hero">
-        <a class="back" href="{{url_for('horas_extras_modulo')}}"><i class="bi bi-chevron-left"></i></a>
-        <a class="config" href="{{url_for('horas_extras_plantilla')}}"><i class="bi bi-download"></i> Plantilla</a>
-        <div class="main-icon"><i class="bi bi-cloud-arrow-up"></i></div><h1>CARGA MASIVA HE</h1>
-      </div>
-      <div class="he315-card">
-        <div class="he315-section">Operación</div>
-        <form method="post" action="{{url_for('horas_extras_cargar_masiva')}}" enctype="multipart/form-data" class="he315-form"><label>Carga masiva horas extras / compensaciones</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="he315-btn"><i class="bi bi-clock"></i> Cargar HE / compensaciones</button></form>
-        <form method="post" action="{{url_for('horas_extras_cargar_descansos_mes')}}" enctype="multipart/form-data" class="he315-form"><label>Carga masiva descansos por mes</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><button class="he315-btn"><i class="bi bi-calendar-week"></i> Cargar descansos</button></form>
-        <form method="post" action="{{url_for('horas_extras_cargar_feriados_nacionales')}}" enctype="multipart/form-data" class="he315-form"><label>Feriados nacionales generales</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control"><button class="he315-btn"><i class="bi bi-flag"></i> Cargar feriados</button></form>
-        <div class="he315-info"><i class="bi bi-info"></i><div>Los feriados nacionales son generales, siempre se guardan sin DNI. Los descansos por mes pueden cargarse por DNI y fecha o matriz mensual.</div></div>
-        <div class="he315-kpis"><div class="he315-kpi"><small>Trabajadores</small><b>{{vals.trabajadores}}</b></div><div class="he315-kpi"><small>Registros</small><b>{{vals.registros}}</b></div><div class="he315-kpi"><small>Feriados</small><b>{{vals.feriados}}</b></div></div>
-      </div>
-    </div></div>
-    '''
-    return render_page(body, vals=vals, title='Carga Masiva Horas Extras')
-
-
-@login_required
-def horas_extras_reportes_v315():
-    q, desde, hasta = _he_default_filters()
-    vals = _he_dashboard_values_315()
-    body = _he_menu_css_315() + r'''
-    <div class="he315-wrap"><div class="he315-app">
-      <div class="he315-hero">
-        <a class="back" href="{{url_for('horas_extras_modulo')}}"><i class="bi bi-chevron-left"></i></a>
-        <a class="config" href="{{url_for('horas_extras_config')}}"><i class="bi bi-gear"></i> Config.</a>
-        <div class="main-icon"><i class="bi bi-file-earmark-bar-graph"></i></div><h1>REPORTES HE</h1>
-      </div>
-      <div class="he315-card">
-        <div class="he315-section">Filtros</div>
-        <form method="get" class="he315-form"><label>Desde</label><input type="date" name="desde" value="{{desde}}" class="form-control"><label class="mt-2">Hasta</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"><label class="mt-2">DNI / trabajador / área / cargo</label><input name="q" value="{{q}}" class="form-control"><button class="he315-btn"><i class="bi bi-search"></i> Aplicar filtro</button></form>
-        <div class="he315-section oper">Descargas</div>
-        <div class="he315-mini-top"><a class="he315-fill" href="{{url_for('exportar_horas_extras', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-file-earmark-excel"></i> General</a><a class="he315-fill" href="{{url_for('exportar_horas_extras_pago', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-cash-coin"></i> Pago</a></div>
-        <a class="he315-outline" href="{{url_for('horas_extras_dashboard', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-speedometer2"></i> Ver Dashboard / Saldos</a>
-        <div class="he315-kpis"><div class="he315-kpi"><small>Trabajadores</small><b>{{vals.trabajadores}}</b></div><div class="he315-kpi"><small>Registros</small><b>{{vals.registros}}</b></div><div class="he315-kpi"><small>Feriados</small><b>{{vals.feriados}}</b></div></div>
-      </div>
-    </div></div>
-    '''
-    return render_page(body, vals=vals, q=q, desde=desde, hasta=hasta, title='Reportes Horas Extras')
-
-
-@login_required
-def horas_extras_dashboard_v315():
-    q, desde, hasta = _he_default_filters()
-    rows = _he_list(q, desde, hasta, 500)
-    resumen = _he_resumen_saldos(rows)
-    trabajadores = _he_resumen_trabajadores(rows)[:80]
-    pago_total = sum(_he_float(t.get('monto_total')) for t in trabajadores)
-    body = _he_menu_css_315() + r'''
-    <div class="he315-wrap"><div class="he315-app">
-      <div class="he315-hero">
-        <a class="back" href="{{url_for('horas_extras_modulo')}}"><i class="bi bi-chevron-left"></i></a>
-        <a class="config" href="{{url_for('horas_extras_reportes', desde=desde, hasta=hasta, q=q)}}"><i class="bi bi-file-earmark"></i> Reporte</a>
-        <div class="main-icon"><i class="bi bi-speedometer2"></i></div><h1>DASHBOARD / SALDOS</h1>
-      </div>
-      <div class="he315-card">
-        <form method="get" class="he315-form"><label>Desde</label><input type="date" name="desde" value="{{desde}}" class="form-control"><label class="mt-2">Hasta</label><input type="date" name="hasta" value="{{hasta}}" class="form-control"><label class="mt-2">DNI / trabajador / área / cargo</label><input name="q" value="{{q}}" class="form-control"><button class="he315-btn"><i class="bi bi-search"></i> Filtrar</button></form>
-        <div class="he315-kpis"><div class="he315-kpi"><small>HE 100%</small><b>{{fmt(resumen.saldo100)}}</b></div><div class="he315-kpi"><small>HE 35%</small><b>{{fmt(resumen.saldo35)}}</b></div><div class="he315-kpi"><small>HE 25%</small><b>{{fmt(resumen.saldo25)}}</b></div></div>
-        <div class="he315-summary"><h3>Detalle para pago</h3><p>Total generado: {{fmt(resumen.total_generado)}} h</p><p>Total compensado: {{fmt(resumen.total_compensado)}} h</p><p>Saldo pendiente: {{fmt(resumen.saldo_total)}} h</p><p>Total para pago: {{money(pago_total)}}</p></div>
-        <div class="he315-section oper">Trabajadores con saldo</div>
-        <div class="he315-list"><table class="he315-table"><thead><tr><th>DNI</th><th>Trabajador</th><th>Saldo 100</th><th>Saldo 35</th><th>Saldo 25</th><th>Total pago</th></tr></thead><tbody>{% for t in trabajadores %}<tr><td>{{t.dni}}</td><td>{{t.nombres}}</td><td>{{fmt(t.saldo100)}}</td><td>{{fmt(t.saldo35)}}</td><td>{{fmt(t.saldo25)}}</td><td>{{money(t.monto_total)}}</td></tr>{% else %}<tr><td colspan="6" class="text-center text-muted">Sin saldos.</td></tr>{% endfor %}</tbody></table></div>
-      </div>
-    </div></div>
-    '''
-    return render_page(body, q=q, desde=desde, hasta=hasta, resumen=resumen, trabajadores=trabajadores, pago_total=pago_total, fmt=_he_fmt, money=_he_money, title='Dashboard Horas Extras')
-
-
-# Registrar rutas nuevas sin romper rutas existentes
+horas_extras_registro_unico_315.methods = ['GET', 'POST']
 try:
-    if 'horas_extras_registros' not in app.view_functions:
-        app.add_url_rule('/horas-extras/registros', 'horas_extras_registros', horas_extras_modulo_v314, methods=['GET','POST'])
-    if 'horas_extras_trabajadores' not in app.view_functions:
-        app.add_url_rule('/horas-extras/trabajadores', 'horas_extras_trabajadores', horas_extras_trabajadores_v315, methods=['GET'])
-    if 'horas_extras_cargas' not in app.view_functions:
-        app.add_url_rule('/horas-extras/cargas', 'horas_extras_cargas', horas_extras_cargas_v315, methods=['GET'])
-    if 'horas_extras_reportes' not in app.view_functions:
-        app.add_url_rule('/horas-extras/reportes', 'horas_extras_reportes', horas_extras_reportes_v315, methods=['GET'])
-    if 'horas_extras_dashboard' not in app.view_functions:
-        app.add_url_rule('/horas-extras/dashboard', 'horas_extras_dashboard', horas_extras_dashboard_v315, methods=['GET'])
-    app.view_functions['horas_extras_modulo'] = horas_extras_home_procesos_v315
+    app.view_functions['horas_extras_modulo'] = horas_extras_registro_unico_315
 except Exception as _e315:
-    print('HE315 no pudo registrar portada por procesos:', _e315)
+    print('HE315 no pudo reemplazar registro:', _e315)
+
+# Restablece expresamente el panel principal antiguo con mosaico de módulos.
+try:
+    app.view_functions['home'] = home_309_he
+except Exception as _e315_home:
+    print('HE315 no pudo restablecer home antiguo:', _e315_home)
+
+# El acceso H. EXTRAS del panel antiguo abre directamente el registro individual.
+try:
+    _OLD_MODULE_TARGETS_HE315 = _module_targets_293
+    def _module_targets_293():
+        data = _OLD_MODULE_TARGETS_HE315()
+        data['horas_extras'] = ('Horas Extras', 'bi-clock-history', 'horas_extras_modulo', 'horas_extras_modulo')
+        return data
+except Exception as _e315_targets:
+    print('HE315 no pudo actualizar destino:', _e315_targets)
 # =================== FIN PATCH HORAS EXTRAS 315 ===================
 
 if __name__ == '__main__':
