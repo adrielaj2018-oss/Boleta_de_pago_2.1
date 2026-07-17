@@ -15638,6 +15638,961 @@ except Exception:
     pass
 # =================== FIN PATCH HORAS EXTRAS 314 ===================
 
+# ===================== PATCH CONTRATACIÓN 316 OMAR =====================
+# Mejoras integrales solicitadas:
+# - Ubigeo (Departamento / Provincia / Distrito) con búsqueda por iniciales y carga de maestro.
+# - DNI de Postulantes estrictamente validado contra el pre-registro del requerimiento.
+# - Bloqueo total de DNI y cambios de estado mientras no se seleccione requerimiento.
+# - Formatos Excel por módulo, llenado automático por requerimiento y descarga.
+# - Firma del trabajador para Inducción y entrega de Fotocheck.
+# - Engranaje de configuración por submódulo.
+
+# Compatibilidad con versiones anteriores del archivo: varias funciones ya usaban
+# now_file() sin que existiera una definición global.
+if 'now_file' not in globals():
+    def now_file():
+        return datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+
+CONTRATACION_FORMATOS_DIR_316 = _Path306(PERSIST_DIR) / 'contratacion_formatos_modulo'
+CONTRATACION_FORMATOS_LLENOS_DIR_316 = _Path306(PERSIST_DIR) / 'contratacion_formatos_llenados'
+CONTRATACION_FIRMAS_ETAPA_DIR_316 = _Path306(PERSIST_DIR) / 'contratacion_firmas_etapa'
+for _d316 in (CONTRATACION_FORMATOS_DIR_316, CONTRATACION_FORMATOS_LLENOS_DIR_316, CONTRATACION_FIRMAS_ETAPA_DIR_316):
+    try:
+        _d316.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+_CT316_MODULOS = {
+    'preregistro': ('Pre-registro', 'clipboard2-check', 'requerimientos'),
+    'postulantes': ('Postulantes', 'person-lines-fill', 'postulantes'),
+    'medica': ('Evaluación médica', 'heart-pulse', 'medica'),
+    'induccion': ('Inducción', 'mortarboard', 'induccion'),
+    'indumentaria': ('Indumentaria', 'bag-check', 'indumentaria'),
+    'fotocheck': ('Entrega de fotocheck', 'person-badge', 'fotocheck'),
+    'firma': ('Firma facial / digital', 'pen', 'firma'),
+}
+
+_CT316_DEPARTAMENTOS = [
+    'AMAZONAS','ANCASH','APURIMAC','AREQUIPA','AYACUCHO','CAJAMARCA','CALLAO','CUSCO',
+    'HUANCAVELICA','HUANUCO','ICA','JUNIN','LA LIBERTAD','LAMBAYEQUE','LIMA','LORETO',
+    'MADRE DE DIOS','MOQUEGUA','PASCO','PIURA','PUNO','SAN MARTIN','TACNA','TUMBES','UCAYALI'
+]
+
+_CT316_FORMAT_HEADERS = {
+    'preregistro': ['DNI','TRABAJADOR','TIPO INGRESO','REQUERIMIENTO','EMPRESA','AREA','CARGO','ACTIVIDAD','ESTADO','FECHA'],
+    'postulantes': ['DNI','TRABAJADOR','TIPO INGRESO','REQUERIMIENTO','EMPRESA','AREA','CARGO','ACTIVIDAD','DIRECCION','DISTRITO','PROVINCIA','DEPARTAMENTO','ESTADO','FECHA'],
+    'medica': ['DNI','TRABAJADOR','EMPRESA','AREA','CARGO','ESTADO','OBSERVACION','FECHA'],
+    'induccion': ['DNI','TRABAJADOR','EMPRESA','AREA','CARGO','ESTADO','OBSERVACION','FECHA','FIRMA'],
+    'indumentaria': ['DNI','TRABAJADOR','EMPRESA','AREA','CARGO','ESTADO','OBSERVACION','FECHA'],
+    'fotocheck': ['DNI','TRABAJADOR','EMPRESA','AREA','CARGO','ESTADO','OBSERVACION','FECHA','FIRMA'],
+    'firma': ['DNI','TRABAJADOR','EMPRESA','AREA','CARGO','ESTADO','OBSERVACION','FECHA','FIRMA'],
+}
+
+
+def _ct316_modulo(v):
+    m = _ct_norm306(v or '')
+    aliases = {
+        'PRE-REGISTRO':'preregistro','PREREGISTRO':'preregistro','REQUERIMIENTOS':'preregistro','REQUERIMIENTO':'preregistro',
+        'POSTULANTE':'postulantes','POSTULANTES':'postulantes','MEDICA':'medica','EVALUACION MEDICA':'medica',
+        'INDUCCION':'induccion','INDUMENTARIA':'indumentaria','FOTOCHECK':'fotocheck','FIRMA':'firma'
+    }
+    return aliases.get(m, str(v or '').strip().lower())
+
+
+def _ensure_contratacion_316():
+    try:
+        _ensure_contratacion_313()
+    except Exception as e:
+        print('V316 ensure 313:', e)
+        try:
+            _ensure_contratacion_312()
+        except Exception as ee:
+            print('V316 ensure 312:', ee)
+    idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+    try:
+        execute(f'''CREATE TABLE IF NOT EXISTS contratacion_formatos_modulo(
+            id {idtype}, modulo TEXT, nombre TEXT, archivo_nombre TEXT, archivo_path TEXT,
+            extension TEXT, estado TEXT DEFAULT 'ACTIVO', creado_por TEXT, creado_en TEXT)''', commit=True)
+        execute(f'''CREATE TABLE IF NOT EXISTS contratacion_ubigeo(
+            id {idtype}, codigo TEXT, departamento TEXT, provincia TEXT, distrito TEXT,
+            estado TEXT DEFAULT 'ACTIVO', creado_por TEXT, creado_en TEXT)''', commit=True)
+        execute(f'''CREATE TABLE IF NOT EXISTS contratacion_modulo_config(
+            id {idtype}, modulo TEXT, clave TEXT, valor TEXT, actualizado_por TEXT, actualizado_en TEXT)''', commit=True)
+    except Exception as e:
+        print('V316 crear tablas:', e)
+    conn = None; cur = None
+    try:
+        conn = get_conn(); cur = conn.cursor()
+        for col, ddl in [
+            ('medica_observacion','TEXT'),('medica_actualizado_en','TEXT'),('medica_firma_path','TEXT'),
+            ('induccion_observacion','TEXT'),('induccion_actualizado_en','TEXT'),('induccion_firma_path','TEXT'),
+            ('indumentaria_observacion','TEXT'),('indumentaria_actualizado_en','TEXT'),('indumentaria_firma_path','TEXT'),
+            ('fotocheck_observacion','TEXT'),('fotocheck_actualizado_en','TEXT'),('fotocheck_firma_path','TEXT')
+        ]:
+            try:
+                _add_column_if_missing(cur, 'contratacion_ingresos', col, ddl)
+            except Exception as e:
+                print('V316 columna', col, e)
+        conn.commit()
+    except Exception as e:
+        print('V316 migración ingresos:', e)
+    finally:
+        try:
+            cur.close(); conn.close()
+        except Exception:
+            pass
+    # Alimenta el maestro con ubicaciones ya existentes para que el buscador funcione desde el primer uso.
+    try:
+        total = int(scalar('SELECT COUNT(*) AS c FROM contratacion_ubigeo') or 0)
+        if total == 0:
+            combos = set()
+            for tabla in ('contratacion_ingresos', 'trabajadores'):
+                try:
+                    rows = rows_to_dict(execute(f'''SELECT DISTINCT departamento,provincia,distrito FROM {tabla}
+                        WHERE COALESCE(departamento,'')<>'' OR COALESCE(provincia,'')<>'' OR COALESCE(distrito,'')<>'' LIMIT 5000''', fetchall=True))
+                    for r in rows:
+                        dep = limpiar_texto(r.get('departamento'))
+                        prov = limpiar_texto(r.get('provincia'))
+                        dist = limpiar_texto(r.get('distrito'))
+                        if dep or prov or dist:
+                            combos.add((dep, prov, dist))
+                except Exception:
+                    pass
+            if combos:
+                conn = get_conn(); cur = conn.cursor()
+                for dep, prov, dist in sorted(combos):
+                    cur.execute(qmark('''INSERT INTO contratacion_ubigeo(codigo,departamento,provincia,distrito,estado,creado_por,creado_en)
+                                         VALUES(?,?,?,?,?,?,?)'''), ('',dep,prov,dist,'ACTIVO','SISTEMA',now_str()))
+                conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print('V316 seed ubigeo:', e)
+
+
+def _ct316_css():
+    return r'''
+    <style>
+      .ct316-headgear{left:auto!important;right:14px!important;top:24px!important;width:36px;height:36px;border:1px solid rgba(255,255,255,.65);border-radius:999px;display:grid!important;place-items:center;font-size:20px!important;background:rgba(255,255,255,.12)}
+      .ct316-lock{border:1px solid #fca5a5;background:#fff1f2;color:#991b1b;border-radius:12px;padding:11px;font-size:11px;font-weight:950;line-height:1.35;margin:10px 0}
+      .ct316-ok{border:1px solid #86efac;background:#ecfdf5;color:#166534;border-radius:12px;padding:10px;font-size:11px;font-weight:900;line-height:1.35;margin:10px 0}
+      .ct316-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:9px 0}.ct316-actions a{min-height:39px}
+      .ct316-sign{width:100%;height:145px;border:2px dashed #81c995;border-radius:12px;background:#fff;touch-action:none;display:block}
+      .ct316-sign-note{font-size:9.5px;color:#166534;font-weight:850;margin-top:4px}
+      .ct316-status-bad{border:1px solid #fca5a5!important;background:#fff1f2!important;color:#991b1b!important}
+      .ct316-status-ok{border:1px solid #86efac!important;background:#ecfdf5!important;color:#166534!important}
+      .ct316-file{font-size:10px;color:#475569;word-break:break-all}
+      .ct316-card-title{font-size:12px;font-weight:950;color:#08713b;text-transform:uppercase;margin-bottom:7px}
+      @media(max-width:430px){.ct316-actions{grid-template-columns:1fr}.ct316-sign{height:125px}}
+    </style>'''
+
+
+def _ct316_gear_html(modulo, req_id=''):
+    try:
+        href = url_for('contratacion_config_modulo_316', modulo=_ct316_modulo(modulo), req=req_id or '')
+    except Exception:
+        href = '/contratacion/configuracion-modulo/' + _ct316_modulo(modulo)
+        if req_id:
+            href += '?req=' + str(req_id)
+    return f'''<a class="ct316-headgear" href="{_ct_h306(href)}" title="Configuración del módulo"><i class="bi bi-gear-fill"></i></a>'''
+
+
+def _ct316_inject_gear(response, modulo, req_id=''):
+    try:
+        resp = app.make_response(response)
+        if 'text/html' not in (resp.content_type or ''):
+            return resp
+        txt = resp.get_data(as_text=True)
+        if 'ct316-headgear' not in txt:
+            txt = txt.replace('</head>', _ct316_css() + '</head>', 1)
+            pos = txt.find('<div class="ttl">')
+            if pos >= 0:
+                end = txt.find('</div>', pos)
+                if end >= 0:
+                    end += len('</div>')
+                    txt = txt[:end] + _ct316_gear_html(modulo, req_id) + txt[end:]
+            resp.set_data(txt)
+        return resp
+    except Exception:
+        return response
+
+
+def _ct316_req(req_id):
+    if not str(req_id or '').strip():
+        return None
+    try:
+        return row_to_dict(execute('SELECT * FROM contratacion_requerimientos WHERE id=?', (req_id,), fetchone=True))
+    except Exception:
+        return None
+
+
+def _ct316_req_selector(reqs, selected=''):
+    try:
+        return _ct307_req_options(reqs, selected)
+    except Exception:
+        return _ct_req_options306(reqs, selected)
+
+
+def _ct316_selection_page(modulo, endpoint, titulo, icono, reqs, extra_link=''):
+    body = _ct_css306() + _ct316_css() + r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head">
+      <a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a>
+      <div class="ico"><i class="bi bi-{{icono}}"></i></div><div class="ttl">{{titulo}}</div>{{gear|safe}}
+    </div><div class="ct290-body">
+      <div class="ct316-lock"><i class="bi bi-lock-fill"></i> Primero seleccione un requerimiento. Mientras no lo elija, el DNI, los estados y los botones de actualización permanecen bloqueados.</div>
+      <form method="get" action="{{endpoint}}" class="ct290-form"><label>Requerimiento</label><select name="req" class="form-select" onchange="if(this.value)this.form.submit()">{{req_opts|safe}}</select></form>
+      {% if extra_link %}{{extra_link|safe}}{% endif %}
+      {% if not reqs %}<div class="ct290-info">No existen requerimientos. Cree uno antes de continuar.</div><a class="ct290-btn" href="{{url_for('contratacion_requerimientos', nuevo='1')}}"><i class="bi bi-plus-circle"></i> Crear requerimiento</a>{% endif %}
+    </div></div></div>'''
+    return render_page(body, titulo=titulo, icono=icono, endpoint=endpoint,
+                       req_opts=_ct316_req_selector(reqs, ''), reqs=reqs,
+                       gear=_ct316_gear_html(modulo, ''), extra_link=extra_link, title=titulo)
+
+
+def _ct316_get_config(modulo, clave, default=''):
+    _ensure_contratacion_316()
+    try:
+        r = row_to_dict(execute('''SELECT valor FROM contratacion_modulo_config
+            WHERE modulo=? AND clave=? ORDER BY id DESC LIMIT 1''', (_ct316_modulo(modulo), clave), fetchone=True))
+        return (r or {}).get('valor') if r else default
+    except Exception:
+        return default
+
+
+def _ct316_set_config(modulo, clave, valor):
+    _ensure_contratacion_316()
+    execute('''INSERT INTO contratacion_modulo_config(modulo,clave,valor,actualizado_por,actualizado_en)
+               VALUES(?,?,?,?,?)''', (_ct316_modulo(modulo), clave, str(valor or ''), session.get('usuario'), now_str()), commit=True)
+
+
+def _ct316_active_format(modulo):
+    try:
+        return row_to_dict(execute('''SELECT * FROM contratacion_formatos_modulo
+            WHERE modulo=? AND UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO' ORDER BY id DESC LIMIT 1''',
+            (_ct316_modulo(modulo),), fetchone=True))
+    except Exception:
+        return None
+
+
+def _ct316_save_format_template(modulo, file_storage, nombre=''):
+    if not file_storage or not getattr(file_storage, 'filename', ''):
+        raise ValueError('Seleccione un archivo Excel.')
+    ext = os.path.splitext(file_storage.filename.lower())[1]
+    if ext not in ('.xlsx', '.xlsm'):
+        raise ValueError('Formato no permitido. Use .xlsx o .xlsm.')
+    modulo = _ct316_modulo(modulo)
+    folder = CONTRATACION_FORMATOS_DIR_316 / modulo
+    folder.mkdir(parents=True, exist_ok=True)
+    original = secure_filename(file_storage.filename)
+    fname = f'{modulo}_{now_file()}_{original}'
+    path = folder / fname
+    file_storage.save(str(path))
+    execute("UPDATE contratacion_formatos_modulo SET estado='INACTIVO' WHERE modulo=?", (modulo,), commit=True)
+    execute('''INSERT INTO contratacion_formatos_modulo(modulo,nombre,archivo_nombre,archivo_path,extension,estado,creado_por,creado_en)
+               VALUES(?,?,?,?,?,?,?,?)''',
+            (modulo, limpiar_texto(nombre or os.path.splitext(original)[0]), original, str(path), ext, 'ACTIVO', session.get('usuario'), now_str()), commit=True)
+    return path
+
+
+def _ct316_import_ubigeo(file_storage, reemplazar=False):
+    if not file_storage or not getattr(file_storage, 'filename', ''):
+        raise ValueError('Seleccione el Excel de UBIGEO.')
+    wb = load_workbook(file_storage, data_only=True, read_only=True)
+    ws = wb['UBIGEO'] if 'UBIGEO' in wb.sheetnames else wb.active
+    headers = [normalizar_columna(c.value) for c in ws[1]]
+    idx = {h:i for i,h in enumerate(headers) if h}
+    def pick(vals, names):
+        for n in names:
+            i = idx.get(normalizar_columna(n))
+            if i is not None and i < len(vals) and vals[i] not in (None, ''):
+                return limpiar_texto(vals[i])
+        return ''
+    data = []
+    seen = set()
+    for vals in ws.iter_rows(min_row=2, values_only=True):
+        dep = pick(vals, ['DEPARTAMENTO','DPTO'])
+        prov = pick(vals, ['PROVINCIA','PROV'])
+        dist = pick(vals, ['DISTRITO','DIST'])
+        cod = pick(vals, ['UBIGEO','CODIGO','CÓDIGO','COD_UBIGEO'])
+        if not (dep or prov or dist):
+            continue
+        key = (dep,prov,dist,cod)
+        if key in seen:
+            continue
+        seen.add(key); data.append(key)
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        if reemplazar:
+            cur.execute(qmark('DELETE FROM contratacion_ubigeo'))
+        existing = set()
+        if not reemplazar:
+            cur.execute(qmark("SELECT departamento,provincia,distrito,codigo FROM contratacion_ubigeo"))
+            for r in cur.fetchall():
+                rd = dict(r) if hasattr(r, 'keys') else {'departamento':r[0], 'provincia':r[1], 'distrito':r[2], 'codigo':r[3]}
+                existing.add((rd.get('departamento') or '', rd.get('provincia') or '', rd.get('distrito') or '', rd.get('codigo') or ''))
+        ok = 0
+        for dep,prov,dist,cod in data:
+            if (dep,prov,dist,cod) in existing:
+                continue
+            cur.execute(qmark('''INSERT INTO contratacion_ubigeo(codigo,departamento,provincia,distrito,estado,creado_por,creado_en)
+                                 VALUES(?,?,?,?,?,?,?)'''), (cod,dep,prov,dist,'ACTIVO',session.get('usuario'),now_str()))
+            ok += 1
+        conn.commit()
+        return ok
+    finally:
+        cur.close(); conn.close()
+
+
+def _ct316_ubigeo_values(nivel, departamento='', provincia=''):
+    nivel = _ct_norm306(nivel).lower()
+    vals = set()
+    if nivel == 'departamento':
+        vals.update(_CT316_DEPARTAMENTOS)
+    col = {'departamento':'departamento','provincia':'provincia','distrito':'distrito'}.get(nivel)
+    if not col:
+        return []
+    try:
+        sql = f"SELECT DISTINCT {col} AS valor FROM contratacion_ubigeo WHERE UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO' AND COALESCE({col},'')<>''"
+        params = []
+        if nivel in ('provincia','distrito') and departamento:
+            sql += " AND UPPER(COALESCE(departamento,''))=?"; params.append(limpiar_texto(departamento))
+        if nivel == 'distrito' and provincia:
+            sql += " AND UPPER(COALESCE(provincia,''))=?"; params.append(limpiar_texto(provincia))
+        sql += f' ORDER BY {col} LIMIT 10000'
+        for r in rows_to_dict(execute(sql, tuple(params), fetchall=True)):
+            if r.get('valor'):
+                vals.add(limpiar_texto(r.get('valor')))
+    except Exception:
+        pass
+    # También toma valores de trabajadores/postulantes antiguos.
+    for tabla in ('contratacion_ingresos','trabajadores'):
+        try:
+            sql = f"SELECT DISTINCT {col} AS valor FROM {tabla} WHERE COALESCE({col},'')<>''"
+            params = []
+            if nivel in ('provincia','distrito') and departamento:
+                sql += " AND UPPER(COALESCE(departamento,''))=?"; params.append(limpiar_texto(departamento))
+            if nivel == 'distrito' and provincia:
+                sql += " AND UPPER(COALESCE(provincia,''))=?"; params.append(limpiar_texto(provincia))
+            sql += f' ORDER BY {col} LIMIT 5000'
+            for r in rows_to_dict(execute(sql, tuple(params), fetchall=True)):
+                if r.get('valor'):
+                    vals.add(limpiar_texto(r.get('valor')))
+        except Exception:
+            pass
+    return sorted(vals)
+
+
+def api_contratacion_ubigeo_316():
+    if not session.get('usuario'):
+        return jsonify(ok=False, msg='Sesión vencida.'), 401
+    _ensure_contratacion_316()
+    nivel = request.args.get('nivel') or 'departamento'
+    dep = request.args.get('departamento') or ''
+    prov = request.args.get('provincia') or ''
+    q = _ct_norm306(request.args.get('q') or '')
+    vals = _ct316_ubigeo_values(nivel, dep, prov)
+    if q:
+        vals = [v for v in vals if _ct_norm306(v).startswith(q) or q in _ct_norm306(v)]
+    return jsonify(ok=True, valores=vals[:250])
+
+
+def api_contratacion_preregistro_316(dni):
+    if not session.get('usuario'):
+        return jsonify(ok=False, msg='Sesión vencida.'), 401
+    _ensure_contratacion_316()
+    req_id = request.args.get('req') or ''
+    req = _ct316_req(req_id)
+    d = limpiar_dni(dni)
+    if not req:
+        return jsonify(ok=False, requiere_requerimiento=True, msg='Primero seleccione un requerimiento.')
+    if len(d) != 8:
+        return jsonify(ok=False, msg='DNI inválido. Digite 8 números.')
+    row = row_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE requerimiento_id=? AND dni=? ORDER BY id DESC LIMIT 1', (req_id,d), fetchone=True))
+    if not row:
+        return jsonify(ok=False, preregistrado=False, msg='DNI NO PERTENECE AL PRE-REGISTRO DEL REQUERIMIENTO.')
+    obs = None
+    try:
+        obs = _ct309_is_observado(d)
+    except Exception:
+        obs = None
+    if obs:
+        return jsonify(ok=False, preregistrado=True, observado=True, observado_detalle=obs, msg='Trabajador observado/bloqueado.')
+    base = _ct_worker306(d) or {}
+    data = dict(base)
+    for k,v in row.items():
+        if v not in (None, ''):
+            data[k] = v
+    estado = _ct_norm306(row.get('estado'))
+    completo = estado in ('POSTULANTE','REGISTRADO','COMPLETO','APROBADO')
+    return jsonify(ok=True, preregistrado=True, completo=completo, estado=estado,
+                   tipo=row.get('tipo_ingreso') or _ct_tipo306(d), postulante=data,
+                   msg='DNI validado en el pre-registro.' if not completo else 'Postulante registrado.')
+
+
+def _ct316_stage_meta(etapa):
+    etapa = _ct316_modulo(etapa)
+    meta = _ETAPAS_290.get(etapa)
+    if not meta:
+        return None
+    titulo, icono, estado_col, estados = meta
+    return {
+        'etapa': etapa, 'titulo': titulo, 'icono': icono, 'estado_col': estado_col, 'estados': estados,
+        'obs_col': etapa + '_observacion', 'fecha_col': etapa + '_actualizado_en', 'firma_col': etapa + '_firma_path'
+    }
+
+
+def _ct316_signature_required(etapa, estado):
+    etapa = _ct316_modulo(etapa)
+    final = (etapa == 'induccion' and _ct_norm306(estado) in ('ASISTIO','COMPLETO','APROBADO','OK')) or \
+            (etapa == 'fotocheck' and _ct_norm306(estado) in ('ENTREGADO','COMPLETO','APROBADO','OK'))
+    if not final:
+        return False
+    return _ct_norm306(_ct316_get_config(etapa, 'firma_obligatoria', 'SI')) != 'NO'
+
+
+def _ct316_save_stage_signature(dni, req_id, etapa, data_url):
+    if not str(data_url or '').strip():
+        return ''
+    folder = CONTRATACION_FIRMAS_ETAPA_DIR_316 / _ct316_modulo(etapa)
+    folder.mkdir(parents=True, exist_ok=True)
+    return guardar_data_url(data_url, str(folder), f'{_ct316_modulo(etapa)}_{dni}_REQ{req_id}_{now_file()}') or ''
+
+
+def _ct316_format_dataset(modulo, req_id):
+    modulo = _ct316_modulo(modulo)
+    headers = list(_CT316_FORMAT_HEADERS.get(modulo, _CT316_FORMAT_HEADERS['postulantes']))
+    rows = rows_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE requerimiento_id=? ORDER BY id', (req_id,), fetchall=True))
+    if modulo != 'preregistro':
+        rows = [r for r in rows if _ct_norm306(r.get('estado')) not in ('PRE-REGISTRO','PREREGISTRO','')]
+    out = []
+    for r in rows:
+        rec = {
+            'DNI': r.get('dni') or '',
+            'TRABAJADOR': r.get('nombres') or '',
+            'NOMBRES': r.get('nombres') or '',
+            'NOMBRES COMPLETOS': r.get('nombres') or '',
+            'TIPO INGRESO': r.get('tipo_ingreso') or '',
+            'REQUERIMIENTO': r.get('requerimiento') or '',
+            'EMPRESA': r.get('empresa') or '',
+            'AREA': r.get('area') or '',
+            'CARGO': r.get('cargo') or '',
+            'ACTIVIDAD': r.get('actividad') or '',
+            'DIRECCION': r.get('direccion') or '',
+            'DISTRITO': r.get('distrito') or '',
+            'PROVINCIA': r.get('provincia') or '',
+            'DEPARTAMENTO': r.get('departamento') or '',
+            'ESTADO': r.get('estado') or '',
+            'OBSERVACION': r.get('observacion') or '',
+            'FECHA': r.get('creado_en') or '',
+            'FIRMA': '',
+        }
+        if modulo in ('medica','induccion','indumentaria','fotocheck'):
+            rec['ESTADO'] = r.get(modulo + '_estado') or 'PENDIENTE'
+            rec['OBSERVACION'] = r.get(modulo + '_observacion') or r.get('observacion') or ''
+            rec['FECHA'] = r.get(modulo + '_actualizado_en') or ''
+            rec['FIRMA'] = r.get(modulo + '_firma_path') or ''
+        elif modulo == 'firma':
+            rec['ESTADO'] = r.get('firma_estado') or 'PENDIENTE'
+            rec['FECHA'] = r.get('firma_actualizado_en') or '' if 'firma_actualizado_en' in r else ''
+            rec['FIRMA'] = r.get('firma_path') or '' if 'firma_path' in r else ''
+        out.append(rec)
+    return headers, out
+
+
+def _ct316_find_header_row(ws):
+    aliases = {'DNI','DOCUMENTO','NRO DOCUMENTO','NUMERO DOCUMENTO','TRABAJADOR','NOMBRES','NOMBRES COMPLETOS','ESTADO','FIRMA'}
+    best = (0, 0)
+    max_scan = min(max(ws.max_row, 1), 30)
+    for r in range(1, max_scan + 1):
+        score = 0
+        for c in range(1, min(max(ws.max_column, 1), 40) + 1):
+            v = normalizar_columna(ws.cell(r,c).value)
+            if v in aliases:
+                score += 1
+        if score > best[1]:
+            best = (r, score)
+    return best[0] if best[1] >= 1 else 0
+
+
+def _ct316_build_format(modulo, req_id, destination=None):
+    modulo = _ct316_modulo(modulo)
+    req = _ct316_req(req_id)
+    if not req:
+        raise ValueError('Seleccione un requerimiento válido.')
+    formato = _ct316_active_format(modulo)
+    source = None
+    keep_vba = False
+    if formato and formato.get('archivo_path') and os.path.exists(formato.get('archivo_path')):
+        source = formato.get('archivo_path')
+        keep_vba = str(source).lower().endswith('.xlsm')
+    if source:
+        wb = load_workbook(source, keep_vba=keep_vba)
+    else:
+        wb = Workbook()
+    ws = wb['DATOS'] if 'DATOS' in wb.sheetnames else wb.active
+    if not ws.title:
+        ws.title = 'DATOS'
+    standard_headers, data = _ct316_format_dataset(modulo, req_id)
+    header_row = _ct316_find_header_row(ws)
+    if not header_row:
+        header_row = 1
+        for i,h in enumerate(standard_headers, 1):
+            ws.cell(header_row, i, h)
+    max_col = max(ws.max_column, len(standard_headers))
+    current_headers = [normalizar_columna(ws.cell(header_row, c).value) for c in range(1, max_col + 1)]
+    if not any(current_headers):
+        current_headers = list(standard_headers)
+        for i,h in enumerate(current_headers, 1):
+            ws.cell(header_row, i, h)
+    alias = {
+        'DOCUMENTO':'DNI','NRO DOCUMENTO':'DNI','NUMERO DOCUMENTO':'DNI','N° DOCUMENTO':'DNI',
+        'NOMBRES':'TRABAJADOR','NOMBRE COMPLETO':'TRABAJADOR','NOMBRES COMPLETOS':'TRABAJADOR','POSTULANTE':'TRABAJADOR',
+        'TIPO':'TIPO INGRESO','REQUERIMIENTO ACTIVO':'REQUERIMIENTO','ÁREA':'AREA',
+        'DIRECCIÓN':'DIRECCION','ESTADO MEDICA':'ESTADO','ESTADO MEDICO':'ESTADO','APTO / NO APTO':'ESTADO','APTO/NO APTO':'ESTADO',
+        'ESTADO INDUCCION':'ESTADO','ESTADO INDUMENTARIA':'ESTADO','ESTADO FOTOCHECK':'ESTADO','ESTADO PROCESO':'ESTADO',
+        'OBSERVACIÓN':'OBSERVACION','FECHA ACTUALIZACION':'FECHA','FECHA DE ACTUALIZACION':'FECHA','FIRMA TRABAJADOR':'FIRMA'
+    }
+    mapped = []
+    for h in current_headers:
+        key = alias.get(h, h)
+        mapped.append(key if key else '')
+    recognized = sum(1 for k in mapped if k in set(standard_headers) | {'NOMBRES','NOMBRES COMPLETOS'})
+    if recognized == 0:
+        current_headers = list(standard_headers); mapped = list(standard_headers)
+        for i,h in enumerate(current_headers,1):
+            ws.cell(header_row,i,h)
+        max_col = len(current_headers)
+    # Limpia solo el área de datos, preservando diseño, anchos y encabezados.
+    for r in range(header_row + 1, max(ws.max_row, header_row + len(data)) + 1):
+        for c in range(1, max_col + 1):
+            try:
+                ws.cell(r,c).value = None
+            except Exception:
+                pass
+    sig_cols = [i+1 for i,k in enumerate(mapped) if k == 'FIRMA']
+    for idx, rec in enumerate(data, header_row + 1):
+        for c,key in enumerate(mapped, 1):
+            if not key:
+                continue
+            value = rec.get(key, '')
+            if key == 'FIRMA':
+                value = 'FIRMA REGISTRADA' if value else 'PENDIENTE'
+            ws.cell(idx,c,value)
+        for c in sig_cols:
+            path = rec.get('FIRMA') or ''
+            if path and os.path.exists(path):
+                try:
+                    from openpyxl.drawing.image import Image as _XLImage316
+                    img = _XLImage316(path); img.width = 120; img.height = 42
+                    ws.add_image(img, ws.cell(idx,c).coordinate)
+                    ws.row_dimensions[idx].height = max(ws.row_dimensions[idx].height or 15, 36)
+                except Exception:
+                    pass
+    for col in range(1, max_col + 1):
+        letter = ws.cell(1,col).column_letter
+        if not ws.column_dimensions[letter].width:
+            ws.column_dimensions[letter].width = 18
+    ext = '.xlsm' if keep_vba else '.xlsx'
+    if destination:
+        dest = _Path306(destination)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        wb.save(str(dest))
+        return str(dest)
+    out = BytesIO(); wb.save(out); out.seek(0)
+    return out, ext
+
+
+def _ct316_filled_path(modulo, req_id):
+    modulo = _ct316_modulo(modulo)
+    fmt = _ct316_active_format(modulo)
+    ext = '.xlsm' if fmt and str(fmt.get('archivo_path') or '').lower().endswith('.xlsm') else '.xlsx'
+    folder = CONTRATACION_FORMATOS_LLENOS_DIR_316 / modulo
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f'{modulo}_REQ_{req_id}{ext}'
+
+
+def _ct316_refresh_active_format(modulo, req_id):
+    try:
+        if not req_id or not _ct316_active_format(modulo):
+            return ''
+        return _ct316_build_format(modulo, req_id, str(_ct316_filled_path(modulo, req_id)))
+    except Exception as e:
+        print('V316 refrescar formato', modulo, req_id, e)
+        return ''
+
+
+def contratacion_generar_formato_316(modulo):
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_316()
+    modulo = _ct316_modulo(modulo)
+    if modulo not in _CT316_MODULOS:
+        return redirect(url_for('contratacion_home'))
+    req_id = request.args.get('req') or ''
+    req = _ct316_req(req_id)
+    if not req:
+        flash('Seleccione requerimiento antes de generar el formato.', 'danger')
+        return redirect(url_for('contratacion_config_modulo_316', modulo=modulo))
+    try:
+        out, ext = _ct316_build_format(modulo, req_id)
+        label = re.sub(r'[^A-Z0-9_-]+','_', _ct_norm306(req.get('codigo') or ('REQ_'+str(req_id))))
+        filename = f'FORMATO_{modulo.upper()}_{label}{ext}'
+        return send_file(out, as_attachment=True, download_name=filename,
+                         mimetype='application/vnd.ms-excel.sheet.macroEnabled.12' if ext=='.xlsm' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
+        flash('No se pudo generar el formato: ' + str(e), 'danger')
+        return redirect(url_for('contratacion_config_modulo_316', modulo=modulo, req=req_id))
+
+
+def contratacion_plantilla_modulo_316(modulo):
+    if not _is_admin_292(): return _deny_admin_292()
+    modulo = _ct316_modulo(modulo)
+    if modulo not in _CT316_MODULOS:
+        return redirect(url_for('contratacion_home'))
+    wb = Workbook(); ws = wb.active; ws.title = 'DATOS'
+    headers = _CT316_FORMAT_HEADERS.get(modulo, _CT316_FORMAT_HEADERS['postulantes'])
+    ws.append(headers)
+    ws.append(['' for _ in headers])
+    for i,h in enumerate(headers,1):
+        ws.column_dimensions[ws.cell(1,i).column_letter].width = max(14, min(28, len(h)+4))
+    out = BytesIO(); wb.save(out); out.seek(0)
+    return send_file(out, as_attachment=True, download_name=f'PLANTILLA_{modulo.upper()}.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+def contratacion_config_modulo_316(modulo):
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_316()
+    modulo = _ct316_modulo(modulo)
+    if modulo not in _CT316_MODULOS:
+        return redirect(url_for('contratacion_home'))
+    titulo, icono, nav_key = _CT316_MODULOS[modulo]
+    req_id = request.values.get('req') or ''
+    if request.method == 'POST':
+        accion = request.form.get('accion') or ''
+        try:
+            if accion == 'formato':
+                _ct316_save_format_template(modulo, request.files.get('archivo'), request.form.get('nombre'))
+                _ct316_refresh_active_format(modulo, req_id)
+                flash('Formato del módulo cargado y activado.', 'success')
+            elif accion == 'eliminar_formato':
+                fid = request.form.get('formato_id')
+                execute("UPDATE contratacion_formatos_modulo SET estado='INACTIVO' WHERE id=? AND modulo=?", (fid,modulo), commit=True)
+                flash('Formato desactivado.', 'warning')
+            elif accion == 'ubigeo' and modulo == 'postulantes':
+                cant = _ct316_import_ubigeo(request.files.get('archivo'), request.form.get('reemplazar') == 'SI')
+                flash(f'Maestro UBIGEO cargado: {cant} filas nuevas.', 'success')
+            elif accion == 'video_upload' and modulo == 'induccion':
+                _ct313_save_induccion_video(request.files.get('video'), request.form.get('area'), request.form.get('tema'), request.form.get('titulo'), request.form.get('descripcion'))
+                flash('Video de inducción cargado.', 'success')
+            elif accion == 'video_demos' and modulo == 'induccion':
+                cant = _ct313_insert_induccion_demos('GENERAL')
+                flash(f'Demos agregados: {cant}.', 'success' if cant else 'warning')
+            elif accion == 'firma_config' and modulo in ('induccion','fotocheck'):
+                _ct316_set_config(modulo, 'firma_obligatoria', request.form.get('firma_obligatoria') or 'SI')
+                flash('Configuración de firma actualizada.', 'success')
+        except Exception as e:
+            flash('No se pudo guardar configuración: ' + str(e), 'danger')
+        return redirect(url_for('contratacion_config_modulo_316', modulo=modulo, req=req_id))
+    reqs = rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250', fetchall=True))
+    formatos = rows_to_dict(execute('SELECT * FROM contratacion_formatos_modulo WHERE modulo=? ORDER BY id DESC LIMIT 30', (modulo,), fetchall=True))
+    videos = _ct313_videos_induccion('') if modulo == 'induccion' else []
+    firma_obligatoria = _ct316_get_config(modulo, 'firma_obligatoria', 'SI') if modulo in ('induccion','fotocheck') else ''
+    ubigeo_count = int(scalar('SELECT COUNT(*) AS c FROM contratacion_ubigeo') or 0) if modulo == 'postulantes' else 0
+    headers = _CT316_FORMAT_HEADERS.get(modulo, [])
+    back_url = url_for('contratacion_requerimientos', req=req_id) if modulo == 'preregistro' else \
+               (url_for('contratacion_postulantes', req=req_id) if modulo == 'postulantes' else \
+                (url_for('contratacion_firma_bio', req=req_id) if modulo == 'firma' else url_for('contratacion_etapa', etapa=modulo, req=req_id)))
+    body = _ct_css306() + _ct316_css() + r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{back_url}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-gear-fill"></i></div><div class="ttl">Config. {{titulo}}</div></div><div class="ct290-body">
+      <div class="ct290-info"><b>Configuración independiente del submódulo.</b><br>Cargue el formato que usa la empresa. El sistema conservará su diseño y llenará los datos del requerimiento conforme los trabajadores avancen.</div>
+      <form method="get" class="ct290-form"><label>Requerimiento para vista/descarga</label><select name="req" class="form-select" onchange="this.form.submit()">{{req_opts|safe}}</select></form>
+      <div class="ct316-actions"><a class="ct290-outline" href="{{url_for('contratacion_plantilla_modulo_316', modulo=modulo)}}"><i class="bi bi-file-earmark-excel"></i> Plantilla base</a>{% if req_id %}<a class="ct290-btn" href="{{url_for('contratacion_generar_formato_316', modulo=modulo, req=req_id)}}"><i class="bi bi-download"></i> Formato llenado</a>{% else %}<button class="ct290-btn" disabled><i class="bi bi-lock"></i> Elija requerimiento</button>{% endif %}</div>
+      <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="formato"><input type="hidden" name="req" value="{{req_id}}"><label>Nombre del formato</label><input name="nombre" class="form-control" placeholder="Ej.: Registro de evaluación médica"><label class="mt-2">Archivo Excel diseñado por la empresa (.xlsx / .xlsm)</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><div class="ct316-sign-note">Columnas reconocidas: {{headers|join(', ')}}.</div><button class="ct290-btn mt-2"><i class="bi bi-cloud-arrow-up"></i> Cargar y activar formato</button></form>
+      {% if modulo=='postulantes' %}<form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="ubigeo"><input type="hidden" name="req" value="{{req_id}}"><div class="ct316-card-title">Maestro UBIGEO</div><label>Excel con DEPARTAMENTO, PROVINCIA, DISTRITO y opcional UBIGEO</label><input type="file" name="archivo" accept=".xlsx,.xlsm" class="form-control" required><label class="mt-2"><input type="checkbox" name="reemplazar" value="SI"> Reemplazar maestro anterior</label><div class="ct316-sign-note">Registros actuales: {{ubigeo_count}}. Los campos se mostrarán como buscadores desplegables por iniciales.</div><button class="ct290-btn mt-2"><i class="bi bi-geo-alt"></i> Cargar UBIGEO</button></form>{% endif %}
+      {% if modulo in ['induccion','fotocheck'] %}<form method="post" class="ct290-form"><input type="hidden" name="accion" value="firma_config"><input type="hidden" name="req" value="{{req_id}}"><div class="ct316-card-title">Firma del trabajador</div><label>Exigir firma para estado final</label><select name="firma_obligatoria" class="form-select"><option value="SI" {% if firma_obligatoria=='SI' %}selected{% endif %}>SI</option><option value="NO" {% if firma_obligatoria=='NO' %}selected{% endif %}>NO</option></select><button class="ct290-btn mt-2"><i class="bi bi-pen"></i> Guardar configuración</button></form>{% endif %}
+      {% if modulo=='induccion' %}<form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="video_upload"><input type="hidden" name="req" value="{{req_id}}"><div class="ct316-card-title">Videos de inducción</div><div class="ct290-row"><input name="area" class="form-control" placeholder="Área / GENERAL"><input name="tema" class="form-control" placeholder="Tema"></div><input name="titulo" class="form-control mt-2" placeholder="Título"><input type="file" name="video" accept="video/*" class="form-control mt-2" required><input name="descripcion" class="form-control mt-2" placeholder="Descripción"><button class="ct290-btn mt-2"><i class="bi bi-play-circle"></i> Cargar video</button></form><form method="post" class="ct290-form"><input type="hidden" name="accion" value="video_demos"><input type="hidden" name="req" value="{{req_id}}"><button class="ct290-outline"><i class="bi bi-collection-play"></i> Agregar demos</button></form>{% endif %}
+      <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Formato</th><th>Archivo</th><th>Estado</th><th></th></tr></thead><tbody>{% for f in formatos %}<tr><td>{{f.nombre}}</td><td class="ct316-file">{{f.archivo_nombre}}</td><td>{{badge(f.estado)|safe}}</td><td>{% if (f.estado or '').upper()=='ACTIVO' %}<form method="post"><input type="hidden" name="accion" value="eliminar_formato"><input type="hidden" name="formato_id" value="{{f.id}}"><input type="hidden" name="req" value="{{req_id}}"><button class="ct306-dangerbtn" onclick="return confirm('¿Desactivar formato?')"><i class="bi bi-x-circle"></i></button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="4">Sin formato cargado. Se usará la plantilla base automática.</td></tr>{% endfor %}</tbody></table></div>
+      {% if modulo=='induccion' %}<div class="ct290-tablewrap mt-2"><table class="ct290-table"><thead><tr><th>Área</th><th>Tema</th><th>Video</th></tr></thead><tbody>{% for v in videos %}<tr><td>{{v.area}}</td><td>{{v.tema}}<br>{{v.titulo}}</td><td>{% if v.archivo_path %}<a class="ct306-smalllink" href="{{url_for('contratacion_induccion_video', video_id=v.id)}}" target="_blank">Ver</a>{% else %}Demo{% endif %}</td></tr>{% else %}<tr><td colspan="3">Sin videos.</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+    </div></div></div>'''
+    return render_page(body, titulo=titulo, modulo=modulo, req_id=req_id, req_opts=_ct316_req_selector(reqs, req_id),
+                       formatos=formatos, videos=videos, firma_obligatoria=firma_obligatoria, ubigeo_count=ubigeo_count,
+                       headers=headers, back_url=back_url, badge=_ct_badge306, title='Config. ' + titulo)
+
+
+def contratacion_postulantes_316():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_316()
+    reqs = rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250', fetchall=True))
+    req_id = request.values.get('req') or request.form.get('requerimiento_id') or ''
+    req = _ct316_req(req_id)
+    if request.method == 'POST':
+        if not req:
+            flash('BLOQUEADO: primero seleccione un requerimiento.', 'danger')
+            return redirect(url_for('contratacion_postulantes'))
+        dni = limpiar_dni(request.form.get('dni'))
+        if len(dni) != 8:
+            flash('DNI inválido. Digite 8 números.', 'danger')
+            return redirect(url_for('contratacion_postulantes', req=req_id))
+        row = row_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE requerimiento_id=? AND dni=? ORDER BY id DESC LIMIT 1', (req_id,dni), fetchone=True))
+        if not row:
+            flash('BLOQUEADO: el DNI no pertenece al pre-registro del requerimiento seleccionado. No se guardó ningún dato.', 'danger')
+            return redirect(url_for('contratacion_postulantes', req=req_id, dni_invalido=dni))
+        try:
+            obs = _ct309_is_observado(dni)
+        except Exception:
+            obs = None
+        if obs:
+            flash('BLOQUEADO: trabajador observado. ' + str((obs or {}).get('motivo') or ''), 'danger')
+            return redirect(url_for('contratacion_postulantes', req=req_id))
+        base = _ct_worker306(dni) or {}
+        def val(k):
+            return request.form.get(k) or row.get(k) or base.get(k) or ''
+        nombres = limpiar_texto(val('nombres'))
+        if not nombres:
+            flash('Complete nombres del postulante.', 'danger')
+            return redirect(url_for('contratacion_postulantes', req=req_id))
+        data = {
+            'nombres': nombres, 'telefono': val('telefono'), 'correo': val('correo'),
+            'fecha_nacimiento': val('fecha_nacimiento'), 'direccion': limpiar_texto(val('direccion')),
+            'distrito': limpiar_texto(val('distrito')), 'provincia': limpiar_texto(val('provincia')),
+            'departamento': limpiar_texto(val('departamento')), 'observacion': request.form.get('observacion') or row.get('observacion') or ''
+        }
+        faltan = [k for k in ('fecha_nacimiento','direccion','distrito','provincia','departamento') if not data.get(k)]
+        if faltan:
+            flash('Complete los campos obligatorios: ' + ', '.join(faltan).upper(), 'danger')
+            return redirect(url_for('contratacion_postulantes', req=req_id))
+        tipo = row.get('tipo_ingreso') or _ct_tipo306(dni)
+        execute('''UPDATE contratacion_ingresos SET nombres=?,telefono=?,correo=?,empresa=?,tipo_trabajador=?,area=?,cargo=?,actividad=?,
+                   tipo_contrato=?,regimen_laboral=?,fecha_inicio=?,estado='POSTULANTE',observacion=?,tipo_ingreso=?,fecha_nacimiento=?,
+                   direccion=?,distrito=?,provincia=?,departamento=?,dni_validado=?,fuente_datos=? WHERE id=?''',
+                (data['nombres'],data['telefono'],data['correo'],req.get('empresa'),req.get('tipo_trabajador'),req.get('area'),req.get('cargo'),req.get('actividad'),
+                 req.get('tipo_contrato'),req.get('regimen_laboral'),req.get('fecha_ingreso'),data['observacion'],tipo,data['fecha_nacimiento'],
+                 data['direccion'],data['distrito'],data['provincia'],data['departamento'],1 if base.get('nombres') else 0,
+                 'TRABAJADORES' if base.get('nombres') else 'DIGITADO',row.get('id')), commit=True)
+        _ct309_save_foto_postulante(dni, req_id, request.form.get('foto_data'), request.files.get('foto_archivo'))
+        _ct316_refresh_active_format('postulantes', req_id)
+        _ct316_refresh_active_format('preregistro', req_id)
+        flash('Postulante actualizado desde el pre-registro. Ya puede pasar a Evaluación Médica.', 'success')
+        return redirect(url_for('contratacion_postulantes', req=req_id))
+    if not req:
+        return _ct316_selection_page('postulantes', url_for('contratacion_postulantes'), 'Postulantes', 'person-lines-fill', reqs)
+    posts = rows_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE requerimiento_id=? ORDER BY id DESC LIMIT 500', (req_id,), fetchall=True))
+    dep_vals = _ct316_ubigeo_values('departamento')
+    prov_vals = _ct316_ubigeo_values('provincia')
+    dist_vals = _ct316_ubigeo_values('distrito')
+    body = _ct_css306() + _ct316_css() + r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-person-plus"></i></div><div class="ttl">Postulantes</div>{{gear|safe}}</div><div class="ct290-body">{{nav|safe}}
+      <div class="ct290-info">Solo se aceptan DNI previamente leídos en el requerimiento. Un DNI ajeno genera alerta visual y sonora y queda bloqueado.</div>
+      <form method="get" class="ct290-form"><label>Requerimiento</label><select class="form-select" name="req" onchange="this.form.submit()">{{req_opts|safe}}</select></form>
+      <div class="ct316-actions"><a class="ct290-outline" href="{{url_for('contratacion_datos_contrato_masivo', req_id=req_id)}}"><i class="bi bi-files"></i> Datos contrato masivo</a><a class="ct290-btn" href="{{url_for('contratacion_generar_formato_316', modulo='postulantes', req=req_id)}}"><i class="bi bi-file-earmark-excel"></i> Formato llenado</a></div>
+      <form id="frmPost316" method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><input type="hidden" id="fotoPostData316" name="foto_data">
+        <label>DNI pre-registrado <b style="color:#dc2626">*</b></label><div class="ct306-inputgroup"><input id="dniPost316" name="dni" maxlength="8" inputmode="numeric" autocomplete="off" class="form-control" required><button type="button" class="ct306-scan" onclick="abrirScanner('readerPost316','dniPost316')"><i class="bi bi-upc-scan"></i></button></div><div id="readerPost316" class="mt-2"></div><div id="nomPost316" class="ct306-namebox mt-2">Digite 8 números para validar el pre-registro.</div>
+        <label class="mt-2">Nombres completos <b style="color:#dc2626">*</b></label><input id="nombresPost316" name="nombres" class="form-control" required>
+        <div class="ct290-row mt-2"><div><label>Tipo trabajador</label><input class="form-control" value="{{req.tipo_trabajador or ''}}" readonly></div><div><label>Régimen</label><input class="form-control" value="{{req.regimen_laboral or ''}}" readonly></div></div>
+        <div class="ct290-row mt-2"><div><label>Empresa</label><input class="form-control" value="{{req.empresa or ''}}" readonly></div><div><label>Área</label><input class="form-control" value="{{req.area or ''}}" readonly></div></div>
+        <div class="ct290-row mt-2"><div><label>Cargo</label><input class="form-control" value="{{req.cargo or ''}}" readonly></div><div><label>Actividad</label><input class="form-control" value="{{req.actividad or ''}}" readonly></div></div>
+        <div class="ct290-row mt-2"><div><label>Fecha nacimiento <b style="color:#dc2626">*</b></label><input id="fnPost316" type="date" name="fecha_nacimiento" class="form-control" required></div><div><label>Tipo contrato</label><input class="form-control" value="{{req.tipo_contrato or ''}}" readonly></div></div>
+        <div class="ct290-row mt-2"><div><label>Teléfono</label><input id="telPost316" name="telefono" class="form-control"></div><div><label>Correo</label><input id="corPost316" name="correo" class="form-control"></div></div>
+        <label class="mt-2">Dirección <b style="color:#dc2626">*</b></label><input id="dirPost316" name="direccion" class="form-control" required>
+        <div class="ct290-row mt-2"><div><label>Distrito <b style="color:#dc2626">*</b></label><input id="distPost316" name="distrito" list="listaDist316" class="form-control" placeholder="Escriba iniciales..." autocomplete="off" required><datalist id="listaDist316">{% for x in dist_vals %}<option value="{{x}}">{% endfor %}</datalist></div><div><label>Provincia <b style="color:#dc2626">*</b></label><input id="provPost316" name="provincia" list="listaProv316" class="form-control" placeholder="Escriba iniciales..." autocomplete="off" required><datalist id="listaProv316">{% for x in prov_vals %}<option value="{{x}}">{% endfor %}</datalist></div></div>
+        <label class="mt-2">Departamento <b style="color:#dc2626">*</b></label><input id="depPost316" name="departamento" list="listaDep316" class="form-control" placeholder="Escriba iniciales..." autocomplete="off" required><datalist id="listaDep316">{% for x in dep_vals %}<option value="{{x}}">{% endfor %}</datalist>
+        <div class="ct316-sign-note">Puede escribir las primeras letras y seleccionar del desplegable. Provincia y distrito se filtran según la ubicación elegida.</div>
+        <label class="mt-2">Fotografía para fotocheck / firma por foto</label><div class="ct306-cam" style="height:190px"><video id="videoPost316" autoplay playsinline muted></video><canvas id="canvasPost316" style="display:none"></canvas></div><div class="ct290-row3 mt-2"><button type="button" class="ct290-outline" onclick="openPostCam316()"><i class="bi bi-camera-video"></i> Cámara</button><button type="button" class="ct290-outline" onclick="capPostCam316()"><i class="bi bi-camera"></i> Capturar</button><button type="button" class="ct306-dangerbtn" onclick="closePostCam316()"><i class="bi bi-x-circle"></i> Cerrar</button></div><input type="file" name="foto_archivo" accept="image/*" class="form-control mt-2">
+        <label class="mt-2">Observación</label><input name="observacion" class="form-control"><button id="btnPost316" class="ct290-btn mt-2" disabled><i class="bi bi-save"></i> Guardar postulante</button>
+      </form>
+      <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>DNI</th><th>Postulante</th><th>Estado</th><th>Ubicación</th><th>Acción</th></tr></thead><tbody>{% for p in posts %}<tr><td>{{p.dni}}</td><td>{{p.nombres or '-'}}</td><td>{{badge(p.estado)|safe}}</td><td>{{p.distrito or '-'}} / {{p.provincia or '-'}} / {{p.departamento or '-'}}</td><td>{% if norm(p.estado)!='PRE-REGISTRO' %}<a class="ct306-smalllink" href="{{url_for('contratacion_datos_contrato_307', ingreso_id=p.id)}}"><i class="bi bi-pencil-square"></i> Contrato</a><br><a class="ct306-smalllink" href="{{url_for('contratacion_ficha_trabajador', ingreso_id=p.id)}}"><i class="bi bi-person-vcard"></i> Ficha</a>{% else %}<span class="ct306-muted">Pendiente completar</span>{% endif %}</td></tr>{% else %}<tr><td colspan="5">Sin pre-registros.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>
+    <script>
+    (function(){
+      const req='{{req_id}}', d=document.getElementById('dniPost316'), box=document.getElementById('nomPost316'), btn=document.getElementById('btnPost316'), form=document.getElementById('frmPost316'); let valid=false,lastBad='';
+      function soundBad(){try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;const c=new C();[0,170].forEach((ms,i)=>setTimeout(()=>{const o=c.createOscillator(),g=c.createGain();o.frequency.value=210;g.gain.value=.08;o.connect(g);g.connect(c.destination);o.start();setTimeout(()=>o.stop(),120);},ms));setTimeout(()=>c.close(),500);}catch(e){}}
+      function setValid(v,msg){valid=v;btn.disabled=!v;box.classList.toggle('ct316-status-ok',v);box.classList.toggle('ct316-status-bad',!v&&d.value.length===8);box.innerHTML=msg;}
+      function fill(t){const map={nombres:'nombresPost316',telefono:'telPost316',correo:'corPost316',fecha_nacimiento:'fnPost316',direccion:'dirPost316',distrito:'distPost316',provincia:'provPost316',departamento:'depPost316'};Object.keys(map).forEach(k=>{const e=document.getElementById(map[k]);if(e&&t[k]!==undefined&&t[k]!==null&&String(t[k]).trim()!=='')e.value=t[k];});}
+      async function look(){let v=(d.value||'').replace(/\D/g,'').slice(0,8);d.value=v;valid=false;btn.disabled=true;if(v.length<8){setValid(false,'Digite 8 números para validar el pre-registro.');return;}try{const r=await fetch('/api/contratacion/preregistro/'+v+'?req='+encodeURIComponent(req),{cache:'no-store'}),j=await r.json();if(j.ok){fill(j.postulante||{});setValid(true,'<b>VALIDADO:</b> '+((j.postulante||{}).nombres||v)+' · '+(j.estado||'PRE-REGISTRO'));if(typeof beep==='function')beep();lastBad='';}else{setValid(false,'<b>BLOQUEADO:</b> '+(j.msg||'DNI no pre-registrado'));soundBad();if(lastBad!==v){lastBad=v;alert(j.msg||'El DNI no pertenece al pre-registro del requerimiento.');}d.select();}}catch(e){setValid(false,'No se pudo validar el DNI.');soundBad();}}
+      d.addEventListener('input',look);d.addEventListener('change',look);form.addEventListener('submit',e=>{if(!valid){e.preventDefault();soundBad();alert('No puede avanzar. Digite un DNI correcto del pre-registro.');d.focus();}});
+      async function loadList(level,dep,prov,id){try{const u=new URLSearchParams({nivel:level,departamento:dep||'',provincia:prov||''});const r=await fetch('/api/contratacion/ubigeo?'+u.toString(),{cache:'no-store'}),j=await r.json();const dl=document.getElementById(id);if(j.ok&&dl)dl.innerHTML=(j.valores||[]).map(x=>'<option value="'+String(x).replace(/"/g,'&quot;')+'">').join('');}catch(e){}}
+      const dep=document.getElementById('depPost316'),prov=document.getElementById('provPost316');dep.addEventListener('change',()=>{loadList('provincia',dep.value,'','listaProv316');loadList('distrito',dep.value,prov.value,'listaDist316');});prov.addEventListener('change',()=>loadList('distrito',dep.value,prov.value,'listaDist316'));
+    })();
+    let streamPost316=null;async function openPostCam316(){try{streamPost316=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});document.getElementById('videoPost316').srcObject=streamPost316;}catch(e){alert('No se pudo abrir cámara.');}}function closePostCam316(){try{if(streamPost316){streamPost316.getTracks().forEach(t=>t.stop());streamPost316=null;}let v=document.getElementById('videoPost316');if(v){v.pause();v.srcObject=null;}}catch(e){}}function capPostCam316(){let v=document.getElementById('videoPost316'),c=document.getElementById('canvasPost316');if(!v||!v.videoWidth){alert('Abra la cámara primero.');return;}c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);document.getElementById('fotoPostData316').value=c.toDataURL('image/png');c.style.display='block';v.style.display='none';closePostCam316();}
+    </script>'''
+    return render_page(body, req=req, req_id=req_id, req_opts=_ct316_req_selector(reqs, req_id), posts=posts,
+                       dep_vals=dep_vals, prov_vals=prov_vals, dist_vals=dist_vals, badge=_ct_badge306, norm=_ct_norm306,
+                       nav=_ct_nav306('postulantes', req_id), gear=_ct316_gear_html('postulantes', req_id), title='Postulantes')
+
+
+def _ct316_update_rows_for_stage(etapa, req_id, ids, estado, obs):
+    meta = _ct316_stage_meta(etapa)
+    req = _ct316_req(req_id)
+    if not meta or not req:
+        return (0, len(ids or []), 'Seleccione requerimiento.')
+    if estado not in meta['estados']:
+        return (0, len(ids or []), 'Estado inválido.')
+    ok = skip = 0
+    for ing_id in ids:
+        try:
+            row = row_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE id=? AND requerimiento_id=?', (ing_id,req_id), fetchone=True))
+            listo, msg = _ct_stage_ok306(row, etapa)
+            if not listo:
+                skip += 1; continue
+            if _ct316_signature_required(etapa, estado) and not row.get(meta['firma_col']):
+                skip += 1; continue
+            execute(f'''UPDATE contratacion_ingresos SET {meta['estado_col']}=?, {meta['obs_col']}=?, {meta['fecha_col']}=?, observacion=? WHERE id=?''',
+                    (estado,obs,now_str(),obs,row.get('id')), commit=True)
+            ok += 1
+        except Exception:
+            skip += 1
+    return ok, skip, ''
+
+
+def contratacion_etapa_316(etapa):
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_316()
+    etapa = _ct316_modulo(etapa)
+    if etapa == 'firma':
+        return redirect(url_for('contratacion_firma_bio', req=request.values.get('req') or ''))
+    meta = _ct316_stage_meta(etapa)
+    if not meta:
+        return redirect(url_for('contratacion_home'))
+    reqs = rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250', fetchall=True))
+    req_id = request.values.get('req') or request.form.get('requerimiento_id') or ''
+    req = _ct316_req(req_id)
+    if request.method == 'POST':
+        if not req:
+            flash('BLOQUEADO: primero seleccione un requerimiento. No se modificó ningún estado.', 'danger')
+            return redirect(url_for('contratacion_etapa', etapa=etapa))
+        accion = request.form.get('accion') or 'individual'
+        if accion == 'masivo':
+            estado = request.form.get('estado_masivo') or meta['estados'][0]
+            obs = request.form.get('observacion_masivo') or ''
+            modo = request.form.get('modo_masivo') or 'seleccion'
+            if modo == 'todos':
+                rows = rows_to_dict(execute("SELECT id FROM contratacion_ingresos WHERE requerimiento_id=? AND UPPER(COALESCE(estado,''))<>'PRE-REGISTRO'", (req_id,), fetchall=True))
+                ids = [r.get('id') for r in rows]
+            else:
+                ids = request.form.getlist('ingreso_ids')
+            ok, skip, msg = _ct316_update_rows_for_stage(etapa, req_id, ids, estado, obs)
+            if _ct316_signature_required(etapa, estado):
+                msg = ' El estado final exige firma individual; los trabajadores sin firma fueron omitidos.'
+            flash(f"{meta['titulo']} masivo: {ok} actualizados, {skip} bloqueados/omitidos.{msg or ''}", 'success' if ok else 'warning')
+            _ct316_refresh_active_format(etapa, req_id)
+            return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+        dni = limpiar_dni(request.form.get('dni'))
+        row = row_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE requerimiento_id=? AND dni=? ORDER BY id DESC LIMIT 1', (req_id,dni), fetchone=True)) if len(dni)==8 else None
+        listo, msg = _ct_stage_ok306(row, etapa)
+        if not listo:
+            flash('BLOQUEADO: ' + msg, 'danger')
+            return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+        estado = request.form.get('estado') or meta['estados'][0]
+        if estado not in meta['estados']:
+            flash('Estado no permitido.', 'danger')
+            return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+        firma_path = row.get(meta['firma_col']) or ''
+        firma_data = request.form.get('firma_data') or ''
+        if firma_data:
+            firma_path = _ct316_save_stage_signature(dni, req_id, etapa, firma_data)
+        if _ct316_signature_required(etapa, estado) and not firma_path:
+            flash('BLOQUEADO: debe registrar la firma del trabajador para colocar el estado final.', 'danger')
+            return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+        obs = request.form.get('observacion') or ''
+        if firma_path:
+            execute(f'''UPDATE contratacion_ingresos SET {meta['estado_col']}=?, {meta['obs_col']}=?, {meta['fecha_col']}=?, {meta['firma_col']}=?, observacion=? WHERE id=?''',
+                    (estado,obs,now_str(),firma_path,obs,row.get('id')), commit=True)
+        else:
+            execute(f'''UPDATE contratacion_ingresos SET {meta['estado_col']}=?, {meta['obs_col']}=?, {meta['fecha_col']}=?, observacion=? WHERE id=?''',
+                    (estado,obs,now_str(),obs,row.get('id')), commit=True)
+        _ct316_refresh_active_format(etapa, req_id)
+        flash(meta['titulo'] + ' actualizado correctamente.', 'success')
+        return redirect(url_for('contratacion_etapa', etapa=etapa, req=req_id))
+    if not req:
+        return _ct316_selection_page(etapa, url_for('contratacion_etapa', etapa=etapa), meta['titulo'], meta['icono'], reqs)
+    posts = rows_to_dict(execute("SELECT * FROM contratacion_ingresos WHERE requerimiento_id=? AND UPPER(COALESCE(estado,''))<>'PRE-REGISTRO' ORDER BY id DESC LIMIT 500", (req_id,), fetchall=True))
+    opts = ''.join(f'<option>{_ct_h306(e)}</option>' for e in meta['estados'])
+    show_signature = etapa in ('induccion','fotocheck')
+    firma_obligatoria = _ct316_get_config(etapa, 'firma_obligatoria', 'SI') if show_signature else 'NO'
+    videos_count = len(_ct313_videos_induccion(req.get('area') or '')) if etapa == 'induccion' else 0
+    body = _ct_css306() + _ct316_css() + r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-{{meta.icono}}"></i></div><div class="ttl">{{meta.titulo}}</div>{{gear|safe}}</div><div class="ct290-body">{{nav|safe}}
+      <div class="ct290-info">Requerimiento seleccionado: <b>{{req.requerimiento if req.requerimiento else req.codigo}}</b>. El sistema valida el flujo y nunca toma trabajadores de otro requerimiento.</div>
+      <form method="get" class="ct290-form"><label>Requerimiento</label><select class="form-select" name="req" onchange="this.form.submit()">{{req_opts|safe}}</select></form>
+      <div class="ct316-actions"><a class="ct290-btn" href="{{url_for('contratacion_generar_formato_316', modulo=etapa, req=req_id)}}"><i class="bi bi-file-earmark-excel"></i> Formato llenado</a><a class="ct290-outline" href="{{url_for('contratacion_config_modulo_316', modulo=etapa, req=req_id)}}"><i class="bi bi-gear"></i> Configurar módulo</a></div>
+      {% if etapa=='induccion' %}<div class="ct316-ok"><i class="bi bi-play-circle"></i> Videos configurados para inducción: {{videos_count}}. Se administran desde el engranaje.</div>{% endif %}
+      <form id="frmEt316" method="post" class="ct290-form"><input type="hidden" name="accion" value="individual"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><input type="hidden" id="firmaDataEt316" name="firma_data">
+        <div class="ct290-row"><div><label>DNI</label><div class="ct306-inputgroup"><input id="dniEt316" name="dni" maxlength="8" inputmode="numeric" autocomplete="off" class="form-control" required><button type="button" class="ct306-scan" onclick="abrirScanner('readerEt316','dniEt316')"><i class="bi bi-upc-scan"></i></button></div></div><div><label>Estado individual</label><select id="estadoEt316" name="estado" class="form-select">{{opts|safe}}</select></div></div><div id="readerEt316" class="mt-2"></div><label class="mt-2">Trabajador</label><div id="nomEt316" class="ct306-namebox">Digite el DNI del postulante del requerimiento.</div>
+        <label class="mt-2">Observación</label><input name="observacion" class="form-control">
+        {% if show_signature %}<label class="mt-2">Firma del trabajador</label><canvas id="signEt316" class="ct316-sign"></canvas><div class="ct316-sign-note">Firma obligatoria para {{'ASISTIÓ' if etapa=='induccion' else 'ENTREGADO'}}: {{firma_obligatoria}}.</div><button type="button" class="ct290-outline mt-2" onclick="clearSignEt316()"><i class="bi bi-eraser"></i> Limpiar firma</button>{% endif %}
+        <button id="btnEt316" class="ct290-btn mt-2" disabled><i class="bi bi-check2-circle"></i> Actualizar individual</button>
+      </form>
+      <form method="post" class="ct290-form"><input type="hidden" name="accion" value="masivo"><input type="hidden" name="requerimiento_id" value="{{req_id}}"><label>Actualización masiva / selección</label><div class="ct290-row"><select name="estado_masivo" class="form-select">{{opts|safe}}</select><select name="modo_masivo" class="form-select"><option value="seleccion">Solo seleccionados</option><option value="todos">Todos del requerimiento</option></select></div><input name="observacion_masivo" class="form-control mt-2" placeholder="Observación masiva"><div class="ct290-row mt-2"><button type="button" class="ct290-outline" onclick="ct316ToggleChecks(true)"><i class="bi bi-check2-square"></i> Seleccionar</button><button type="button" class="ct290-outline" onclick="ct316ToggleChecks(false)"><i class="bi bi-square"></i> Limpiar</button></div>{% if show_signature and firma_obligatoria=='SI' %}<div class="ct316-sign-note">Los estados finales que exigen firma se realizan individualmente; el masivo omitirá a quien no tenga firma.</div>{% endif %}<button class="ct290-btn mt-2" onclick="return confirm('¿Aplicar estado al requerimiento seleccionado?')"><i class="bi bi-people-fill"></i> Aplicar estado</button>
+        <div class="ct290-tablewrap mt-2"><table class="ct290-table"><thead><tr><th>Sel.</th><th>DNI</th><th>Postulante</th><th>Estado proceso</th><th>Médica</th><th>Inducción</th><th>Indument.</th><th>Firma</th><th>Fotocheck</th></tr></thead><tbody>{% for p in posts %}<tr><td><input type="checkbox" class="ct316-check" name="ingreso_ids" value="{{p.id}}"></td><td>{{p.dni}}</td><td>{{p.nombres or '-'}}</td><td>{{badge(p.estado)|safe}}</td><td>{{badge(p.medica_estado)|safe}}</td><td>{{badge(p.induccion_estado)|safe}}</td><td>{{badge(p.indumentaria_estado)|safe}}</td><td>{{badge(p.firma_estado)|safe}}</td><td>{{badge(p.fotocheck_estado)|safe}}</td></tr>{% else %}<tr><td colspan="9">Sin postulantes completos para este requerimiento.</td></tr>{% endfor %}</tbody></table></div>
+      </form>
+    </div></div></div>
+    <script>
+    function ct316ToggleChecks(v){document.querySelectorAll('.ct316-check').forEach(c=>c.checked=v);}
+    (function(){const req='{{req_id}}',d=document.getElementById('dniEt316'),box=document.getElementById('nomEt316'),btn=document.getElementById('btnEt316'),form=document.getElementById('frmEt316');let valid=false,lastBad='';function bad(){try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;const c=new C(),o=c.createOscillator(),g=c.createGain();o.frequency.value=210;g.gain.value=.08;o.connect(g);g.connect(c.destination);o.start();setTimeout(()=>{o.stop();c.close();},190);}catch(e){}}async function look(){let v=(d.value||'').replace(/\D/g,'').slice(0,8);d.value=v;valid=false;btn.disabled=true;box.classList.remove('ct316-status-ok','ct316-status-bad');if(v.length<8){box.textContent='Digite el DNI del postulante del requerimiento.';return;}try{let r=await fetch('/api/contratacion/preregistro/'+v+'?req='+encodeURIComponent(req),{cache:'no-store'}),j=await r.json();if(j.ok&&j.completo){valid=true;btn.disabled=false;box.classList.add('ct316-status-ok');box.innerHTML='<b>'+((j.postulante||{}).nombres||v)+'</b> · POSTULANTE HABILITADO';if(typeof beep==='function')beep();lastBad='';}else{box.classList.add('ct316-status-bad');box.innerHTML='<b>BLOQUEADO:</b> '+(j.ok?'Primero complete Registro Postulante.':(j.msg||'DNI incorrecto'));bad();if(lastBad!==v){lastBad=v;alert(j.ok?'Primero complete Registro Postulante.':(j.msg||'DNI no válido para el requerimiento.'));}d.select();}}catch(e){box.textContent='No se pudo validar DNI.';bad();}}d.addEventListener('input',look);d.addEventListener('change',look);form.addEventListener('submit',e=>{if(!valid){e.preventDefault();bad();alert('No puede actualizar. Valide un DNI correcto del requerimiento.');}});})();
+    let sigDrawnEt316=false;const sigEt316=document.getElementById('signEt316');function clearSignEt316(){if(!sigEt316)return;const c=sigEt316.getContext('2d');c.clearRect(0,0,sigEt316.width,sigEt316.height);sigDrawnEt316=false;document.getElementById('firmaDataEt316').value='';}if(sigEt316){const ctx=sigEt316.getContext('2d');function resize(){const r=sigEt316.getBoundingClientRect(),d=window.devicePixelRatio||1;sigEt316.width=Math.max(300,r.width*d);sigEt316.height=Math.max(120,r.height*d);ctx.setTransform(d,0,0,d,0,0);ctx.lineWidth=2;ctx.lineCap='round';ctx.strokeStyle='#0f5132';}setTimeout(resize,60);let drawing=false,last=null;function p(e){const r=sigEt316.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}sigEt316.addEventListener('pointerdown',e=>{drawing=true;last=p(e);sigEt316.setPointerCapture&&sigEt316.setPointerCapture(e.pointerId);});sigEt316.addEventListener('pointermove',e=>{if(!drawing)return;const q=p(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(q.x,q.y);ctx.stroke();last=q;sigDrawnEt316=true;});window.addEventListener('pointerup',()=>drawing=false);document.getElementById('frmEt316').addEventListener('submit',()=>{if(sigDrawnEt316)document.getElementById('firmaDataEt316').value=sigEt316.toDataURL('image/png');});}
+    </script>'''
+    return render_page(body, meta=meta, etapa=etapa, req=req, req_id=req_id, req_opts=_ct316_req_selector(reqs, req_id),
+                       posts=posts, opts=opts, show_signature=show_signature, firma_obligatoria=firma_obligatoria,
+                       videos_count=videos_count, badge=_ct_badge306, nav=_ct_nav306(etapa, req_id),
+                       gear=_ct316_gear_html(etapa, req_id), title=meta['titulo'])
+
+
+# Conserva las versiones finales previas para envolver Requerimientos y Firma sin perder su funcionalidad existente.
+_ct316_prev_requerimientos = app.view_functions.get('contratacion_requerimientos')
+_ct316_prev_firma = app.view_functions.get('contratacion_firma_bio')
+
+
+def contratacion_requerimientos_316():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_316()
+    req_id = request.values.get('req') or request.form.get('requerimiento_id') or ''
+    accion = request.form.get('accion') or ''
+    if request.method == 'POST' and accion != 'crear' and not _ct316_req(req_id):
+        flash('BLOQUEADO: primero seleccione un requerimiento.', 'danger')
+        return redirect(url_for('contratacion_requerimientos'))
+    if request.method == 'GET' and not req_id and request.args.get('nuevo') != '1':
+        reqs = rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250', fetchall=True))
+        extra = '<a class="ct290-outline" href="' + url_for('contratacion_requerimientos', nuevo='1') + '"><i class="bi bi-plus-circle"></i> Nuevo requerimiento</a>'
+        return _ct316_selection_page('preregistro', url_for('contratacion_requerimientos'), 'Pre-registro / Requerimientos', 'clipboard2-plus', reqs, extra)
+    response = _ct316_prev_requerimientos() if _ct316_prev_requerimientos else contratacion_requerimientos_312()
+    if request.method == 'POST' and accion in ('preregistro','preregistro_masivo','eliminar_prereg') and req_id:
+        _ct316_refresh_active_format('preregistro', req_id)
+    return _ct316_inject_gear(response, 'preregistro', req_id)
+
+
+def contratacion_firma_bio_316():
+    if not _is_admin_292(): return _deny_admin_292()
+    _ensure_contratacion_316()
+    reqs = rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250', fetchall=True))
+    req_id = request.values.get('req') or request.form.get('requerimiento_id') or ''
+    if request.method == 'POST' and not _ct316_req(req_id):
+        flash('BLOQUEADO: primero seleccione un requerimiento.', 'danger')
+        return redirect(url_for('contratacion_firma_bio'))
+    if request.method == 'GET' and not _ct316_req(req_id):
+        return _ct316_selection_page('firma', url_for('contratacion_firma_bio'), 'Firma facial / digital', 'pen', reqs)
+    response = _ct316_prev_firma() if _ct316_prev_firma else contratacion_firma_bio_313()
+    return _ct316_inject_gear(response, 'firma', req_id)
+
+
+# Nuevas rutas V316.
+for _rule316, _endpoint316, _view316, _methods316 in [
+    ('/api/contratacion/ubigeo', 'api_contratacion_ubigeo_316', api_contratacion_ubigeo_316, ['GET']),
+    ('/api/contratacion/preregistro/<dni>', 'api_contratacion_preregistro_316', api_contratacion_preregistro_316, ['GET']),
+    ('/contratacion/configuracion-modulo/<modulo>', 'contratacion_config_modulo_316', contratacion_config_modulo_316, ['GET','POST']),
+    ('/contratacion/formato/<modulo>/generar', 'contratacion_generar_formato_316', contratacion_generar_formato_316, ['GET']),
+    ('/contratacion/formato/<modulo>/plantilla', 'contratacion_plantilla_modulo_316', contratacion_plantilla_modulo_316, ['GET']),
+]:
+    try:
+        app.add_url_rule(_rule316, _endpoint316, _view316, methods=_methods316)
+    except Exception:
+        app.view_functions[_endpoint316] = _view316
+
+# Reemplazo definitivo de endpoints de contratación.
+app.view_functions['contratacion_requerimientos'] = contratacion_requerimientos_316
+app.view_functions['contratacion_postulantes'] = contratacion_postulantes_316
+app.view_functions['contratacion_etapa'] = contratacion_etapa_316
+app.view_functions['contratacion_firma_bio'] = contratacion_firma_bio_316
+
+# ===================== FIN PATCH CONTRATACIÓN 316 OMAR =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
