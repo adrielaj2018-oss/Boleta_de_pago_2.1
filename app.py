@@ -18357,6 +18357,2935 @@ except Exception:
 
 # ===================== FIN PATCH 323 =====================
 
+# ===================== PATCH 324 - CONDICIONES POR MÓDULO Y CONTRATOS DINÁMICOS =====================
+# Implementa:
+# 1) Condiciones laborales reemplazables por módulo, sin modificar el historial anterior.
+# 2) Historial por DNI / módulo / referencia.
+# 3) Carga libre de plantillas Word .docx con detección automática de campos «Campo» o <<Campo>>.
+# 4) Autollenado, campos manuales faltantes, vista previa obligatoria, firma en pantalla y descarga posterior.
+
+import hashlib as _ct324_hashlib
+import mimetypes as _ct324_mimetypes
+
+try:
+    from docx import Document as _CT324_Document
+    from docx.shared import Inches as _CT324_Inches
+except Exception:
+    _CT324_Document = None
+    _CT324_Inches = None
+
+CONTRATACION_TEMPLATES_DYN_DIR_324 = _Path306(PERSIST_DIR) / 'plantillas_contratacion_dinamicas'
+CONTRATACION_DOCS_DIR_324 = _Path306(PERSIST_DIR) / 'contratacion_contratos_generados'
+CONTRATACION_FIRMAS_DIR_324 = _Path306(PERSIST_DIR) / 'firmas_contratos'
+for _ct324_dir in (CONTRATACION_TEMPLATES_DYN_DIR_324, CONTRATACION_DOCS_DIR_324, CONTRATACION_FIRMAS_DIR_324):
+    _ct324_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _ct324_admin_ok():
+    try:
+        return bool(_is_admin_292())
+    except Exception:
+        return bool(session.get('usuario') and session.get('rol') == 'admin')
+
+
+def _ct324_deny():
+    try:
+        return _deny_admin_292()
+    except Exception:
+        flash('Solo administrador puede ingresar a esta opción.', 'danger')
+        return redirect(url_for('home'))
+
+
+def _ct324_insert_id(cur, sql, params=()):
+    if is_pg():
+        cur.execute(qmark(sql.rstrip().rstrip(';') + ' RETURNING id'), params)
+        r = cur.fetchone()
+        if isinstance(r, dict):
+            return int(r.get('id') or 0)
+        try:
+            return int(r[0])
+        except Exception:
+            return 0
+    cur.execute(qmark(sql), params)
+    return int(cur.lastrowid or 0)
+
+
+def _ct324_ensure_schema():
+    try:
+        _g323_ensure_schema()
+    except Exception:
+        pass
+    try:
+        _ensure_contratacion_316()
+    except Exception:
+        try:
+            _ensure_contratacion_309()
+        except Exception:
+            pass
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS trabajador_condiciones_historial(
+            id {idtype}, dni TEXT NOT NULL, modulo TEXT NOT NULL,
+            referencia_tipo TEXT, referencia_id TEXT, fecha_inicio TEXT, fecha_fin TEXT,
+            tipo_trabajador TEXT, regimen_laboral TEXT, tipo_contrato TEXT,
+            remuneracion REAL DEFAULT 0, horas_mes REAL DEFAULT 0, dia_descanso TEXT,
+            vigente INTEGER DEFAULT 1, origen TEXT, observacion TEXT,
+            creado_por TEXT, creado_en TEXT, actualizado_en TEXT)'''))
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS contratacion_plantillas_dinamicas(
+            id {idtype}, clave TEXT UNIQUE NOT NULL, nombre TEXT NOT NULL,
+            archivo_original TEXT, archivo_path TEXT NOT NULL, campos_json TEXT,
+            estado TEXT DEFAULT 'ACTIVO', creado_por TEXT, creado_en TEXT, actualizado_en TEXT)'''))
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS contratacion_documentos_instancias(
+            id {idtype}, ingreso_id INTEGER NOT NULL, dni TEXT NOT NULL,
+            plantilla_ref TEXT NOT NULL, plantilla_nombre TEXT, campos_json TEXT,
+            estado TEXT DEFAULT 'BORRADOR', archivo_path TEXT, firma_path TEXT,
+            vista_previa_en TEXT, firmado_en TEXT, creado_por TEXT, creado_en TEXT,
+            actualizado_en TEXT)'''))
+        for col, ddl in [
+            ('horas_mes', 'REAL DEFAULT 0'), ('dia_descanso', 'TEXT'),
+            ('condicion_historial_id', 'INTEGER'), ('plantilla_contrato_ref', 'TEXT')
+        ]:
+            _add_column_if_missing(cur, 'contratacion_ingresos', col, ddl)
+        conn.commit()
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+
+
+def _ct324_float(value, default=0.0):
+    if value is None or value == '':
+        return float(default or 0)
+    if isinstance(value, (int, float)):
+        return float(value)
+    txt = re.sub(r'[^0-9,.-]', '', str(value).strip())
+    if not txt:
+        return float(default or 0)
+    if ',' in txt and '.' in txt:
+        if txt.rfind(',') > txt.rfind('.'):
+            txt = txt.replace('.', '').replace(',', '.')
+        else:
+            txt = txt.replace(',', '')
+    elif ',' in txt:
+        tail = txt.rsplit(',', 1)[-1]
+        txt = txt.replace(',', '.') if len(tail) in (1, 2) else txt.replace(',', '')
+    try:
+        return float(txt)
+    except Exception:
+        return float(default or 0)
+
+
+def _ct324_slug(value):
+    txt = _ct_norm306(value or '')
+    txt = re.sub(r'[^A-Z0-9]+', '_', txt).strip('_').lower()
+    return txt[:70] or ('plantilla_' + datetime.now().strftime('%Y%m%d%H%M%S'))
+
+
+def _ct324_norm_field(value):
+    txt = str(value or '').strip()
+    txt = ''.join(c for c in _ud306.normalize('NFD', txt) if _ud306.category(c) != 'Mn')
+    return re.sub(r'[^a-zA-Z0-9]', '', txt).lower()
+
+
+def _ct324_latest_condition(dni, modulo, referencia_id=''):
+    _ct324_ensure_schema()
+    dni = limpiar_dni(dni)
+    modulo = str(modulo or 'general').lower()
+    if referencia_id not in (None, ''):
+        row = row_to_dict(execute('''SELECT * FROM trabajador_condiciones_historial
+            WHERE dni=? AND modulo=? AND COALESCE(referencia_id,'')=?
+            ORDER BY vigente DESC, id DESC LIMIT 1''',
+            (dni, modulo, str(referencia_id)), fetchone=True))
+        if row:
+            return row
+    return row_to_dict(execute('''SELECT * FROM trabajador_condiciones_historial
+        WHERE dni=? AND modulo=? ORDER BY vigente DESC, id DESC LIMIT 1''',
+        (dni, modulo), fetchone=True))
+
+
+def _ct324_resolved_worker(dni, modulo='general', referencia_id=''):
+    _ct324_ensure_schema()
+    dni = limpiar_dni(dni)
+    base = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True)) or {'dni': dni}
+    condition = _ct324_latest_condition(dni, modulo, referencia_id)
+    result = dict(base)
+    if condition:
+        for key in ('tipo_trabajador','regimen_laboral','tipo_contrato','remuneracion','horas_mes','dia_descanso'):
+            value = condition.get(key)
+            if value not in (None, ''):
+                result[key] = value
+        result['condicion_modulo_id'] = condition.get('id')
+        result['condicion_modulo'] = modulo
+    result['dni'] = result.get('dni') or dni
+    return result
+
+
+def _ct324_save_condition(dni, modulo, values, referencia_tipo='MODULO', referencia_id='', origen='MANUAL', observacion=''):
+    _ct324_ensure_schema()
+    dni = limpiar_dni(dni)
+    modulo = str(modulo or 'general').lower()
+    referencia_id = str(referencia_id or '')
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        cur.execute(qmark('''UPDATE trabajador_condiciones_historial SET vigente=0, actualizado_en=?
+            WHERE dni=? AND modulo=? AND COALESCE(referencia_id,'')=? AND vigente=1'''),
+            (now_str(), dni, modulo, referencia_id))
+        hist_id = _ct324_insert_id(cur, '''INSERT INTO trabajador_condiciones_historial(
+            dni,modulo,referencia_tipo,referencia_id,fecha_inicio,fecha_fin,
+            tipo_trabajador,regimen_laboral,tipo_contrato,remuneracion,horas_mes,dia_descanso,
+            vigente,origen,observacion,creado_por,creado_en,actualizado_en
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
+            dni, modulo, referencia_tipo, referencia_id,
+            values.get('fecha_inicio') or '', values.get('fecha_fin') or '',
+            limpiar_texto(values.get('tipo_trabajador') or ''),
+            limpiar_texto(values.get('regimen_laboral') or ''),
+            limpiar_texto(values.get('tipo_contrato') or ''),
+            _ct324_float(values.get('remuneracion')), _ct324_float(values.get('horas_mes')),
+            limpiar_texto(values.get('dia_descanso') or ''), 1, origen,
+            str(observacion or ''), session.get('usuario') or 'SISTEMA', now_str(), now_str()
+        ))
+        conn.commit()
+        return hist_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+
+
+def _ct324_infer_module():
+    explicit = str(request.args.get('modulo') or '').strip().lower()
+    if explicit:
+        return explicit
+    ref = str(request.referrer or '').lower()
+    for key in ('horas_extras','renovacion','vacaciones','contratacion','transporte','asistencia','boleta','tareo'):
+        if key.replace('_','-') in ref or key in ref:
+            return key
+    return 'general'
+
+
+def api_trabajador_324(dni):
+    if not session.get('usuario'):
+        return jsonify(ok=False, msg='Sesión vencida.'), 401
+    d = limpiar_dni(dni)
+    if len(d) != 8:
+        return jsonify(ok=False, msg='DNI inválido.')
+    modulo = _ct324_infer_module()
+    t = _ct324_resolved_worker(d, modulo)
+    if not t.get('trabajador') and not t.get('nombres'):
+        return jsonify(ok=False, msg='DNI no encontrado en la base central de trabajadores.')
+    t['trabajador'] = t.get('trabajador') or t.get('nombres') or ''
+    return jsonify(ok=True, trabajador=t, modulo=modulo,
+                   fuente='CONDICION_MODULO' if t.get('condicion_modulo_id') else (t.get('origen_datos') or 'BASE_CENTRAL'))
+
+
+def _ct_worker306(dni):
+    d = limpiar_dni(dni)
+    r = _ct324_resolved_worker(d, 'contratacion')
+    nom = r.get('trabajador') or r.get('nombre') or r.get('nombres') or ''
+    return {
+        'dni': r.get('dni') or d, 'nombres': nom, 'trabajador': nom,
+        'telefono': r.get('celular') or r.get('telefono') or '',
+        'correo': r.get('correo') or r.get('email') or '',
+        'empresa': r.get('empresa') or '', 'area': r.get('area') or '',
+        'cargo': r.get('cargo') or '', 'actividad': r.get('actividad') or '',
+        'direccion': r.get('direccion') or r.get('direccion_actual') or '',
+        'distrito': r.get('distrito') or '', 'provincia': r.get('provincia') or '',
+        'departamento': r.get('departamento') or '', 'fecha_nacimiento': r.get('fecha_nacimiento') or '',
+        'tipo_trabajador': r.get('tipo_trabajador') or '',
+        'regimen_laboral': r.get('regimen_laboral') or '',
+        'tipo_contrato': r.get('tipo_contrato') or '',
+        'remuneracion': r.get('remuneracion') or 0,
+        'horas_mes': r.get('horas_mes') or 0,
+        'dia_descanso': r.get('dia_descanso') or '',
+        'estado': r.get('estado') or 'ACTIVO'
+    }
+
+
+def api_contratacion_dni_324(dni):
+    d = limpiar_dni(dni)
+    if len(d) != 8:
+        return jsonify(ok=False, msg='DNI inválido')
+    return jsonify(ok=True, dni=d, tipo=_ct_tipo306(d), trabajador=_ct_worker306(d))
+
+
+def trabajador_condiciones_modulo_324(dni, modulo):
+    if not _ct324_admin_ok(): return _ct324_deny()
+    _ct324_ensure_schema()
+    dni = limpiar_dni(dni); modulo = str(modulo or 'general').lower()
+    base = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if not base:
+        flash('DNI no encontrado en la base central.', 'danger')
+        return redirect(url_for('modulo_trabajadores_303', modulo=modulo))
+    current = _ct324_latest_condition(dni, modulo, 'BASE_MODULO') or {}
+    if request.method == 'POST':
+        values = {
+            'fecha_inicio': request.form.get('fecha_inicio'), 'fecha_fin': request.form.get('fecha_fin'),
+            'tipo_trabajador': request.form.get('tipo_trabajador'),
+            'regimen_laboral': request.form.get('regimen_laboral'),
+            'tipo_contrato': request.form.get('tipo_contrato'),
+            'remuneracion': request.form.get('remuneracion'), 'horas_mes': request.form.get('horas_mes'),
+            'dia_descanso': request.form.get('dia_descanso')
+        }
+        _ct324_save_condition(dni, modulo, values, 'BASE_MODULO', 'BASE_MODULO', 'EDICION_MODULO', request.form.get('observacion'))
+        flash(f'Condiciones de {modulo.upper()} guardadas sin modificar la base ni el historial anterior.', 'success')
+        return redirect(url_for('trabajador_condiciones_modulo_324', dni=dni, modulo=modulo))
+    values = dict(base)
+    for key in ('fecha_inicio','fecha_fin','tipo_trabajador','regimen_laboral','tipo_contrato','remuneracion','horas_mes','dia_descanso'):
+        if current.get(key) not in (None, ''):
+            values[key] = current.get(key)
+    history = rows_to_dict(execute('''SELECT * FROM trabajador_condiciones_historial WHERE dni=? AND modulo=?
+        ORDER BY id DESC LIMIT 30''', (dni, modulo), fetchall=True))
+    body = _ct_css306() + r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('modulo_trabajadores_303', modulo=modulo)}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-sliders"></i></div><div class="ttl">Condiciones {{modulo}}</div></div><div class="ct290-body">
+      <div class="ct290-info"><b>{{base.dni}} · {{base.trabajador}}</b><br>Los valores de la base central son predeterminados. Aquí puede reemplazarlos únicamente para este módulo. Cada cambio crea una versión histórica.</div>
+      <form method="post" class="ct290-form"><div class="ct290-row"><div><label>Fecha inicio</label><input type="date" name="fecha_inicio" value="{{values.fecha_inicio or ''}}" class="form-control"></div><div><label>Fecha fin</label><input type="date" name="fecha_fin" value="{{values.fecha_fin or ''}}" class="form-control"></div></div>
+      <div class="ct290-row mt-2"><div><label>Tipo trabajador</label><input name="tipo_trabajador" value="{{values.tipo_trabajador or ''}}" class="form-control"></div><div><label>Régimen laboral</label><input name="regimen_laboral" value="{{values.regimen_laboral or ''}}" class="form-control"></div></div>
+      <label class="mt-2">Tipo contrato</label><input name="tipo_contrato" value="{{values.tipo_contrato or ''}}" class="form-control">
+      <div class="ct290-row mt-2"><div><label>Remuneración</label><input type="number" step="0.01" min="0" name="remuneracion" value="{{values.remuneracion or 0}}" class="form-control"></div><div><label>Horas mes</label><input type="number" step="0.01" min="0" name="horas_mes" value="{{values.horas_mes or 0}}" class="form-control"></div></div>
+      <label class="mt-2">Día descanso</label><input name="dia_descanso" value="{{values.dia_descanso or ''}}" class="form-control"><label class="mt-2">Observación</label><input name="observacion" class="form-control"><button class="ct290-btn mt-2"><i class="bi bi-save"></i> Guardar nueva versión</button></form>
+      <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Vigencia</th><th>Condición</th><th>Registro</th></tr></thead><tbody>{% for h in history %}<tr><td>{{h.fecha_inicio or '-'}}<br>{{h.fecha_fin or 'Vigente'}}<br>{{'ACTUAL' if h.vigente else 'HISTÓRICO'}}</td><td>{{h.tipo_trabajador}} / {{h.regimen_laboral}}<br>{{h.tipo_contrato}} · S/ {{'%.2f'|format(h.remuneracion or 0)}}<br>{{h.horas_mes or 0}} h · {{h.dia_descanso or '-'}}</td><td>{{h.creado_en}}<br>{{h.creado_por}}</td></tr>{% else %}<tr><td colspan="3">Sin cambios del módulo. Se usan valores de la base central.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body, base=base, values=values, history=history, modulo=modulo, title='Condiciones por módulo')
+
+
+def modulo_trabajadores_324(modulo='general'):
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo administrador puede cargar trabajadores.', 'danger')
+        return redirect(url_for('home'))
+    _ct324_ensure_schema()
+    modulo = str(modulo or 'general').lower(); info = _modulo_info_303(modulo)
+    if request.method == 'POST':
+        ins, upd, omi, err = _g323_import_workers(request.files.get('archivo'), modulo, 'EXCEL_MODULO')
+        flash(('Error: ' + err) if err else f'{info["titulo"]}: {ins} nuevos, {upd} actualizados y {omi} omitidos. Los datos laborales se guardan como valores predeterminados y pueden reemplazarse por módulo.', 'danger' if err else 'success')
+        return redirect(url_for('modulo_trabajadores_303', modulo=modulo))
+    total = int(scalar('SELECT COUNT(*) AS c FROM trabajadores') or 0)
+    activos = int(scalar("SELECT COUNT(*) AS c FROM trabajadores WHERE UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO'") or 0)
+    ultimos = rows_to_dict(execute('''SELECT dni,trabajador,empresa,area,cargo,estado,tipo_trabajador,regimen_laboral,tipo_contrato,remuneracion,horas_mes,dia_descanso
+        FROM trabajadores ORDER BY COALESCE(actualizado_en,fecha_carga) DESC,id DESC LIMIT 40''', fetchall=True))
+    body = _g323_css() + r'''
+    <div class="g323-wrap"><div class="g323-app"><div class="g323-head"><a class="back" href="{{back_url}}"><i class="bi bi-chevron-left"></i></a><div><b>CARGA TRABAJADORES</b><small>{{info.titulo}}</small></div><i class="bi {{info.icon}} ico"></i></div><div class="g323-body">
+      <div class="g323-note g323-ok"><b>Base central + reemplazo por módulo.</b><br>TIPO_TRABAJADOR, RÉGIMEN, CONTRATO, REMUNERACIÓN, HORAS_MES y DÍA_DESCANSO se cargan como predeterminados. Use <b>Condiciones</b> para reemplazarlos solo en {{info.titulo}} sin alterar periodos anteriores.</div>
+      <div class="g323-kpis"><div class="g323-kpi"><small>Total</small><b>{{total}}</b></div><div class="g323-kpi"><small>Activos</small><b>{{activos}}</b></div><div class="g323-kpi"><small>Módulo</small><b><i class="bi {{info.icon}}"></i></b></div></div>
+      <form method="post" enctype="multipart/form-data" class="g323-form"><label>Excel de trabajadores</label><input class="form-control mt-1" type="file" name="archivo" accept=".xlsx,.xlsm" required><button class="g323-btn mt-2"><i class="bi bi-cloud-arrow-up"></i> Cargar valores predeterminados</button></form>
+      <a class="g323-outline" href="{{url_for('modulo_trabajadores_plantilla_303', modulo=modulo)}}"><i class="bi bi-file-earmark-excel"></i> Plantilla {{info.titulo}}</a>
+      <div class="g323-section">Trabajadores y condiciones</div><div class="g323-table"><table><thead><tr><th>DNI / Trabajador</th><th>Base laboral</th><th>Acción</th></tr></thead><tbody>{% for t in ultimos %}<tr><td>{{t.dni}}<br><b>{{t.trabajador or '-'}}</b><br>{{t.area or '-'}} / {{t.cargo or '-'}}</td><td>{{t.tipo_trabajador or '-'}} · {{t.regimen_laboral or '-'}}<br>{{t.tipo_contrato or '-'}} · S/ {{'%.2f'|format(t.remuneracion or 0)}}<br>{{t.horas_mes or 0}} h · {{t.dia_descanso or '-'}}</td><td><a class="g323-outline" style="padding:7px" href="{{url_for('trabajador_condiciones_modulo_324', dni=t.dni, modulo=modulo)}}"><i class="bi bi-sliders"></i> Condiciones</a></td></tr>{% else %}<tr><td colspan="3">Sin trabajadores.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body, info=info, modulo=modulo, total=total, activos=activos, ultimos=ultimos,
+                       back_url=_modulo_config_url_303(modulo), title=f'Carga {info["titulo"]}')
+
+
+def _ct324_detect_fields_docx(path):
+    fields = set()
+    try:
+        with _zip306.ZipFile(path, 'r') as z:
+            for name in z.namelist():
+                if not (name.startswith('word/') and name.endswith('.xml')):
+                    continue
+                raw = z.read(name).decode('utf-8', errors='ignore')
+                parts = re.findall(r'<w:t[^>]*>(.*?)</w:t>', raw, flags=re.S)
+                text = ''.join(_html306.unescape(re.sub(r'<[^>]+>', '', p)) for p in parts)
+                text += '\n' + _html306.unescape(re.sub(r'<[^>]+>', '', raw))
+                fields.update(re.findall(r'«\s*([^»]{1,120}?)\s*»', text))
+                fields.update(re.findall(r'<<\s*([^<>]{1,120}?)\s*>>', text))
+    except Exception:
+        return []
+    return sorted({re.sub(r'\s+', ' ', f).strip() for f in fields if str(f).strip()}, key=lambda x: x.lower())
+
+
+def _ct324_upsert_dynamic_template(file_storage):
+    if not file_storage or not getattr(file_storage, 'filename', ''):
+        return False, 'Archivo vacío.'
+    original = secure_filename(file_storage.filename)
+    if not original.lower().endswith('.docx'):
+        return False, f'{original}: use .docx.'
+    base_name = os.path.splitext(original)[0]
+    clave = _ct324_slug(base_name)
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+    stored = f'{clave}_{stamp}.docx'
+    path = CONTRATACION_TEMPLATES_DYN_DIR_324 / stored
+    file_storage.save(path)
+    fields = _ct324_detect_fields_docx(path)
+    existing = row_to_dict(execute('SELECT * FROM contratacion_plantillas_dinamicas WHERE clave=?', (clave,), fetchone=True))
+    if existing:
+        execute('''UPDATE contratacion_plantillas_dinamicas SET nombre=?,archivo_original=?,archivo_path=?,campos_json=?,estado='ACTIVO',actualizado_en=? WHERE id=?''',
+                (base_name, original, str(path), json.dumps(fields, ensure_ascii=False), now_str(), existing.get('id')), commit=True)
+    else:
+        execute('''INSERT INTO contratacion_plantillas_dinamicas(clave,nombre,archivo_original,archivo_path,campos_json,estado,creado_por,creado_en,actualizado_en)
+                   VALUES(?,?,?,?,?,'ACTIVO',?,?,?)''',
+                (clave, base_name, original, str(path), json.dumps(fields, ensure_ascii=False), session.get('usuario'), now_str(), now_str()), commit=True)
+    return True, f'{base_name}: {len(fields)} campo(s) reconocido(s).'
+
+
+def _ct324_dynamic_templates():
+    _ct324_ensure_schema()
+    return rows_to_dict(execute("SELECT * FROM contratacion_plantillas_dinamicas WHERE UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO' ORDER BY nombre", fetchall=True))
+
+
+def _ct324_template_descriptor(ref=''):
+    ref = str(ref or '')
+    if ref.startswith('dyn:'):
+        try: tid = int(ref.split(':',1)[1])
+        except Exception: tid = 0
+        r = row_to_dict(execute('SELECT * FROM contratacion_plantillas_dinamicas WHERE id=?', (tid,), fetchone=True))
+        if r and os.path.exists(str(r.get('archivo_path') or '')):
+            try: fields = json.loads(r.get('campos_json') or '[]')
+            except Exception: fields = _ct324_detect_fields_docx(r.get('archivo_path'))
+            return {'ref': f'dyn:{r.get("id")}', 'name': r.get('nombre'), 'path': _Path306(r.get('archivo_path')), 'fields': fields, 'dynamic': True}
+    if ref.startswith('cat:'):
+        key = ref.split(':',1)[1]
+        doc = _ct_doc306(key); path = _ct_template_path306(doc)
+        if path.exists():
+            return {'ref': f'cat:{doc["key"]}', 'name': doc['nombre'], 'path': path,
+                    'fields': _ct324_detect_fields_docx(path) or doc.get('campos', []), 'dynamic': False}
+    dyn = _ct324_dynamic_templates()
+    if dyn:
+        return _ct324_template_descriptor(f'dyn:{dyn[0].get("id")}')
+    for doc in CONTRATACION_DOCS_CATALOGO_306:
+        path = _ct_template_path306(doc)
+        if path.exists():
+            return _ct324_template_descriptor('cat:' + doc['key'])
+    return None
+
+
+def _ct324_template_options(selected=''):
+    options = []
+    for r in _ct324_dynamic_templates():
+        ref = f'dyn:{r.get("id")}'
+        mark = 'selected' if ref == selected else ''
+        try: count = len(json.loads(r.get('campos_json') or '[]'))
+        except Exception: count = 0
+        options.append(f"<option value='{_ct_h306(ref)}' {mark}>{_ct_h306(r.get('nombre'))} · automática ({count} campos)</option>")
+    for doc in CONTRATACION_DOCS_CATALOGO_306:
+        path = _ct_template_path306(doc)
+        if not path.exists():
+            continue
+        ref = 'cat:' + doc['key']; mark = 'selected' if ref == selected else ''
+        options.append(f"<option value='{_ct_h306(ref)}' {mark}>{_ct_h306(doc['nombre'])} · catálogo</option>")
+    return ''.join(options) or '<option value="">Primero cargue una plantilla Word</option>'
+
+
+_CT324_ALIASES = {
+    'dni':'Dni','documento':'Dni','numerodocumento':'Dni','documentoidentidad':'Dni',
+    'nombrecompletotrabajador':'NombreCompletoTrabajador','nombretrabajador':'NombreCompletoTrabajador',
+    'trabajador':'NombreCompletoTrabajador','nombres':'NombreCompletoTrabajador','apellidosynombres':'NombreCompletoTrabajador',
+    'fechanacimiento':'FechaNacimientoBarra','fechanacimientobarra':'FechaNacimientoBarra',
+    'fechainicio':'FechaIniContratoBarra','fechainiciocontrato':'FechaIniContratoBarra','fechainicontrato':'FechaIniContratoBarra','fechainicontratobarra':'FechaIniContratoBarra',
+    'fechafin':'FechaFinContratoBarra','fechafincontrato':'FechaFinContratoBarra','fechafincontratobarra':'FechaFinContratoBarra',
+    'direccion':'DireccionActual','direccionactual':'DireccionActual','domicilio':'DireccionActual',
+    'distrito':'Distrito','provincia':'Provincia','departamento':'Departamento',
+    'empresa':'Empresa','area':'Area','cargo':'Cargo','actividad':'Actividad','funciones':'Funciones',
+    'correo':'Email','email':'Email','telefono':'NroTelefonoMovil','celular':'NroTelefonoMovil','nrotelefonomovil':'NroTelefonoMovil',
+    'tipotrabajador':'TipoTrabajador','regimen':'RegimenLaboral','regimenlaboral':'RegimenLaboral',
+    'tipocontrato':'TipoContrato','contrato':'TipoContrato',
+    'remuneracion':'RemunBasica','remuneracionbasica':'RemunBasica','remunbasica':'RemunBasica','basico':'RemunBasica','sueldo':'RemunBasica',
+    'remuneracionletra':'RemuneracionLetra','horasmes':'HorasMes','diadescanso':'DiaDescanso',
+    'duracioncontrato':'DuracionContratoTexto','duracioncontratotexto':'DuracionContratoTexto',
+    'fechainiciocontratotexto':'FechaIniContratoTextoMinuscula','fechainicontratotextominuscula':'FechaIniContratoTextoMinuscula',
+    'fechafincontratotexto':'FechaFinContratoTextoMinuscula','fechafincontratotextominuscula':'FechaFinContratoTextoMinuscula'
+}
+
+
+def _ct324_extra_values(ingreso_id):
+    out = {}
+    try:
+        for r in rows_to_dict(execute('SELECT campo,valor FROM contratacion_campos_valores WHERE ingreso_id=?', (ingreso_id,), fetchall=True)):
+            out[str(r.get('campo') or '')] = r.get('valor') or ''
+    except Exception:
+        pass
+    return out
+
+
+def _ct324_save_manual_values(ingreso_id, values):
+    for field, value in (values or {}).items():
+        field = str(field or '').strip()
+        if not field:
+            continue
+        existing = row_to_dict(execute('SELECT id FROM contratacion_campos_valores WHERE ingreso_id=? AND campo=? ORDER BY id DESC LIMIT 1', (ingreso_id, field), fetchone=True))
+        if existing:
+            execute('UPDATE contratacion_campos_valores SET valor=?,actualizado_en=? WHERE id=?', (str(value or ''), now_str(), existing.get('id')), commit=True)
+        else:
+            execute('INSERT INTO contratacion_campos_valores(ingreso_id,campo,valor,actualizado_en) VALUES(?,?,?,?)', (ingreso_id, field, str(value or ''), now_str()), commit=True)
+
+
+def _ct324_contract_row(ingreso_id):
+    row = row_to_dict(execute('SELECT * FROM contratacion_ingresos WHERE id=?', (ingreso_id,), fetchone=True))
+    if not row:
+        return None
+    base = _ct324_resolved_worker(row.get('dni'), 'contratacion', str(ingreso_id))
+    merged = dict(base); merged.update({k:v for k,v in row.items() if v not in (None,'')})
+    if not merged.get('remuneracion'):
+        merged['remuneracion'] = merged.get('basico') or base.get('remuneracion') or 0
+    if not merged.get('basico'):
+        merged['basico'] = merged.get('remuneracion') or 0
+    return merged
+
+
+def _ct324_canonical_mapping(row):
+    m = _ct_mapping306(row)
+    remuneration = _ct324_float(row.get('basico') if row.get('basico') not in (None,'') else row.get('remuneracion'))
+    m.update({
+        'Empresa': row.get('empresa') or '', 'TipoTrabajador': row.get('tipo_trabajador') or '',
+        'RegimenLaboral': row.get('regimen_laboral') or row.get('regimen') or '',
+        'TipoContrato': row.get('tipo_contrato') or '', 'RemunBasica': f'{remuneration:.2f}' if remuneration else '',
+        'Remuneracion': f'{remuneration:.2f}' if remuneration else '',
+        'RemuneracionLetra': _ct_soles_texto306(remuneration),
+        'HorasMes': str(row.get('horas_mes') or ''), 'DiaDescanso': row.get('dia_descanso') or ''
+    })
+    # También registra todas las columnas de la fila como posibles fuentes directas.
+    for key, value in row.items():
+        if value not in (None, ''):
+            m.setdefault(str(key), value)
+    return m
+
+
+def _ct324_values_for_template(row, descriptor, manual=None):
+    manual = manual or {}; extras = _ct324_extra_values(row.get('id'))
+    canonical = _ct324_canonical_mapping(row)
+    canonical_norm = {_ct324_norm_field(k): v for k,v in canonical.items()}
+    extra_norm = {_ct324_norm_field(k): v for k,v in extras.items()}
+    manual_norm = {_ct324_norm_field(k): v for k,v in manual.items()}
+    values = {}; source = {}; missing = []
+    for field in descriptor.get('fields', []):
+        nf = _ct324_norm_field(field)
+        # La firma no es un dato manual: se completa con el canvas al confirmar.
+        if nf in ('firma','firmatrabajador','firmaempleado','firmadigital'):
+            source[field] = 'FIRMA'
+            continue
+        value = None; src = ''
+        if nf in manual_norm and str(manual_norm[nf]).strip():
+            value = manual_norm[nf]; src = 'MANUAL'
+        elif nf in extra_norm and str(extra_norm[nf]).strip():
+            value = extra_norm[nf]; src = 'GUARDADO'
+        else:
+            canonical_key = _CT324_ALIASES.get(nf)
+            if canonical_key and str(canonical.get(canonical_key, '')).strip():
+                value = canonical.get(canonical_key); src = 'AUTOMÁTICO'
+            elif nf in canonical_norm and str(canonical_norm[nf]).strip():
+                value = canonical_norm[nf]; src = 'AUTOMÁTICO'
+        if value not in (None, ''):
+            values[field] = str(value)
+            source[field] = src
+        else:
+            missing.append(field); source[field] = 'PENDIENTE'
+    return values, source, missing
+
+
+def _ct324_replace_signature_in_docx(doc_path, signature_path, row, descriptor):
+    if not signature_path or not os.path.exists(signature_path):
+        return
+    if _CT324_Document is None:
+        raise RuntimeError('Falta instalar python-docx para insertar la firma en el contrato.')
+    doc = _CT324_Document(str(doc_path))
+    signature_fields = [f for f in descriptor.get('fields', []) if _ct324_norm_field(f) in ('firma','firmatrabajador','firmaempleado','firmadigital')]
+    tokens = []
+    for f in signature_fields:
+        tokens.extend([f'«{f}»', f'<<{f}>>'])
+
+    def paragraphs_from(parent):
+        for p in getattr(parent, 'paragraphs', []):
+            yield p
+        for table in getattr(parent, 'tables', []):
+            for tr in table.rows:
+                for cell in tr.cells:
+                    yield from paragraphs_from(cell)
+
+    found = False
+    containers = [doc]
+    for section in doc.sections:
+        containers.extend([section.header, section.footer])
+    for container in containers:
+        for paragraph in paragraphs_from(container):
+            full = ''.join(run.text for run in paragraph.runs) if paragraph.runs else paragraph.text
+            hit = next((t for t in tokens if t in full), None)
+            if not hit:
+                continue
+            clean = full.replace(hit, '').strip()
+            if paragraph.runs:
+                paragraph.runs[0].text = clean
+                for run in paragraph.runs[1:]: run.text = ''
+            else:
+                paragraph.text = clean
+            paragraph.add_run().add_picture(str(signature_path), width=_CT324_Inches(2.0))
+            found = True
+    if not found:
+        doc.add_paragraph('')
+        p = doc.add_paragraph('FIRMA DEL TRABAJADOR')
+        p.add_run().add_picture(str(signature_path), width=_CT324_Inches(2.0))
+        doc.add_paragraph(f"{row.get('nombres') or row.get('trabajador') or ''} · DNI {row.get('dni') or ''}")
+    doc.save(str(doc_path))
+
+
+def _ct324_generate_docx(row, descriptor, values, signature_path=''):
+    safe_name = _ct324_slug(descriptor.get('name'))[:45].upper()
+    suffix = 'FIRMADO' if signature_path else 'BORRADOR'
+    dst = CONTRATACION_DOCS_DIR_324 / f"{row.get('dni')}_{safe_name}_{suffix}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.docx"
+    _ct_replace_docx306(descriptor.get('path'), dst, values)
+    if signature_path:
+        _ct324_replace_signature_in_docx(dst, signature_path, row, descriptor)
+    return dst
+
+
+def _ct324_preview_html(doc_path):
+    if _CT324_Document is None:
+        return '<div class="alert alert-warning">Instale python-docx para la vista previa detallada.</div>'
+    try:
+        doc = _CT324_Document(str(doc_path))
+    except Exception as e:
+        return '<div class="alert alert-danger">No se pudo abrir la vista previa: ' + _ct_h306(e) + '</div>'
+    parts = []
+    placeholder_re = re.compile(r'(«[^»]+»|<<[^<>]+>>)', flags=re.S)
+    def fmt(text):
+        esc = _html306.escape(str(text or ''))
+        return placeholder_re.sub(lambda m: '<mark class="ct324-missing">' + m.group(0) + '</mark>', esc)
+    for p in doc.paragraphs:
+        text = ''.join(run.text for run in p.runs) if p.runs else p.text
+        if not str(text).strip():
+            parts.append('<div class="ct324-space"></div>'); continue
+        style = str(getattr(getattr(p, 'style', None), 'name', '') or '').lower()
+        tag = 'h3' if 'heading 1' in style or 'titulo' in style else ('h4' if 'heading' in style else 'p')
+        parts.append(f'<{tag}>{fmt(text)}</{tag}>')
+    for table in doc.tables:
+        rows_html = []
+        for tr in table.rows:
+            cells = ''.join('<td>' + fmt(cell.text) + '</td>' for cell in tr.cells)
+            rows_html.append('<tr>' + cells + '</tr>')
+        parts.append('<table class="ct324-doc-table">' + ''.join(rows_html) + '</table>')
+    return ''.join(parts) or '<div class="text-muted">El documento no contiene texto visible para la vista previa HTML.</div>'
+
+
+def _ct324_get_or_create_instance(row, descriptor):
+    existing = row_to_dict(execute('''SELECT * FROM contratacion_documentos_instancias
+        WHERE ingreso_id=? AND plantilla_ref=? ORDER BY id DESC LIMIT 1''',
+        (row.get('id'), descriptor.get('ref')), fetchone=True))
+    if existing and str(existing.get('estado') or '').upper() != 'FIRMADO':
+        return existing
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        iid = _ct324_insert_id(cur, '''INSERT INTO contratacion_documentos_instancias(
+            ingreso_id,dni,plantilla_ref,plantilla_nombre,campos_json,estado,creado_por,creado_en,actualizado_en
+        ) VALUES(?,?,?,?,?,'BORRADOR',?,?,?)''',
+        (row.get('id'), row.get('dni'), descriptor.get('ref'), descriptor.get('name'), '{}', session.get('usuario'), now_str(), now_str()))
+        conn.commit()
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+    return row_to_dict(execute('SELECT * FROM contratacion_documentos_instancias WHERE id=?', (iid,), fetchone=True))
+
+
+def contratacion_plantillas_dinamicas_324():
+    if not _ct324_admin_ok(): return _ct324_deny()
+    _ct324_ensure_schema()
+    if request.method == 'POST':
+        action = request.form.get('accion') or 'cargar'
+        if action == 'desactivar':
+            execute("UPDATE contratacion_plantillas_dinamicas SET estado='INACTIVO',actualizado_en=? WHERE id=?", (now_str(), request.form.get('plantilla_id')), commit=True)
+            flash('Plantilla desactivada.', 'success')
+        else:
+            files = request.files.getlist('archivos')
+            results = [_ct324_upsert_dynamic_template(f) for f in files if f and getattr(f, 'filename', '')]
+            ok = sum(1 for r in results if r[0]); messages = [r[1] for r in results]
+            flash(f'Plantillas procesadas: {ok}. ' + ' '.join(messages[:8]), 'success' if ok else 'warning')
+        return redirect(url_for('contratacion_plantillas_dinamicas_324'))
+    templates = rows_to_dict(execute('SELECT * FROM contratacion_plantillas_dinamicas ORDER BY id DESC', fetchall=True))
+    for t in templates:
+        try: t['campos'] = json.loads(t.get('campos_json') or '[]')
+        except Exception: t['campos'] = []
+    body = _ct_css306() + r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_config')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-file-earmark-word"></i></div><div class="ttl">Plantillas de contratos</div></div><div class="ct290-body">
+      <div class="ct290-info"><b>Reconocimiento automático.</b><br>Puede cargar cualquier contrato .docx. El sistema identifica campos escritos como <b>«Dni»</b>, <b>«NombreCompletoTrabajador»</b>, <b>«Remuneracion»</b> o <b>&lt;&lt;Campo&gt;&gt;</b>. Los campos conocidos se completan solos; los desconocidos aparecen para llenado manual.</div>
+      <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="cargar"><label>Contratos Word (.docx)</label><input type="file" name="archivos" accept=".docx" multiple required class="form-control"><button class="ct290-btn mt-2"><i class="bi bi-cloud-arrow-up"></i> Cargar y reconocer contratos</button></form>
+      <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Plantilla</th><th>Campos reconocidos</th><th>Estado</th></tr></thead><tbody>{% for t in templates %}<tr><td><b>{{t.nombre}}</b><br>{{t.archivo_original}}<br>{{t.creado_en}}</td><td>{{t.campos|join(', ') if t.campos else 'SIN CAMPOS AUTOMÁTICOS'}}</td><td>{{t.estado}}{% if (t.estado or '').upper()=='ACTIVO' %}<form method="post" class="mt-1"><input type="hidden" name="accion" value="desactivar"><input type="hidden" name="plantilla_id" value="{{t.id}}"><button class="ct306-dangerbtn" onclick="return confirm('¿Desactivar plantilla?')"><i class="bi bi-x-circle"></i></button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="3">Aún no se cargaron contratos dinámicos.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body, templates=templates, title='Plantillas de contratos')
+
+
+def contratacion_datos_contrato_324(ingreso_id):
+    if not _ct324_admin_ok(): return _ct324_deny()
+    _ct324_ensure_schema(); row = _ct324_contract_row(ingreso_id)
+    if not row:
+        flash('No se encontró el postulante.', 'danger'); return redirect(url_for('contratacion_postulantes'))
+    base = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (row.get('dni'),), fetchone=True)) or {}
+    current_ref = row.get('plantilla_contrato_ref') or ''
+    if request.method == 'POST':
+        values = {
+            'fecha_inicio': request.form.get('fecha_inicio'), 'fecha_fin': request.form.get('fecha_fin'),
+            'tipo_trabajador': request.form.get('tipo_trabajador'), 'regimen_laboral': request.form.get('regimen_laboral'),
+            'tipo_contrato': request.form.get('tipo_contrato'), 'remuneracion': request.form.get('remuneracion'),
+            'horas_mes': request.form.get('horas_mes'), 'dia_descanso': request.form.get('dia_descanso')
+        }
+        remuneration = _ct324_float(values.get('remuneracion')); hours = _ct324_float(values.get('horas_mes'))
+        if remuneration < 0 or hours < 0:
+            flash('Remuneración y horas mes no pueden ser negativas.', 'danger')
+            return redirect(url_for('contratacion_datos_contrato_307', ingreso_id=ingreso_id))
+        template_ref = request.form.get('plantilla_ref') or current_ref
+        descriptor = _ct324_template_descriptor(template_ref)
+        hist_id = _ct324_save_condition(row.get('dni'), 'contratacion', values, 'CONTRATO', str(ingreso_id), 'MODULO_CONTRATACION', request.form.get('observacion'))
+        execute('''UPDATE contratacion_ingresos SET fecha_inicio=?,fecha_fin=?,tipo_trabajador=?,regimen_laboral=?,regimen=?,tipo_contrato=?,
+            basico=?,horas_mes=?,dia_descanso=?,funciones=?,plantilla_contrato_ref=?,documento_firma_key=?,documento_firma_nombre=?,
+            condicion_historial_id=?,contrato_admin_ok=1,contrato_admin_por=?,contrato_admin_en=?,observacion=? WHERE id=?''',
+            (values.get('fecha_inicio'), values.get('fecha_fin'), limpiar_texto(values.get('tipo_trabajador') or ''),
+             limpiar_texto(values.get('regimen_laboral') or ''), limpiar_texto(values.get('regimen_laboral') or ''),
+             limpiar_texto(values.get('tipo_contrato') or ''), remuneration, hours, limpiar_texto(values.get('dia_descanso') or ''),
+             request.form.get('funciones') or '', template_ref,
+             template_ref, descriptor.get('name') if descriptor else '', hist_id,
+             session.get('usuario'), now_str(), request.form.get('observacion') or '', ingreso_id), commit=True)
+        # Guarda campos extra existentes del formulario.
+        try: _ct307_save_extra_values(ingreso_id, request.form)
+        except Exception: pass
+        flash('Datos del contrato guardados como una nueva versión. La base central no fue alterada.', 'success')
+        if request.form.get('accion') == 'guardar_previsualizar':
+            return redirect(url_for('contratacion_contrato_preview_324', ingreso_id=ingreso_id, plantilla=template_ref))
+        return redirect(url_for('contratacion_datos_contrato_307', ingreso_id=ingreso_id))
+    history = rows_to_dict(execute('''SELECT * FROM trabajador_condiciones_historial WHERE dni=? AND modulo='contratacion' AND COALESCE(referencia_id,'')=? ORDER BY id DESC LIMIT 30''',
+                                   (row.get('dni'), str(ingreso_id)), fetchall=True))
+    extras = _ct307_extra_fields() if '_ct307_extra_fields' in globals() else []
+    body = _ct_css306() + r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_postulantes', req=row.requerimiento_id)}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-file-earmark-text"></i></div><div class="ttl">Datos del contrato</div></div><div class="ct290-body">
+      <div class="ct290-info"><b>{{row.dni}} · {{row.nombres}}</b><br>Los datos de la base son sugerencias. Puede reemplazar tipo, régimen, contrato, remuneración, horas y descanso para este contrato. Los documentos anteriores conservarán sus valores.</div>
+      <div class="ct306-docbox"><b>Predeterminado de base:</b><br>{{base.tipo_trabajador or '-'}} · {{base.regimen_laboral or '-'}} · {{base.tipo_contrato or '-'}}<br>S/ {{'%.2f'|format(base.remuneracion or 0)}} · {{base.horas_mes or 0}} horas · {{base.dia_descanso or '-'}}</div>
+      <form method="post" class="ct290-form"><div class="ct290-row"><div><label>Inicio contrato</label><input type="date" name="fecha_inicio" value="{{row.fecha_inicio or row.fecha_ingreso or ''}}" class="form-control" required></div><div><label>Fin contrato</label><input type="date" name="fecha_fin" value="{{row.fecha_fin or ''}}" class="form-control" required></div></div>
+      <div class="ct290-row mt-2"><div><label>Tipo trabajador</label><input name="tipo_trabajador" value="{{row.tipo_trabajador or base.tipo_trabajador or ''}}" class="form-control" required></div><div><label>Régimen laboral</label><input name="regimen_laboral" value="{{row.regimen_laboral or row.regimen or base.regimen_laboral or ''}}" class="form-control" required></div></div>
+      <label class="mt-2">Tipo contrato</label><input name="tipo_contrato" value="{{row.tipo_contrato or base.tipo_contrato or ''}}" class="form-control" required>
+      <div class="ct290-row mt-2"><div><label>Remuneración</label><input type="number" step="0.01" min="0" name="remuneracion" value="{{row.basico or row.remuneracion or base.remuneracion or 0}}" class="form-control" required></div><div><label>Horas mes</label><input type="number" step="0.01" min="0" name="horas_mes" value="{{row.horas_mes or base.horas_mes or 0}}" class="form-control" required></div></div>
+      <label class="mt-2">Día descanso</label><input name="dia_descanso" value="{{row.dia_descanso or base.dia_descanso or ''}}" class="form-control">
+      <label class="mt-2">Funciones</label><textarea name="funciones" class="form-control" style="height:90px">{{row.funciones or ''}}</textarea>
+      {% for f in extras %}<label class="mt-2">{{f.etiqueta or f.campo}}</label><input name="extra_{{f.campo}}" value="{{extra_values.get(f.campo, f.valor_defecto or '')}}" class="form-control">{% endfor %}
+      <label class="mt-2">Plantilla de contrato</label><select name="plantilla_ref" class="form-select" required>{{template_options|safe}}</select>
+      <label class="mt-2">Observación</label><input name="observacion" value="{{row.observacion or ''}}" class="form-control">
+      <div class="ct290-row mt-2"><button name="accion" value="guardar" class="ct290-outline"><i class="bi bi-save"></i> Guardar</button><button name="accion" value="guardar_previsualizar" class="ct290-btn"><i class="bi bi-eye"></i> Guardar y previsualizar</button></div></form>
+      <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Versión</th><th>Condición laboral</th></tr></thead><tbody>{% for h in history %}<tr><td>{{h.creado_en}}<br>{{'ACTUAL' if h.vigente else 'HISTÓRICO'}}</td><td>{{h.tipo_trabajador}} · {{h.regimen_laboral}} · {{h.tipo_contrato}}<br>S/ {{'%.2f'|format(h.remuneracion or 0)}} · {{h.horas_mes or 0}} h · {{h.dia_descanso or '-'}}</td></tr>{% else %}<tr><td colspan="2">Aún no se guardaron versiones.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body, row=row, base=base, history=history, extras=extras, extra_values=_ct324_extra_values(ingreso_id),
+                       template_options=_ct324_template_options(current_ref), title='Datos contrato')
+
+
+def contratacion_contratos_324():
+    if not _ct324_admin_ok(): return _ct324_deny()
+    _ct324_ensure_schema()
+    req_id = request.args.get('req') or ''; q = request.args.get('q','').strip()
+    where = ["UPPER(COALESCE(i.estado,'')) <> 'PRE-REGISTRO'"]; params = []
+    if req_id:
+        where.append('i.requerimiento_id=?'); params.append(req_id)
+    if q:
+        like = '%' + q.upper() + '%'; where.append("(i.dni LIKE ? OR UPPER(COALESCE(i.nombres,'')) LIKE ?)"); params.extend([like,like])
+    rows = rows_to_dict(execute(f'''SELECT i.*, (SELECT COUNT(*) FROM contratacion_documentos_instancias d WHERE d.ingreso_id=i.id) AS documentos_generados
+        FROM contratacion_ingresos i WHERE {' AND '.join(where)} ORDER BY i.id DESC LIMIT 250''', params, fetchall=True))
+    reqs = rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250', fetchall=True))
+    body = _ct_css306() + r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-files"></i></div><div class="ttl">Contratos</div></div><div class="ct290-body">
+      <div class="ct290-info">Edite las condiciones por trabajador, seleccione cualquier plantilla, revise la vista previa, firme y recién después descargue.</div>
+      <form method="get" class="ct290-form"><select name="req" class="form-select"><option value="">Todos los requerimientos</option>{% for r in reqs %}<option value="{{r.id}}" {{'selected' if req_id|string==r.id|string else ''}}>REQ-{{'%03d'|format(r.id)}} · {{r.cargo or '-'}}</option>{% endfor %}</select><input name="q" value="{{q}}" class="form-control mt-2" placeholder="DNI o trabajador"><button class="ct290-btn mt-2"><i class="bi bi-search"></i> Buscar</button></form>
+      <a class="ct306-btn mb-2" href="{{url_for('contratacion_plantillas_dinamicas_324')}}"><i class="bi bi-file-earmark-word"></i> Cargar contratos / plantillas</a>
+      <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Trabajador</th><th>Condición</th><th>Documento</th></tr></thead><tbody>{% for p in rows %}<tr><td>{{p.dni}}<br><b>{{p.nombres or '-'}}</b><br>{{p.cargo or '-'}}</td><td>{{p.tipo_trabajador or '-'}} · {{p.regimen_laboral or p.regimen or '-'}}<br>{{p.tipo_contrato or '-'}} · S/ {{'%.2f'|format(p.basico or 0)}}<br>{{p.horas_mes or 0}} h · {{p.dia_descanso or '-'}}</td><td><a class="ct306-smalllink" href="{{url_for('contratacion_datos_contrato_307', ingreso_id=p.id)}}"><i class="bi bi-pencil-square"></i> Datos</a><br>{% if p.plantilla_contrato_ref %}<a class="ct306-smalllink" href="{{url_for('contratacion_contrato_preview_324', ingreso_id=p.id, plantilla=p.plantilla_contrato_ref)}}"><i class="bi bi-eye"></i> Vista previa</a>{% endif %}<br>{{p.documentos_generados or 0}} versión(es)</td></tr>{% else %}<tr><td colspan="3">Sin postulantes listos para contrato.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body, rows=rows, reqs=reqs, req_id=req_id, q=q, title='Contratos')
+
+
+def contratacion_contrato_preview_324(ingreso_id):
+    if not _ct324_admin_ok(): return _ct324_deny()
+    _ct324_ensure_schema(); row = _ct324_contract_row(ingreso_id)
+    if not row:
+        flash('No se encontró el trabajador.', 'danger'); return redirect(url_for('contratacion_contratos_324'))
+    template_ref = request.values.get('plantilla') or row.get('plantilla_contrato_ref') or ''
+    descriptor = _ct324_template_descriptor(template_ref)
+    if not descriptor:
+        flash('Primero cargue una plantilla Word .docx.', 'danger')
+        return redirect(url_for('contratacion_plantillas_dinamicas_324'))
+    manual = {}
+    if request.method == 'POST':
+        count = int(request.form.get('manual_count') or 0)
+        for i in range(count):
+            name = request.form.get(f'manual_name_{i}') or ''
+            value = request.form.get(f'manual_value_{i}') or ''
+            if name: manual[name] = value
+        if manual: _ct324_save_manual_values(ingreso_id, manual)
+    values, sources, missing = _ct324_values_for_template(row, descriptor, manual)
+    instance = _ct324_get_or_create_instance(row, descriptor)
+    action = request.form.get('accion') if request.method == 'POST' else 'preview'
+    signature_path = ''
+    if action == 'firmar':
+        data = request.form.get('firma_data') or ''
+        if not data or ',' not in data or len(data) < 300:
+            flash('Dibuje la firma antes de confirmar.', 'danger')
+            action = 'preview'
+        elif missing:
+            flash('Complete todos los campos pendientes antes de firmar.', 'danger')
+            action = 'preview'
+        else:
+            signature_path = guardar_data_url(data, str(CONTRATACION_FIRMAS_DIR_324), f'firma_contrato_{row.get("dni")}_{now_file()}')
+    try:
+        doc_path = _ct324_generate_docx(row, descriptor, values, signature_path)
+    except Exception as e:
+        flash('No se pudo generar el contrato: ' + str(e), 'danger')
+        return redirect(url_for('contratacion_datos_contrato_307', ingreso_id=ingreso_id))
+    state = 'FIRMADO' if signature_path else 'PREVISUALIZADO'
+    fields_payload = {'values': values, 'sources': sources, 'missing': missing}
+    execute('''UPDATE contratacion_documentos_instancias SET plantilla_nombre=?,campos_json=?,estado=?,archivo_path=?,firma_path=?,
+        vista_previa_en=?,firmado_en=?,actualizado_en=? WHERE id=?''',
+        (descriptor.get('name'), json.dumps(fields_payload, ensure_ascii=False), state, str(doc_path), signature_path,
+         now_str(), now_str() if signature_path else None, now_str(), instance.get('id')), commit=True)
+    if signature_path:
+        execute("UPDATE contratacion_ingresos SET firma_estado='FIRMADO',documento_firma_nombre=?,documento_firma_key=? WHERE id=?",
+                (descriptor.get('name'), descriptor.get('ref'), ingreso_id), commit=True)
+        flash('Contrato firmado. Ahora puede descargar la versión firmada.', 'success')
+    instance = row_to_dict(execute('SELECT * FROM contratacion_documentos_instancias WHERE id=?', (instance.get('id'),), fetchone=True))
+    preview = _ct324_preview_html(doc_path)
+    fields = []
+    for f in descriptor.get('fields', []):
+        fields.append({'name': f, 'value': values.get(f,''), 'source': sources.get(f,'PENDIENTE')})
+    body = _ct_css306() + r'''
+    <style>.ct324-paper{background:#fff;color:#202020;border:1px solid #d9d9d9;box-shadow:0 7px 20px rgba(0,0,0,.12);padding:26px 22px;margin:10px 0;font-family:Arial,sans-serif;font-size:12px;line-height:1.55;min-height:420px}.ct324-paper p{margin:0 0 10px;text-align:justify}.ct324-paper h3,.ct324-paper h4{text-align:center;font-weight:800}.ct324-space{height:9px}.ct324-missing{background:#fee2e2;color:#991b1b;padding:1px 3px}.ct324-doc-table{width:100%;border-collapse:collapse;margin:10px 0}.ct324-doc-table td{border:1px solid #777;padding:5px;vertical-align:top}.ct324-field{border:1px solid #dfe7df;border-radius:8px;padding:7px;margin:5px 0;font-size:11px}.ct324-auto{background:#eaf7ed}.ct324-pending{background:#fff4e5;border-color:#f59e0b}.ct324-sign{width:100%;height:150px;border:2px dashed #2f773b;border-radius:10px;background:#fff;touch-action:none}</style>
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_datos_contrato_307', ingreso_id=row.id)}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-eye"></i></div><div class="ttl">Vista previa contrato</div></div><div class="ct290-body">
+      <div class="ct290-info"><b>{{descriptor.name}}</b><br>{{row.dni}} · {{row.nombres}}<br>La descarga se habilita después de mostrar esta vista previa. Para una versión firmada, complete los campos pendientes y dibuje la firma.</div>
+      <form method="get" class="ct290-form"><label>Cambiar plantilla</label><select name="plantilla" class="form-select" onchange="this.form.submit()">{{template_options|safe}}</select></form>
+      <form method="post" onsubmit="return ct324Prepare(this)" class="ct290-form"><input type="hidden" name="plantilla" value="{{descriptor.ref}}"><input type="hidden" name="firma_data" id="ct324FirmaData"><input type="hidden" name="manual_count" value="{{fields|length}}">
+      <div class="ct306-docbox"><b>Campos reconocidos</b><br>Verde: autollenado. Naranja: debe completar.</div>
+      {% for f in fields %}<div class="ct324-field {{'ct324-pending' if f.source=='PENDIENTE' else 'ct324-auto'}}"><input type="hidden" name="manual_name_{{loop.index0}}" value="{{f.name}}"><label>«{{f.name}}» · {{f.source}}</label>{% if f.source=='FIRMA' %}<div class="ct306-muted">Se insertará automáticamente al firmar en el recuadro inferior.</div><input type="hidden" name="manual_value_{{loop.index0}}" value="">{% else %}<input name="manual_value_{{loop.index0}}" value="{{f.value}}" class="form-control" {{'required' if f.source=='PENDIENTE' else ''}}>{% endif %}</div>{% endfor %}
+      <button name="accion" value="actualizar" class="ct290-outline mt-2"><i class="bi bi-arrow-clockwise"></i> Actualizar vista previa</button>
+      <div class="ct324-paper">{{preview|safe}}</div>
+      <label>Firma del trabajador</label><canvas id="ct324Sign" class="ct324-sign"></canvas><div class="ct290-row mt-2"><button type="button" class="ct290-outline" onclick="ct324Clear()"><i class="bi bi-eraser"></i> Limpiar</button><button name="accion" value="firmar" class="ct290-btn"><i class="bi bi-pen"></i> Firmar contrato</button></div></form>
+      <a class="ct306-btn mt-2" href="{{url_for('contratacion_contrato_descargar_324', instancia_id=instance.id)}}"><i class="bi bi-download"></i> Descargar {{'contrato firmado' if instance.estado=='FIRMADO' else 'borrador previsualizado'}}</a>
+      {% if instance.firma_path %}<div class="ct306-ok mt-2"><i class="bi bi-check-circle"></i> Firma registrada el {{instance.firmado_en}}.</div>{% endif %}
+    </div></div></div>
+    <script>(function(){const c=document.getElementById('ct324Sign'),x=c.getContext('2d');function size(){const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=Math.max(300,r.width*d);c.height=150*d;x.setTransform(d,0,0,d,0,0);x.lineWidth=2;x.lineCap='round';x.strokeStyle='#111';}setTimeout(size,80);let draw=false,last=null,ink=false;function p(e){const r=c.getBoundingClientRect(),q=e.touches?e.touches[0]:e;return{x:q.clientX-r.left,y:q.clientY-r.top};}c.addEventListener('pointerdown',e=>{draw=true;last=p(e);c.setPointerCapture&&c.setPointerCapture(e.pointerId)});c.addEventListener('pointermove',e=>{if(!draw)return;const n=p(e);x.beginPath();x.moveTo(last.x,last.y);x.lineTo(n.x,n.y);x.stroke();last=n;ink=true});window.addEventListener('pointerup',()=>draw=false);window.ct324Clear=function(){x.clearRect(0,0,c.width,c.height);ink=false};window.ct324Prepare=function(form){const action=(document.activeElement&&document.activeElement.value)||'';if(action==='firmar'&&!ink){alert('Dibuje la firma antes de firmar.');return false;}document.getElementById('ct324FirmaData').value=ink?c.toDataURL('image/png'):'';return true;};})();</script>'''
+    return render_page(body, row=row, descriptor=descriptor, fields=fields, preview=preview, instance=instance,
+                       template_options=_ct324_template_options(descriptor.get('ref')), title='Vista previa contrato')
+
+
+def contratacion_contrato_descargar_324(instancia_id):
+    if not _ct324_admin_ok(): return _ct324_deny()
+    _ct324_ensure_schema()
+    inst = row_to_dict(execute('SELECT * FROM contratacion_documentos_instancias WHERE id=?', (instancia_id,), fetchone=True))
+    if not inst:
+        flash('Documento no encontrado.', 'danger'); return redirect(url_for('contratacion_contratos_324'))
+    if not inst.get('vista_previa_en'):
+        flash('Debe abrir la vista previa antes de descargar.', 'danger')
+        return redirect(url_for('contratacion_contrato_preview_324', ingreso_id=inst.get('ingreso_id'), plantilla=inst.get('plantilla_ref')))
+    path = str(inst.get('archivo_path') or '')
+    if not path or not os.path.exists(path):
+        flash('El archivo generado ya no está disponible. Genere nuevamente la vista previa.', 'danger')
+        return redirect(url_for('contratacion_contrato_preview_324', ingreso_id=inst.get('ingreso_id'), plantilla=inst.get('plantilla_ref')))
+    suffix = 'FIRMADO' if str(inst.get('estado') or '').upper() == 'FIRMADO' else 'PREVISUALIZADO'
+    filename = f"CONTRATO_{inst.get('dni')}_{suffix}.docx"
+    return send_file(path, as_attachment=True, download_name=filename,
+                     mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+
+def contratacion_documento_dni_324(dni, doc_key):
+    if not _ct324_admin_ok(): return _ct324_deny()
+    req_id = request.args.get('req') or ''
+    row = _ct_find_postulante306(dni, req_id)
+    if not row:
+        flash('No se encontró el DNI en Postulantes.', 'danger')
+        return redirect(url_for('contratacion_postulantes', req=req_id))
+    return redirect(url_for('contratacion_contrato_preview_324', ingreso_id=row.get('id'), plantilla='cat:' + str(doc_key)))
+
+
+# Integra el acceso a contratos en el inicio de Contratación sin eliminar los demás submódulos.
+_ct324_prev_contract_home = app.view_functions.get('contratacion_home')
+def contratacion_home_324():
+    response = _ct324_prev_contract_home() if _ct324_prev_contract_home else contratacion_home_317()
+    try:
+        html = response.get_data(as_text=True)
+        tile = '<a href="' + url_for('contratacion_contratos_324') + '"><i class="bi bi-files"></i>CONTRATOS</a>'
+        marker = '<a href="' + url_for('contratacion_config') + '"'
+        if 'CONTRATOS</a>' not in html and marker in html:
+            html = html.replace(marker, tile + marker, 1)
+        response.set_data(html); response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('CT324 home contratos:', e)
+    return response
+
+
+# Conserva toda la configuración existente e incorpora el acceso a plantillas dinámicas.
+_ct324_prev_config = app.view_functions.get('contratacion_config')
+def contratacion_config_324():
+    if request.method == 'POST' and request.form.get('accion') == 'plantillas_dinamicas_324':
+        files = request.files.getlist('archivos')
+        results = [_ct324_upsert_dynamic_template(f) for f in files if f and getattr(f, 'filename', '')]
+        ok = sum(1 for r in results if r[0])
+        flash(f'Contratos cargados y reconocidos: {ok}. ' + ' '.join(r[1] for r in results[:6]), 'success' if ok else 'warning')
+        return redirect(url_for('contratacion_config'))
+    response = _ct324_prev_config() if _ct324_prev_config else contratacion_config_314()
+    try:
+        if request.method == 'GET':
+            html = response.get_data(as_text=True)
+            snippet = '''<div class="ct306-docbox"><b>Contratos dinámicos y firma.</b><br>Cargue cualquier .docx con campos como «Dni». El sistema detecta los campos, muestra vista previa, permite firmar y luego descargar.<div class="ct290-row mt-2"><a class="ct306-btn" href="''' + url_for('contratacion_plantillas_dinamicas_324') + '''"><i class="bi bi-file-earmark-word"></i> Plantillas dinámicas</a><a class="ct290-outline" href="''' + url_for('contratacion_contratos_324') + '''"><i class="bi bi-eye"></i> Contratos</a></div></div>'''
+            target = '<div class="ct290-info">'
+            if 'Contratos dinámicos y firma' not in html and target in html:
+                html = html.replace(target, snippet + target, 1)
+            response.set_data(html); response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('CT324 config dinámica:', e)
+    return response
+
+
+try:
+    _ct324_ensure_schema()
+except Exception as e:
+    print('CT324 esquema pendiente:', e)
+
+# Rutas nuevas.
+try: app.add_url_rule('/trabajador/<dni>/condiciones/<modulo>', 'trabajador_condiciones_modulo_324', trabajador_condiciones_modulo_324, methods=['GET','POST'])
+except Exception: app.view_functions['trabajador_condiciones_modulo_324'] = trabajador_condiciones_modulo_324
+try: app.add_url_rule('/contratacion/plantillas-dinamicas', 'contratacion_plantillas_dinamicas_324', contratacion_plantillas_dinamicas_324, methods=['GET','POST'])
+except Exception: app.view_functions['contratacion_plantillas_dinamicas_324'] = contratacion_plantillas_dinamicas_324
+try: app.add_url_rule('/contratacion/contratos', 'contratacion_contratos_324', contratacion_contratos_324, methods=['GET'])
+except Exception: app.view_functions['contratacion_contratos_324'] = contratacion_contratos_324
+try: app.add_url_rule('/contratacion/contrato/<int:ingreso_id>/vista-previa', 'contratacion_contrato_preview_324', contratacion_contrato_preview_324, methods=['GET','POST'])
+except Exception: app.view_functions['contratacion_contrato_preview_324'] = contratacion_contrato_preview_324
+try: app.add_url_rule('/contratacion/contrato/instancia/<int:instancia_id>/descargar', 'contratacion_contrato_descargar_324', contratacion_contrato_descargar_324, methods=['GET'])
+except Exception: app.view_functions['contratacion_contrato_descargar_324'] = contratacion_contrato_descargar_324
+
+# Reemplazos finales de endpoints existentes.
+app.view_functions['api_trabajador'] = api_trabajador_324
+if 'api_contratacion_dni' in app.view_functions: app.view_functions['api_contratacion_dni'] = api_contratacion_dni_324
+app.view_functions['modulo_trabajadores_303'] = modulo_trabajadores_324
+app.view_functions['contratacion_datos_contrato_307'] = contratacion_datos_contrato_324
+app.view_functions['contratacion_documento_dni'] = contratacion_documento_dni_324
+app.view_functions['contratacion_home'] = contratacion_home_324
+app.view_functions['contratacion_config'] = contratacion_config_324
+
+# ===================== FIN PATCH 324 =====================
+
+
+# ===================== PATCH 325 - CONTRATACIÓN AUTOMATIZADA CON PLANTILLA REAL =====================
+# Adaptación avanzada del módulo Contrataciones para:
+# - Instalar automáticamente una plantilla real de contrato intermitente planta/packing AQI.
+# - Reconocer campos «Campo», <<Campo>>, MERGEFIELD y controles de contenido.
+# - Seleccionar la plantilla más adecuada según empresa, régimen, modalidad, área y cargo.
+# - Calcular remuneración diaria/mensual, duración y montos en letras.
+# - Mantener condiciones laborales versionadas por contrato.
+# - Reutilizar funciones por cargo.
+# - Generar vista previa PDF real antes de firmar.
+# - Firmar en pantalla, validar DNI/consentimiento, registrar auditoría y hash SHA-256.
+# - Bloquear la descarga final hasta que el documento esté completo, previsualizado y firmado.
+
+import base64 as _ct325_base64
+import hashlib as _ct325_hashlib
+import shutil as _ct325_shutil
+import subprocess as _ct325_subprocess
+import tempfile as _ct325_tempfile
+import textwrap as _ct325_textwrap
+from decimal import Decimal as _CT325_Decimal, ROUND_HALF_UP as _CT325_ROUND_HALF_UP
+from datetime import timedelta as _ct325_timedelta
+
+try:
+    from lxml import etree as _ct325_etree
+except Exception:
+    _ct325_etree = None
+
+try:
+    from docx import Document as _CT325_Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH as _CT325_ALIGN
+    from docx.shared import Inches as _CT325_Inches, Pt as _CT325_Pt
+    from docx.text.paragraph import Paragraph as _CT325_Paragraph
+    from docx.oxml import OxmlElement as _CT325_OxmlElement
+    from docx.oxml.ns import qn as _ct325_qn
+except Exception:
+    _CT325_Document = None
+    _CT325_ALIGN = None
+    _CT325_Inches = None
+    _CT325_Pt = None
+    _CT325_Paragraph = None
+    _CT325_OxmlElement = None
+    _ct325_qn = None
+
+CONTRATACION_PREVIEW_DIR_325 = _Path306(PERSIST_DIR) / 'contratacion_vistas_previas'
+CONTRATACION_PREVIEW_DIR_325.mkdir(parents=True, exist_ok=True)
+
+# Plantilla entregada por el usuario, integrada dentro del .py para que el proyecto siga siendo un archivo único.
+_CT325_BUILTIN_TEMPLATE_B64 = r'''UEsDBBQABgAIAAAAIQBMAa3mtgEAAGwJAAATAAgCW0NvbnRlbnRfVHlwZXNdLnhtbCCiBAIooAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADMlktP4zAUhfdI/IfIW9S4MGiEUFMWM7CcQYKR2Lr2TWuNX7Jvgf77uU7aCKFCCm1GbCIlvueczw9dZ3L1
+bE3xCDFp7yp2Wo5ZAU56pd28Yn/ub0YXrEgonBLGO6jYChK7mh4fTe5XAVJBapcqtkAMl5wnuQArUukDOBqpfbQC6TXOeRDyr5gDPxuPv3PpHYLDEWYPNp38
+hFosDRbXz/S5JQluzoofbV2Oqpi2WZ+/862KCCa9kogQjJYCaZw/OvWKa7RmKknZ1KSFDumECt5IyCNvB6x1v2kxo1ZQ3IqIv4SlKv7ko+LKy6UlZfm+zRZO
+X9daQqfPbiF6CSnRLllTdiNWaLfh38Yhlwm9fbCGawR7G31Ip3vjdKbZDyJq6NZwR4azL8Dw7QswnP9vhuZcuqWdQaSTdPiD2Vn3QiRcGUiHJ2h9++MBkQRD
+AKydexGeYHY3GMUL816Q2nt0HofYjc66FwKcGohh47zDOlCimBkYYh3W1r0QSBcqtM/9O3Vj814kVTaNiC7o+Ilpb+7TrB6FnTpQl0jWe88P8lWtQH00u+2a
+B2q+W8J58680/QcAAP//AwBQSwMEFAAGAAgAAAAhAJlVfgX+AAAA4QIAAAsACAJfcmVscy8ucmVscyCiBAIooAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACskk1LAzEQhu+C/yHMvTvbKiLS3V5E6E1k/QFDMvuBmw+Sqbb/3iiKLtS1hx4zeefJM0PW
+m70d1SvHNHhXwbIoQbHT3gyuq+C5eVjcgkpCztDoHVdw4ASb+vJi/cQjSW5K/RCSyhSXKuhFwh1i0j1bSoUP7PJN66MlycfYYSD9Qh3jqixvMP5mQD1hqq2p
+IG7NFajmEPgUtm/bQfO91zvLTo48gbwXdobNIsTcH2XI06iGYsdSgfH6MZcTUghFRgMeN1qdbvT3tGhZyJAQah953ucjMSe0POeKpokfmzcfDZqv8pzN9Tlt
+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'''
+_CT325_BUILTIN_KEY = 'contrato_intermitente_planta_packing_aqi'
+_CT325_BUILTIN_NAME = 'Contrato intermitente planta / packing AQI'
+_CT325_BUILTIN_FILE = 'CONTRATO_INTERMITENTE_PLANTA_PACKING_AQI.docx'
+_CT325_FIELD_RE = re.compile(r'«\s*([^»]{1,180}?)\s*»|<<\s*([^<>]{1,180}?)\s*>>', re.S)
+_CT325_SIGNATURE_FIELDS = {'firma', 'firmatrabajador', 'firmaempleado', 'firmadigital', 'firmacolaborador'}
+
+
+def _ct325_ensure_schema():
+    _ct324_ensure_schema()
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        for col, ddl in [
+            ('perfil_json', 'TEXT'), ('analisis_json', 'TEXT'), ('checksum_sha256', 'TEXT'),
+            ('version', 'INTEGER DEFAULT 1'), ('prioridad', 'INTEGER DEFAULT 50'),
+            ('firma_modo', "TEXT DEFAULT 'AUTOMATICA'"), ('campos_requeridos_json', 'TEXT'),
+            ('campos_opcionales_json', 'TEXT'), ('regla_json', 'TEXT')
+        ]:
+            _add_column_if_missing(cur, 'contratacion_plantillas_dinamicas', col, ddl)
+        for col, ddl in [
+            ('preview_pdf_path', 'TEXT'), ('hash_sha256', 'TEXT'), ('ip_firma', 'TEXT'),
+            ('user_agent_firma', 'TEXT'), ('firmante_dni', 'TEXT'), ('firmante_nombre', 'TEXT'),
+            ('consentimiento', 'TEXT'), ('campos_pendientes_json', 'TEXT'),
+            ('version_num', 'INTEGER DEFAULT 1'), ('plantilla_checksum', 'TEXT'),
+            ('download_count', 'INTEGER DEFAULT 0'), ('downloaded_en', 'TEXT')
+        ]:
+            _add_column_if_missing(cur, 'contratacion_documentos_instancias', col, ddl)
+        for col, ddl in [
+            ('remuneracion_modalidad', "TEXT DEFAULT 'MENSUAL'"),
+            ('remuneracion_diaria', 'REAL DEFAULT 0'), ('remuneracion_mensual', 'REAL DEFAULT 0'),
+            ('plantilla_auto', 'INTEGER DEFAULT 1'), ('contrato_estado', "TEXT DEFAULT 'PENDIENTE'"),
+            ('contrato_version', 'INTEGER DEFAULT 0'), ('funciones_fuente', 'TEXT')
+        ]:
+            _add_column_if_missing(cur, 'contratacion_ingresos', col, ddl)
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS contratacion_funciones_cargo(
+            id {idtype}, empresa TEXT, area TEXT, cargo TEXT, actividad TEXT,
+            funciones TEXT NOT NULL, estado TEXT DEFAULT 'ACTIVO',
+            creado_por TEXT, creado_en TEXT, actualizado_en TEXT)'''))
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS contratacion_documentos_auditoria(
+            id {idtype}, instancia_id INTEGER, ingreso_id INTEGER, dni TEXT,
+            accion TEXT, detalle TEXT, hash_sha256 TEXT, ip TEXT, user_agent TEXT,
+            usuario TEXT, creado_en TEXT)'''))
+        conn.commit()
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+
+
+def _ct325_json(value, default):
+    try:
+        parsed = json.loads(value or '')
+        return parsed if isinstance(parsed, type(default)) else default
+    except Exception:
+        return default
+
+
+def _ct325_sha256_file(path):
+    h = _ct325_hashlib.sha256()
+    with open(path, 'rb') as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _ct325_docx_analysis(path):
+    """Analiza el DOCX completo, incluso campos partidos entre runs, headers, footers y MERGEFIELD."""
+    fields, locations, merge_fields, content_controls = set(), {}, set(), set()
+    paragraphs = 0; media = 0
+    try:
+        with _zip306.ZipFile(str(path), 'r') as z:
+            media = len([n for n in z.namelist() if n.startswith('word/media/')])
+            for name in z.namelist():
+                if not (name.startswith('word/') and name.endswith('.xml')):
+                    continue
+                raw = z.read(name)
+                if _ct325_etree is not None:
+                    try:
+                        root = _ct325_etree.fromstring(raw)
+                        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+                        for p in root.xpath('.//w:p', namespaces=ns):
+                            paragraphs += 1
+                            txt = ''.join(p.xpath('.//w:t/text()', namespaces=ns))
+                            for m in _CT325_FIELD_RE.finditer(txt):
+                                f = re.sub(r'\s+', ' ', (m.group(1) or m.group(2) or '')).strip()
+                                if f:
+                                    fields.add(f); locations.setdefault(f, []).append(name)
+                        for instr in root.xpath('.//w:instrText/text()', namespaces=ns):
+                            for mf in re.findall(r'\bMERGEFIELD\s+"?([^"\\\s]+)', str(instr), flags=re.I):
+                                mf = mf.strip(); merge_fields.add(mf); fields.add(mf); locations.setdefault(mf, []).append(name + ':MERGEFIELD')
+                        for node in root.xpath('.//w:sdtPr/w:tag', namespaces=ns):
+                            val = node.get('{%s}val' % ns['w']) or ''
+                            if val:
+                                content_controls.add(val); fields.add(val); locations.setdefault(val, []).append(name + ':SDT')
+                        continue
+                    except Exception:
+                        pass
+                text = raw.decode('utf-8', errors='ignore')
+                parts = re.findall(r'<w:t[^>]*>(.*?)</w:t>', text, flags=re.S)
+                visible = ''.join(_html306.unescape(re.sub(r'<[^>]+>', '', p)) for p in parts)
+                for m in _CT325_FIELD_RE.finditer(visible):
+                    f = re.sub(r'\s+', ' ', (m.group(1) or m.group(2) or '')).strip()
+                    if f:
+                        fields.add(f); locations.setdefault(f, []).append(name)
+    except Exception as e:
+        return {'fields': [], 'locations': {}, 'merge_fields': [], 'content_controls': [], 'paragraphs': 0, 'media': 0, 'error': str(e)}
+    return {
+        'fields': sorted(fields, key=lambda x: _ct324_norm_field(x)),
+        'locations': {k: sorted(set(v)) for k, v in locations.items()},
+        'merge_fields': sorted(merge_fields), 'content_controls': sorted(content_controls),
+        'paragraphs': paragraphs, 'media': media
+    }
+
+
+def _ct324_detect_fields_docx(path):
+    return _ct325_docx_analysis(path).get('fields', [])
+
+
+def _ct325_infer_profile(path, name=''):
+    analysis = _ct325_docx_analysis(path)
+    fields = analysis.get('fields', [])
+    text = ''
+    try:
+        if _CT325_Document is not None:
+            d = _CT325_Document(str(path))
+            text = '\n'.join(''.join(r.text for r in p.runs) for p in d.paragraphs)
+    except Exception:
+        pass
+    norm = _ct_norm306((name or '') + ' ' + text[:30000])
+    tags = []
+    for tag in ('INTERMITENTE','PLANTA','PACKING','CAMPO','RENOVACION','AGRARIO','GENERAL','AQI','AQU ANQA','OBRERO','EMPLEADO'):
+        if tag in norm:
+            tags.append(tag)
+    required = [f for f in fields if _ct324_norm_field(f) not in _CT325_SIGNATURE_FIELDS]
+    optional = [f for f in fields if _ct324_norm_field(f) in _CT325_SIGNATURE_FIELDS]
+    remuneration_mode = 'DIARIA' if ('REMUNERACION BASICA' in norm and 'DIARIA' in norm) else 'MISMA_CARGA'
+    signature_mode = 'PLACEHOLDER' if optional else ('SMART_AFTER_EMPRESA' if 'LA EMPRESA' in norm else 'APPEND_END')
+    return {
+        'tipo_documento': 'CONTRATO_TRABAJO' if 'CONTRATO' in norm else 'DOCUMENTO_RRHH',
+        'modalidad': 'INTERMITENTE' if 'INTERMITENTE' in norm else '',
+        'proceso': 'RENOVACION' if 'RENOVACION' in norm else '',
+        'tags': tags, 'required_fields': required, 'optional_fields': optional,
+        'remuneration_field_mode': remuneration_mode, 'signature_mode': signature_mode,
+        'priority': 70 if 'CONTRATO' in norm else 50,
+        'analysis': analysis
+    }
+
+
+def _ct325_install_builtin_template():
+    _ct325_ensure_schema()
+    path = CONTRATACION_TEMPLATES_DYN_DIR_324 / _CT325_BUILTIN_FILE
+    try:
+        raw = _ct325_base64.b64decode(re.sub(r'\s+', '', _CT325_BUILTIN_TEMPLATE_B64))
+        checksum = _ct325_hashlib.sha256(raw).hexdigest()
+        if not path.exists() or _ct325_sha256_file(path) != checksum:
+            path.write_bytes(raw)
+        analysis = _ct325_docx_analysis(path)
+        profile = {
+            'tipo_documento': 'CONTRATO_TRABAJO', 'modalidad': 'INTERMITENTE', 'proceso': 'RENOVACION',
+            'tags': ['INTERMITENTE','PLANTA','PACKING','RENOVACION','AGRARIO','AQI','AQU ANQA'],
+            'required_fields': analysis.get('fields', []), 'optional_fields': [],
+            'remuneration_field_mode': 'DIARIA', 'signature_mode': 'SMART_AFTER_EMPRESA',
+            'priority': 100, 'source': 'BUILTIN_USUARIO', 'analysis': analysis
+        }
+        existing = row_to_dict(execute('SELECT * FROM contratacion_plantillas_dinamicas WHERE clave=?', (_CT325_BUILTIN_KEY,), fetchone=True))
+        params = (_CT325_BUILTIN_NAME, _CT325_BUILTIN_FILE, str(path), json.dumps(analysis.get('fields', []), ensure_ascii=False),
+                  json.dumps(profile, ensure_ascii=False), json.dumps(analysis, ensure_ascii=False), checksum, 100,
+                  'SMART_AFTER_EMPRESA', json.dumps(profile['required_fields'], ensure_ascii=False), '[]',
+                  json.dumps({'auto': True}, ensure_ascii=False), now_str())
+        if existing:
+            execute('''UPDATE contratacion_plantillas_dinamicas SET nombre=?,archivo_original=?,archivo_path=?,campos_json=?,
+                perfil_json=?,analisis_json=?,checksum_sha256=?,prioridad=?,firma_modo=?,campos_requeridos_json=?,
+                campos_opcionales_json=?,regla_json=?,estado='ACTIVO',actualizado_en=? WHERE id=?''', params + (existing.get('id'),), commit=True)
+        else:
+            execute('''INSERT INTO contratacion_plantillas_dinamicas(
+                clave,nombre,archivo_original,archivo_path,campos_json,perfil_json,analisis_json,checksum_sha256,
+                version,prioridad,firma_modo,campos_requeridos_json,campos_opcionales_json,regla_json,
+                estado,creado_por,creado_en,actualizado_en) VALUES(?,?,?,?,?,?,?,?,1,?,?,?,?,?,'ACTIVO','SISTEMA',?,?)''',
+                (_CT325_BUILTIN_KEY,) + params[:-1] + (now_str(), now_str()), commit=True)
+        return path
+    except Exception as e:
+        print('CT325 plantilla integrada:', e)
+        return None
+
+
+def _ct324_upsert_dynamic_template(file_storage):
+    _ct325_ensure_schema()
+    if not file_storage or not getattr(file_storage, 'filename', ''):
+        return False, 'Archivo vacío.'
+    original = secure_filename(file_storage.filename)
+    if not original.lower().endswith('.docx'):
+        return False, f'{original}: use .docx.'
+    base_name = os.path.splitext(original)[0]
+    clave = _ct324_slug(base_name)
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+    path = CONTRATACION_TEMPLATES_DYN_DIR_324 / f'{clave}_{stamp}.docx'
+    file_storage.save(path)
+    try:
+        checksum = _ct325_sha256_file(path)
+        analysis = _ct325_docx_analysis(path)
+        profile = _ct325_infer_profile(path, base_name)
+        fields = analysis.get('fields', [])
+        existing = row_to_dict(execute('SELECT * FROM contratacion_plantillas_dinamicas WHERE clave=?', (clave,), fetchone=True))
+        version = int((existing or {}).get('version') or 0) + (0 if existing and existing.get('checksum_sha256') == checksum else 1)
+        version = max(1, version)
+        payload = (base_name, original, str(path), json.dumps(fields, ensure_ascii=False), json.dumps(profile, ensure_ascii=False),
+                   json.dumps(analysis, ensure_ascii=False), checksum, version, int(profile.get('priority') or 50),
+                   profile.get('signature_mode') or 'AUTOMATICA', json.dumps(profile.get('required_fields') or [], ensure_ascii=False),
+                   json.dumps(profile.get('optional_fields') or [], ensure_ascii=False), json.dumps({'auto': True}, ensure_ascii=False), now_str())
+        if existing:
+            execute('''UPDATE contratacion_plantillas_dinamicas SET nombre=?,archivo_original=?,archivo_path=?,campos_json=?,perfil_json=?,
+                analisis_json=?,checksum_sha256=?,version=?,prioridad=?,firma_modo=?,campos_requeridos_json=?,campos_opcionales_json=?,
+                regla_json=?,estado='ACTIVO',actualizado_en=? WHERE id=?''', payload + (existing.get('id'),), commit=True)
+        else:
+            execute('''INSERT INTO contratacion_plantillas_dinamicas(clave,nombre,archivo_original,archivo_path,campos_json,perfil_json,
+                analisis_json,checksum_sha256,version,prioridad,firma_modo,campos_requeridos_json,campos_opcionales_json,regla_json,
+                estado,creado_por,creado_en,actualizado_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ACTIVO',?,?,?)''',
+                (clave,) + payload[:-1] + (session.get('usuario') or 'SISTEMA', now_str(), now_str()), commit=True)
+        return True, f'{base_name}: {len(fields)} campo(s), versión {version}, firma {profile.get("signature_mode")}.'
+    except Exception as e:
+        try: path.unlink(missing_ok=True)
+        except Exception: pass
+        return False, f'{base_name}: {e}'
+
+
+def _ct325_template_from_row(r):
+    if not r or not os.path.exists(str(r.get('archivo_path') or '')):
+        return None
+    profile = _ct325_json(r.get('perfil_json'), {})
+    analysis = _ct325_json(r.get('analisis_json'), {})
+    fields = _ct325_json(r.get('campos_json'), []) or analysis.get('fields') or _ct324_detect_fields_docx(r.get('archivo_path'))
+    required = _ct325_json(r.get('campos_requeridos_json'), []) or profile.get('required_fields') or [f for f in fields if _ct324_norm_field(f) not in _CT325_SIGNATURE_FIELDS]
+    optional = _ct325_json(r.get('campos_opcionales_json'), []) or profile.get('optional_fields') or []
+    return {'ref': f'dyn:{r.get("id")}', 'name': r.get('nombre'), 'path': _Path306(r.get('archivo_path')), 'fields': fields,
+            'required': required, 'optional': optional, 'profile': profile, 'analysis': analysis, 'dynamic': True,
+            'checksum': r.get('checksum_sha256') or _ct325_sha256_file(r.get('archivo_path')), 'version': int(r.get('version') or 1),
+            'priority': int(r.get('prioridad') or profile.get('priority') or 50)}
+
+
+def _ct325_auto_select_template(row):
+    _ct325_ensure_schema(); candidates = []
+    combined = _ct_norm306(' '.join(str(row.get(k) or '') for k in ('empresa','area','cargo','actividad','tipo_contrato','regimen_laboral','regimen','tipo_trabajador','requerimiento')))
+    for r in _ct324_dynamic_templates():
+        d = _ct325_template_from_row(r)
+        if not d: continue
+        profile = d.get('profile') or {}; score = int(d.get('priority') or 0); reasons = []
+        for tag in profile.get('tags') or []:
+            nt = _ct_norm306(tag)
+            if nt and nt in combined:
+                score += 15; reasons.append(tag)
+        modality = _ct_norm306(profile.get('modalidad') or '')
+        if modality and modality in combined:
+            score += 30; reasons.append('modalidad')
+        if 'AGRARIO' in combined and 'AGRARIO' in [_ct_norm306(x) for x in profile.get('tags') or []]:
+            score += 25; reasons.append('régimen')
+        if any(x in combined for x in ('PLANTA','PACKING')) and any(x in [_ct_norm306(t) for t in profile.get('tags') or []] for x in ('PLANTA','PACKING')):
+            score += 25; reasons.append('área/cargo')
+        d['auto_score'] = score; d['auto_reasons'] = sorted(set(reasons)); candidates.append(d)
+    if candidates:
+        return sorted(candidates, key=lambda x: (x.get('auto_score',0), x.get('priority',0), x.get('version',0)), reverse=True)[0]
+    for doc in CONTRATACION_DOCS_CATALOGO_306:
+        path = _ct_template_path306(doc)
+        if path.exists():
+            return {'ref': 'cat:' + doc['key'], 'name': doc['nombre'], 'path': path,
+                    'fields': _ct324_detect_fields_docx(path) or doc.get('campos', []),
+                    'required': _ct324_detect_fields_docx(path) or doc.get('campos', []), 'optional': [],
+                    'profile': _ct325_infer_profile(path, doc['nombre']), 'dynamic': False,
+                    'checksum': _ct325_sha256_file(path), 'version': 1, 'auto_score': 0, 'auto_reasons': ['catálogo']}
+    return None
+
+
+def _ct324_template_descriptor(ref='', row=None):
+    _ct325_ensure_schema(); ref = str(ref or '').strip()
+    if ref.upper() in ('', 'AUTO') and row:
+        return _ct325_auto_select_template(row)
+    if ref.startswith('dyn:'):
+        try: tid = int(ref.split(':',1)[1])
+        except Exception: tid = 0
+        return _ct325_template_from_row(row_to_dict(execute('SELECT * FROM contratacion_plantillas_dinamicas WHERE id=?', (tid,), fetchone=True)))
+    if ref.startswith('cat:'):
+        key = ref.split(':',1)[1]; doc = _ct_doc306(key); path = _ct_template_path306(doc)
+        if path.exists():
+            profile = _ct325_infer_profile(path, doc['nombre']); fields = _ct324_detect_fields_docx(path) or doc.get('campos', [])
+            return {'ref': 'cat:' + doc['key'], 'name': doc['nombre'], 'path': path, 'fields': fields,
+                    'required': profile.get('required_fields') or fields, 'optional': profile.get('optional_fields') or [],
+                    'profile': profile, 'dynamic': False, 'checksum': _ct325_sha256_file(path), 'version': 1}
+    if row:
+        return _ct325_auto_select_template(row)
+    dyn = _ct324_dynamic_templates()
+    return _ct325_template_from_row(dyn[0]) if dyn else None
+
+
+def _ct324_template_options(selected='', row=None):
+    selected = str(selected or 'AUTO')
+    rec = _ct325_auto_select_template(row) if row else None
+    rec_name = (' · recomendada: ' + rec.get('name','')) if rec else ''
+    out = [f"<option value='AUTO' {'selected' if selected.upper() in ('','AUTO') else ''}>AUTOMÁTICA{_ct_h306(rec_name)}</option>"]
+    for r in _ct324_dynamic_templates():
+        ref = f'dyn:{r.get("id")}'; d = _ct325_template_from_row(r); mark = 'selected' if ref == selected else ''
+        count = len((d or {}).get('fields') or [])
+        out.append(f"<option value='{_ct_h306(ref)}' {mark}>{_ct_h306(r.get('nombre'))} · v{r.get('version') or 1} · {count} campos</option>")
+    for doc in CONTRATACION_DOCS_CATALOGO_306:
+        path = _ct_template_path306(doc)
+        if path.exists():
+            ref = 'cat:' + doc['key']; mark = 'selected' if ref == selected else ''
+            out.append(f"<option value='{_ct_h306(ref)}' {mark}>{_ct_h306(doc['nombre'])} · catálogo</option>")
+    return ''.join(out)
+
+
+_CT325_SMALL = {
+    0:'CERO',1:'UNO',2:'DOS',3:'TRES',4:'CUATRO',5:'CINCO',6:'SEIS',7:'SIETE',8:'OCHO',9:'NUEVE',10:'DIEZ',
+    11:'ONCE',12:'DOCE',13:'TRECE',14:'CATORCE',15:'QUINCE',16:'DIECISEIS',17:'DIECISIETE',18:'DIECIOCHO',19:'DIECINUEVE',
+    20:'VEINTE',21:'VEINTIUNO',22:'VEINTIDOS',23:'VEINTITRES',24:'VEINTICUATRO',25:'VEINTICINCO',26:'VEINTISEIS',27:'VEINTISIETE',28:'VEINTIOCHO',29:'VEINTINUEVE'
+}
+_CT325_TENS = {30:'TREINTA',40:'CUARENTA',50:'CINCUENTA',60:'SESENTA',70:'SETENTA',80:'OCHENTA',90:'NOVENTA'}
+_CT325_HUNDREDS = {100:'CIEN',200:'DOSCIENTOS',300:'TRESCIENTOS',400:'CUATROCIENTOS',500:'QUINIENTOS',600:'SEISCIENTOS',700:'SETECIENTOS',800:'OCHOCIENTOS',900:'NOVECIENTOS'}
+
+
+def _ct325_int_words(n):
+    n = int(n or 0)
+    if n < 30: return _CT325_SMALL[n]
+    if n < 100:
+        t = (n // 10) * 10; r = n % 10
+        return _CT325_TENS[t] + ((' Y ' + _CT325_SMALL[r]) if r else '')
+    if n < 1000:
+        if n in _CT325_HUNDREDS: return _CT325_HUNDREDS[n]
+        h = (n // 100) * 100; r = n % 100
+        head = 'CIENTO' if h == 100 else _CT325_HUNDREDS[h]
+        return head + ((' ' + _ct325_int_words(r)) if r else '')
+    if n < 1_000_000:
+        q, r = divmod(n, 1000)
+        head = 'MIL' if q == 1 else _ct325_int_words(q) + ' MIL'
+        return head + ((' ' + _ct325_int_words(r)) if r else '')
+    if n < 1_000_000_000:
+        q, r = divmod(n, 1_000_000)
+        head = 'UN MILLON' if q == 1 else _ct325_int_words(q) + ' MILLONES'
+        return head + ((' ' + _ct325_int_words(r)) if r else '')
+    return str(n)
+
+
+def _ct325_money_words(value):
+    try: d = _CT325_Decimal(str(value or 0)).quantize(_CT325_Decimal('0.01'), rounding=_CT325_ROUND_HALF_UP)
+    except Exception: d = _CT325_Decimal('0.00')
+    entero = int(d); cents = int((d - entero) * 100)
+    return f'{_ct325_int_words(entero)} CON {cents:02d}/100'
+
+
+def _ct325_duration_text(start, end):
+    try:
+        di = datetime.strptime(str(start)[:10], '%Y-%m-%d').date()
+        df = datetime.strptime(str(end)[:10], '%Y-%m-%d').date()
+        if df < di: return ''
+        inclusive_end = df + _ct325_timedelta(days=1)
+        months = (inclusive_end.year - di.year) * 12 + inclusive_end.month - di.month
+        probe_year = di.year + (di.month - 1 + months) // 12
+        probe_month = (di.month - 1 + months) % 12 + 1
+        import calendar as _ct325_calendar
+        probe_day = min(di.day, _ct325_calendar.monthrange(probe_year, probe_month)[1])
+        probe = date(probe_year, probe_month, probe_day)
+        if probe > inclusive_end:
+            months -= 1
+            probe_year = di.year + (di.month - 1 + months) // 12
+            probe_month = (di.month - 1 + months) % 12 + 1
+            probe_day = min(di.day, _ct325_calendar.monthrange(probe_year, probe_month)[1])
+            probe = date(probe_year, probe_month, probe_day)
+        days = (inclusive_end - probe).days
+        years, rem_months = divmod(max(0, months), 12)
+        parts = []
+        if years: parts.append(f'{years} año' + ('s' if years != 1 else ''))
+        if rem_months: parts.append(f'{rem_months} mes' + ('es' if rem_months != 1 else ''))
+        if days: parts.append(f'{days} día' + ('s' if days != 1 else ''))
+        return ' y '.join(parts) if parts else '1 día'
+    except Exception:
+        return _ct_duracion_texto306(start, end)
+
+
+def _ct325_get_default_functions(row):
+    vals = tuple(_ct_norm306(row.get(k) or '') for k in ('empresa','area','cargo','actividad'))
+    try:
+        r = row_to_dict(execute('''SELECT * FROM contratacion_funciones_cargo WHERE
+            UPPER(COALESCE(empresa,''))=? AND UPPER(COALESCE(area,''))=? AND UPPER(COALESCE(cargo,''))=?
+            AND UPPER(COALESCE(actividad,''))=? AND UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO' ORDER BY id DESC LIMIT 1''', vals, fetchone=True))
+        return (r or {}).get('funciones') or ''
+    except Exception:
+        return ''
+
+
+def _ct325_save_default_functions(row, funciones):
+    funciones = str(funciones or '').strip()
+    if not funciones: return
+    vals = tuple(limpiar_texto(row.get(k) or '') for k in ('empresa','area','cargo','actividad'))
+    current = row_to_dict(execute('''SELECT id FROM contratacion_funciones_cargo WHERE
+        UPPER(COALESCE(empresa,''))=? AND UPPER(COALESCE(area,''))=? AND UPPER(COALESCE(cargo,''))=?
+        AND UPPER(COALESCE(actividad,''))=? ORDER BY id DESC LIMIT 1''', tuple(_ct_norm306(v) for v in vals), fetchone=True))
+    if current:
+        execute("UPDATE contratacion_funciones_cargo SET funciones=?,estado='ACTIVO',actualizado_en=? WHERE id=?", (funciones, now_str(), current.get('id')), commit=True)
+    else:
+        execute('''INSERT INTO contratacion_funciones_cargo(empresa,area,cargo,actividad,funciones,estado,creado_por,creado_en,actualizado_en)
+            VALUES(?,?,?,?,?,'ACTIVO',?,?,?)''', vals + (funciones, session.get('usuario') or 'SISTEMA', now_str(), now_str()), commit=True)
+
+
+def _ct324_canonical_mapping(row):
+    m = _ct_mapping306(row)
+    entered = _ct324_float(row.get('basico') if row.get('basico') not in (None,'') else row.get('remuneracion'))
+    mode = _ct_norm306(row.get('remuneracion_modalidad') or 'MENSUAL')
+    daily = _ct324_float(row.get('remuneracion_diaria'))
+    monthly = _ct324_float(row.get('remuneracion_mensual'))
+    if mode == 'DIARIA':
+        daily = daily or entered; monthly = monthly or round(daily * 30, 2)
+    else:
+        monthly = monthly or entered; daily = daily or round(monthly / 30, 2) if monthly else 0
+    inicio = row.get('fecha_inicio') or row.get('fecha_ingreso') or today_str(); fin = row.get('fecha_fin') or ''
+    funciones = row.get('funciones') or _ct325_get_default_functions(row)
+    m.update({
+        'Empresa': row.get('empresa') or '', 'TipoTrabajador': row.get('tipo_trabajador') or '',
+        'RegimenLaboral': row.get('regimen_laboral') or row.get('regimen') or '', 'TipoContrato': row.get('tipo_contrato') or '',
+        'RemunBasica': f'{daily:.2f}' if daily else '', 'Remuneracion': f'{monthly:.2f}' if monthly else '',
+        'RemuneracionDiaria': f'{daily:.2f}' if daily else '', 'RemuneracionMensual': f'{monthly:.2f}' if monthly else '',
+        'RemuneracionLetra': _ct325_money_words(daily), 'HorasMes': str(row.get('horas_mes') or ''),
+        'DiaDescanso': row.get('dia_descanso') or '', 'DuracionContratoTexto': _ct325_duration_text(inicio, fin),
+        'Funciones': funciones or '', 'FechaIniContratoTextoMinuscula': _ct_date_texto306(inicio).replace(' del ', ' de '),
+        'FechaFinContratoTextoMinuscula': _ct_date_texto306(fin).replace(' del ', ' de '),
+        'FechaGeneracionBarra': datetime.now().strftime('%d/%m/%Y'), 'UsuarioGeneracion': session.get('usuario') or 'SISTEMA'
+    })
+    for key, value in row.items():
+        if value not in (None, ''): m.setdefault(str(key), value)
+    return m
+
+
+_CT324_ALIASES.update({
+    'remuneraciondiaria':'RemuneracionDiaria', 'remuneracionmensual':'RemuneracionMensual',
+    'fechageneracion':'FechaGeneracionBarra', 'fechageneracionbarra':'FechaGeneracionBarra',
+    'usuariogeneracion':'UsuarioGeneracion', 'nombrecompleto':'NombreCompletoTrabajador',
+    'direcciondomicilio':'DireccionActual', 'fechanac':'FechaNacimientoBarra'
+})
+
+
+def _ct324_values_for_template(row, descriptor, manual=None):
+    manual = manual or {}; extras = _ct324_extra_values(row.get('id'))
+    canonical = _ct324_canonical_mapping(row)
+    canonical_norm = {_ct324_norm_field(k): v for k,v in canonical.items()}
+    extra_norm = {_ct324_norm_field(k): v for k,v in extras.items()}
+    manual_norm = {_ct324_norm_field(k): v for k,v in manual.items()}
+    values, source, missing = {}, {}, []
+    for field in descriptor.get('fields', []):
+        nf = _ct324_norm_field(field)
+        if nf in _CT325_SIGNATURE_FIELDS:
+            source[field] = 'FIRMA'; continue
+        value = None; src = ''
+        if nf in manual_norm and str(manual_norm[nf]).strip(): value, src = manual_norm[nf], 'MANUAL'
+        elif nf in extra_norm and str(extra_norm[nf]).strip(): value, src = extra_norm[nf], 'GUARDADO'
+        else:
+            ck = _CT324_ALIASES.get(nf)
+            if ck and str(canonical.get(ck, '')).strip(): value, src = canonical.get(ck), 'AUTOMÁTICO'
+            elif nf in canonical_norm and str(canonical_norm[nf]).strip(): value, src = canonical_norm[nf], 'AUTOMÁTICO'
+        if value not in (None, ''):
+            values[field] = str(value); source[field] = src
+        else:
+            missing.append(field); source[field] = 'PENDIENTE'
+    return values, source, missing
+
+
+def _ct325_iter_paragraphs(parent):
+    for p in getattr(parent, 'paragraphs', []):
+        yield p
+    for table in getattr(parent, 'tables', []):
+        for tr in table.rows:
+            for cell in tr.cells:
+                yield from _ct325_iter_paragraphs(cell)
+
+
+def _ct325_run_for_position(runs, pos, end=False):
+    total = 0
+    for i, run in enumerate(runs):
+        nxt = total + len(run.text or '')
+        if pos < nxt or (end and pos == nxt and i == len(runs)-1):
+            return i, max(0, pos - total)
+        total = nxt
+    return max(0, len(runs)-1), len(runs[-1].text or '') if runs else 0
+
+
+def _ct325_write_run(run, prefix, value, suffix):
+    run.text = prefix
+    lines = str(value or '').replace('\r\n','\n').replace('\r','\n').split('\n')
+    if lines:
+        run.add_text(lines[0])
+        for line in lines[1:]:
+            run.add_break(); run.add_text(line)
+    run.add_text(suffix)
+
+
+def _ct325_replace_paragraph(paragraph, lookup, skip=None):
+    skip = skip or set(); guard = 0
+    while guard < 100:
+        guard += 1; runs = list(paragraph.runs)
+        if not runs: break
+        full = ''.join(r.text or '' for r in runs)
+        match = None; value = None
+        for m in _CT325_FIELD_RE.finditer(full):
+            field = (m.group(1) or m.group(2) or '').strip(); nf = _ct324_norm_field(field)
+            if nf in skip: continue
+            if nf in lookup:
+                match, value = m, lookup[nf]; break
+        if match is None: break
+        si, so = _ct325_run_for_position(runs, match.start())
+        ei, eo = _ct325_run_for_position(runs, match.end()-1)
+        eo += 1
+        start_run, end_run = runs[si], runs[ei]
+        prefix = (start_run.text or '')[:so]
+        suffix = (end_run.text or '')[eo:]
+        for idx in range(si, ei+1): runs[idx].text = ''
+        _ct325_write_run(start_run, prefix, value, suffix)
+
+
+def _ct325_replace_docx(src, dst, mapping):
+    if _CT325_Document is None:
+        _ct_replace_docx306(src, dst, mapping); return
+    doc = _CT325_Document(str(src))
+    lookup = {_ct324_norm_field(k): str(v or '') for k,v in mapping.items()}
+    containers = [doc]
+    for sec in doc.sections: containers.extend([sec.header, sec.footer])
+    for container in containers:
+        for p in _ct325_iter_paragraphs(container):
+            _ct325_replace_paragraph(p, lookup, _CT325_SIGNATURE_FIELDS)
+    doc.save(str(dst))
+    # Fallback conservador para tokens directos que estuvieran dentro de un cuadro de texto no expuesto por python-docx.
+    tmp = str(dst) + '.tmp'
+    try:
+        with _zip306.ZipFile(str(dst),'r') as zin, _zip306.ZipFile(tmp,'w',_zip306.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if item.filename.startswith('word/') and item.filename.endswith('.xml'):
+                    txt = data.decode('utf-8', errors='ignore')
+                    for k,v in mapping.items():
+                        for token in (f'«{k}»', f'<<{k}>>'):
+                            txt = txt.replace(token, _html306.escape(str(v or ''))).replace(_html306.escape(token), _html306.escape(str(v or '')))
+                    data = txt.encode('utf-8')
+                zout.writestr(item, data)
+        os.replace(tmp, dst)
+    except Exception:
+        try: os.remove(tmp)
+        except Exception: pass
+
+
+def _ct325_insert_paragraph_after(paragraph):
+    new_p = _CT325_OxmlElement('w:p'); paragraph._p.addnext(new_p)
+    return _CT325_Paragraph(new_p, paragraph._parent)
+
+
+def _ct324_replace_signature_in_docx(doc_path, signature_path, row, descriptor):
+    if not signature_path or not os.path.exists(str(signature_path)): return
+    if _CT325_Document is None: raise RuntimeError('Falta python-docx para insertar la firma.')
+    doc = _CT325_Document(str(doc_path)); found = False
+    containers = [doc]
+    for sec in doc.sections: containers.extend([sec.header, sec.footer])
+    for container in containers:
+        for p in _ct325_iter_paragraphs(container):
+            full = ''.join(r.text or '' for r in p.runs)
+            matches = [m for m in _CT325_FIELD_RE.finditer(full) if _ct324_norm_field(m.group(1) or m.group(2)) in _CT325_SIGNATURE_FIELDS]
+            if not matches: continue
+            # Limpia el token y agrega la imagen en el mismo párrafo.
+            lookup = {_ct324_norm_field(m.group(1) or m.group(2)): '' for m in matches}
+            _ct325_replace_paragraph(p, lookup)
+            run = p.add_run(); run.add_picture(str(signature_path), width=_CT325_Inches(1.85)); found = True
+    if not found:
+        anchors = [p for p in doc.paragraphs if 'LA EMPRESA' in _ct_norm306(''.join(r.text for r in p.runs))]
+        anchor = anchors[-1] if anchors else (doc.paragraphs[-1] if doc.paragraphs else doc.add_paragraph())
+        p = _ct325_insert_paragraph_after(anchor)
+        p.alignment = _CT325_ALIGN.RIGHT
+        try: p.paragraph_format.keep_together = True
+        except Exception: pass
+        run = p.add_run(); run.add_picture(str(signature_path), width=_CT325_Inches(1.85))
+        run.add_break(); run.add_text('EL TRABAJADOR')
+        run.bold = True
+        run.add_break(); run.add_text(str(row.get('nombres') or row.get('trabajador') or ''))
+        run.bold = False
+        run.add_break(); run.add_text('DNI ' + str(row.get('dni') or ''))
+        try:
+            for rr in p.runs: rr.font.size = _CT325_Pt(9)
+        except Exception: pass
+    doc.save(str(doc_path))
+
+
+def _ct324_generate_docx(row, descriptor, values, signature_path=''):
+    safe_name = _ct324_slug(descriptor.get('name'))[:48].upper(); suffix = 'FIRMADO' if signature_path else 'PREVIA'
+    dst = CONTRATACION_DOCS_DIR_324 / f"{row.get('dni')}_{safe_name}_{suffix}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.docx"
+    _ct325_replace_docx(descriptor.get('path'), dst, values)
+    if signature_path: _ct324_replace_signature_in_docx(dst, signature_path, row, descriptor)
+    return dst
+
+
+def _ct325_render_pdf(docx_path):
+    office = _ct325_shutil.which('libreoffice') or _ct325_shutil.which('soffice')
+    if not office: return ''
+    outdir = CONTRATACION_PREVIEW_DIR_325 / ('pv_' + datetime.now().strftime('%Y%m%d_%H%M%S_%f'))
+    outdir.mkdir(parents=True, exist_ok=True)
+    profile = _ct325_tempfile.mkdtemp(prefix='ct325_lo_')
+    env = dict(os.environ); env['HOME'] = profile
+    try:
+        cmd = [office, '--headless', f'-env:UserInstallation=file://{profile}', '--convert-to', 'pdf', '--outdir', str(outdir), str(docx_path)]
+        result = _ct325_subprocess.run(cmd, stdout=_ct325_subprocess.PIPE, stderr=_ct325_subprocess.PIPE, timeout=90, env=env)
+        expected = outdir / (_Path306(docx_path).stem + '.pdf')
+        if expected.exists() and expected.stat().st_size > 1000: return str(expected)
+        pdfs = list(outdir.glob('*.pdf'))
+        return str(pdfs[0]) if pdfs else ''
+    except Exception as e:
+        print('CT325 PDF preview:', e); return ''
+    finally:
+        try: _ct325_shutil.rmtree(profile, ignore_errors=True)
+        except Exception: pass
+
+
+def _ct325_audit(instance_id, row, action, detail='', hash_value=''):
+    try:
+        execute('''INSERT INTO contratacion_documentos_auditoria(instancia_id,ingreso_id,dni,accion,detalle,hash_sha256,ip,user_agent,usuario,creado_en)
+            VALUES(?,?,?,?,?,?,?,?,?,?)''', (instance_id, row.get('id'), row.get('dni'), action, str(detail or ''), hash_value or '',
+            request.headers.get('X-Forwarded-For', request.remote_addr or '') if request else '',
+            request.headers.get('User-Agent','')[:500] if request else '', session.get('usuario') or 'SISTEMA', now_str()), commit=True)
+    except Exception as e: print('CT325 auditoría:', e)
+
+
+def _ct325_get_or_create_instance(row, descriptor):
+    existing = row_to_dict(execute('''SELECT * FROM contratacion_documentos_instancias WHERE ingreso_id=? AND plantilla_ref=?
+        AND UPPER(COALESCE(estado,'BORRADOR'))<>'FIRMADO' ORDER BY id DESC LIMIT 1''', (row.get('id'), descriptor.get('ref')), fetchone=True))
+    if existing and (not existing.get('plantilla_checksum') or existing.get('plantilla_checksum') == descriptor.get('checksum')):
+        return existing
+    version = int(scalar('SELECT COALESCE(MAX(version_num),0)+1 AS v FROM contratacion_documentos_instancias WHERE ingreso_id=?', (row.get('id'),)) or 1)
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        iid = _ct324_insert_id(cur, '''INSERT INTO contratacion_documentos_instancias(
+            ingreso_id,dni,plantilla_ref,plantilla_nombre,campos_json,estado,version_num,plantilla_checksum,creado_por,creado_en,actualizado_en
+        ) VALUES(?,?,?,?,?,'BORRADOR',?,?,?,?,?)''', (row.get('id'),row.get('dni'),descriptor.get('ref'),descriptor.get('name'),'{}',version,
+            descriptor.get('checksum') or '',session.get('usuario') or 'SISTEMA',now_str(),now_str()))
+        conn.commit()
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+    return row_to_dict(execute('SELECT * FROM contratacion_documentos_instancias WHERE id=?',(iid,),fetchone=True))
+
+
+def _ct325_required_missing(descriptor, missing):
+    req_norm = {_ct324_norm_field(x) for x in (descriptor.get('required') or descriptor.get('fields') or [])}
+    return [f for f in missing if _ct324_norm_field(f) in req_norm and _ct324_norm_field(f) not in _CT325_SIGNATURE_FIELDS]
+
+
+def _ct325_validate(row, descriptor, missing_required):
+    errors = []
+    if len(limpiar_dni(row.get('dni'))) != 8: errors.append('DNI inválido.')
+    if not str(row.get('nombres') or row.get('trabajador') or '').strip(): errors.append('Falta el nombre del trabajador.')
+    if not str(row.get('cargo') or '').strip(): errors.append('Falta el cargo.')
+    try:
+        di = datetime.strptime(str(row.get('fecha_inicio') or '')[:10], '%Y-%m-%d')
+        df = datetime.strptime(str(row.get('fecha_fin') or '')[:10], '%Y-%m-%d')
+        if df < di: errors.append('La fecha fin no puede ser anterior a la fecha de inicio.')
+    except Exception: errors.append('Complete fechas de inicio y fin válidas.')
+    if _ct324_float(row.get('basico') or row.get('remuneracion')) <= 0: errors.append('La remuneración debe ser mayor que cero.')
+    if missing_required: errors.append('Complete los campos obligatorios: ' + ', '.join(missing_required))
+    return errors
+
+
+def _ct325_collect_manual(form):
+    manual = {}
+    try: count = int(form.get('manual_count') or 0)
+    except Exception: count = 0
+    for i in range(count):
+        name = str(form.get(f'manual_name_{i}') or '').strip()
+        if name: manual[name] = form.get(f'manual_value_{i}') or ''
+    return manual
+
+
+def _ct325_prepare_document(row, descriptor, instance, manual=None, signature_path=''):
+    values, sources, missing = _ct324_values_for_template(row, descriptor, manual or {})
+    missing_required = _ct325_required_missing(descriptor, missing)
+    errors = _ct325_validate(row, descriptor, missing_required)
+    if errors:
+        return None, '', values, sources, missing, errors
+    path = _ct324_generate_docx(row, descriptor, values, signature_path)
+    unresolved = _ct324_detect_fields_docx(path)
+    unresolved_required = _ct325_required_missing(descriptor, unresolved)
+    if unresolved_required:
+        errors.append('El Word todavía contiene campos obligatorios: ' + ', '.join(unresolved_required))
+        return path, '', values, sources, unresolved, errors
+    pdf = _ct325_render_pdf(path)
+    hash_value = _ct325_sha256_file(path)
+    state = 'FIRMADO' if signature_path else 'PREVISUALIZADO'
+    execute('''UPDATE contratacion_documentos_instancias SET campos_json=?,estado=?,archivo_path=?,firma_path=?,preview_pdf_path=?,
+        hash_sha256=?,campos_pendientes_json=?,vista_previa_en=?,firmado_en=?,actualizado_en=? WHERE id=?''',
+        (json.dumps(values,ensure_ascii=False),state,str(path),str(signature_path or ''),str(pdf or ''),hash_value,
+         json.dumps(unresolved,ensure_ascii=False),now_str(),now_str() if signature_path else None,now_str(),instance.get('id')), commit=True)
+    return path, pdf, values, sources, unresolved, errors
+
+
+def contratacion_plantillas_dinamicas_325():
+    if not _ct324_admin_ok(): return _ct324_deny()
+    _ct325_ensure_schema(); _ct325_install_builtin_template()
+    if request.method == 'POST':
+        action = request.form.get('accion') or 'cargar'
+        if action == 'desactivar':
+            execute("UPDATE contratacion_plantillas_dinamicas SET estado='INACTIVO',actualizado_en=? WHERE id=?",(now_str(),request.form.get('plantilla_id')),commit=True)
+            flash('Plantilla desactivada. La plantilla integrada puede reactivarse automáticamente al reiniciar.', 'success')
+        elif action == 'prioridad':
+            execute('UPDATE contratacion_plantillas_dinamicas SET prioridad=?,actualizado_en=? WHERE id=?',
+                    (int(request.form.get('prioridad') or 50),now_str(),request.form.get('plantilla_id')),commit=True)
+            flash('Prioridad automática actualizada.', 'success')
+        else:
+            results=[_ct324_upsert_dynamic_template(f) for f in request.files.getlist('archivos') if f and getattr(f,'filename','')]
+            ok=sum(1 for r in results if r[0]); flash(f'Plantillas procesadas: {ok}. '+' '.join(r[1] for r in results[:8]),'success' if ok else 'warning')
+        return redirect(url_for('contratacion_plantillas_dinamicas_324'))
+    templates=rows_to_dict(execute('SELECT * FROM contratacion_plantillas_dinamicas ORDER BY prioridad DESC,nombre',fetchall=True))
+    for t in templates:
+        t['campos']=_ct325_json(t.get('campos_json'),[]); t['perfil']=_ct325_json(t.get('perfil_json'),{}); t['analisis']=_ct325_json(t.get('analisis_json'),{})
+    body=_ct_css306()+r'''
+    <style>.ct325-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}.ct325-tag{font-size:8px;background:#eaf7ed;color:#166534;border-radius:99px;padding:3px 6px;font-weight:900}.ct325-template{border:1px solid #dfe7df;border-radius:10px;padding:10px;margin:8px 0;background:#fff}.ct325-template small{font-size:9px;color:#607a65}</style>
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_config')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-file-earmark-word"></i></div><div class="ttl">Plantillas automatizadas</div></div><div class="ct290-body">
+      <div class="ct290-info"><b>Plantilla real integrada.</b><br>El contrato intermitente de planta/packing AQI ya viene dentro del programa. También puede subir diferentes contratos .docx; el sistema reconocerá automáticamente campos como «Dni», incluso si Word los divide en varios fragmentos.</div>
+      <form method="post" enctype="multipart/form-data" class="ct290-form"><input type="hidden" name="accion" value="cargar"><label>Agregar contratos Word</label><input type="file" name="archivos" accept=".docx" multiple required class="form-control"><button class="ct290-btn mt-2"><i class="bi bi-magic"></i> Analizar y registrar</button></form>
+      {% for t in templates %}<div class="ct325-template"><div class="d-flex justify-content-between"><div><b>{{t.nombre}}</b><br><small>v{{t.version or 1}} · {{t.campos|length}} campos · {{t.analisis.media or 0}} imágenes</small></div><span class="status-pill">{{t.estado}}</span></div><div class="ct325-tags">{% for tag in t.perfil.tags or [] %}<span class="ct325-tag">{{tag}}</span>{% endfor %}</div><div class="ct306-muted mt-1">Campos: {{t.campos|join(', ')}}</div><form method="post" class="d-flex gap-2 mt-2"><input type="hidden" name="accion" value="prioridad"><input type="hidden" name="plantilla_id" value="{{t.id}}"><input type="number" min="0" max="999" name="prioridad" value="{{t.prioridad or 50}}" class="form-control"><button class="ct290-outline" style="width:130px">Prioridad</button></form><div class="ct290-row mt-2"><a class="ct290-outline" href="{{url_for('contratacion_plantilla_descargar_325', plantilla_id=t.id)}}"><i class="bi bi-download"></i> Word</a>{% if (t.estado or '').upper()=='ACTIVO' %}<form method="post"><input type="hidden" name="accion" value="desactivar"><input type="hidden" name="plantilla_id" value="{{t.id}}"><button class="ct306-dangerbtn" onclick="return confirm('¿Desactivar esta plantilla?')"><i class="bi bi-x-circle"></i> Desactivar</button></form>{% endif %}</div></div>{% else %}<div class="ct290-info">Sin plantillas.</div>{% endfor %}
+    </div></div></div>'''
+    return render_page(body,templates=templates,title='Plantillas automatizadas')
+
+
+def contratacion_plantilla_descargar_325(plantilla_id):
+    if not _ct324_admin_ok(): return _ct324_deny()
+    r=row_to_dict(execute('SELECT * FROM contratacion_plantillas_dinamicas WHERE id=?',(plantilla_id,),fetchone=True))
+    if not r or not os.path.exists(str(r.get('archivo_path') or '')):
+        flash('Plantilla no disponible.','danger'); return redirect(url_for('contratacion_plantillas_dinamicas_324'))
+    return send_file(r.get('archivo_path'),as_attachment=True,download_name=r.get('archivo_original') or 'plantilla_contrato.docx',mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+
+def contratacion_datos_contrato_325(ingreso_id):
+    if not _ct324_admin_ok(): return _ct324_deny()
+    _ct325_ensure_schema(); _ct325_install_builtin_template(); row=_ct324_contract_row(ingreso_id)
+    if not row:
+        flash('No se encontró el postulante.','danger'); return redirect(url_for('contratacion_postulantes'))
+    base=row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?',(row.get('dni'),),fetchone=True)) or {}
+    current_ref=row.get('plantilla_contrato_ref') or 'AUTO'; default_functions=row.get('funciones') or _ct325_get_default_functions(row)
+    if request.method=='POST':
+        values={'fecha_inicio':request.form.get('fecha_inicio'),'fecha_fin':request.form.get('fecha_fin'),'tipo_trabajador':request.form.get('tipo_trabajador'),
+                'regimen_laboral':request.form.get('regimen_laboral'),'tipo_contrato':request.form.get('tipo_contrato'),'remuneracion':request.form.get('remuneracion'),
+                'horas_mes':request.form.get('horas_mes'),'dia_descanso':request.form.get('dia_descanso')}
+        remuneration=_ct324_float(values.get('remuneracion')); hours=_ct324_float(values.get('horas_mes')); mode=_ct_norm306(request.form.get('remuneracion_modalidad') or 'MENSUAL')
+        errors=[]
+        try:
+            di=datetime.strptime(str(values.get('fecha_inicio'))[:10],'%Y-%m-%d'); df=datetime.strptime(str(values.get('fecha_fin'))[:10],'%Y-%m-%d')
+            if df<di: errors.append('La fecha fin no puede ser anterior al inicio.')
+        except Exception: errors.append('Complete fechas válidas.')
+        if remuneration<=0: errors.append('La remuneración debe ser mayor que cero.')
+        if hours<0: errors.append('Horas mes no puede ser negativa.')
+        if errors:
+            for e in errors: flash(e,'danger')
+            return redirect(url_for('contratacion_datos_contrato_307',ingreso_id=ingreso_id))
+        daily=remuneration if mode=='DIARIA' else round(remuneration/30,2); monthly=round(remuneration*30,2) if mode=='DIARIA' else remuneration
+        template_request=request.form.get('plantilla_ref') or 'AUTO'
+        temp_row=dict(row); temp_row.update(values); temp_row.update({'basico':remuneration,'remuneracion_modalidad':mode,'remuneracion_diaria':daily,'remuneracion_mensual':monthly,'funciones':request.form.get('funciones') or ''})
+        descriptor=_ct324_template_descriptor(template_request,temp_row)
+        if not descriptor:
+            flash('No existe una plantilla de contrato activa.','danger'); return redirect(url_for('contratacion_datos_contrato_307',ingreso_id=ingreso_id))
+        hist_id=_ct324_save_condition(row.get('dni'),'contratacion',values,'CONTRATO',str(ingreso_id),'MODULO_CONTRATACION',request.form.get('observacion'))
+        funciones=request.form.get('funciones') or ''
+        execute('''UPDATE contratacion_ingresos SET fecha_inicio=?,fecha_fin=?,tipo_trabajador=?,regimen_laboral=?,regimen=?,tipo_contrato=?,
+            basico=?,remuneracion_modalidad=?,remuneracion_diaria=?,remuneracion_mensual=?,horas_mes=?,dia_descanso=?,funciones=?,funciones_fuente=?,
+            plantilla_contrato_ref=?,plantilla_auto=?,documento_firma_key=?,documento_firma_nombre=?,condicion_historial_id=?,contrato_admin_ok=1,
+            contrato_admin_por=?,contrato_admin_en=?,contrato_estado='DATOS_COMPLETOS',observacion=? WHERE id=?''',
+            (values.get('fecha_inicio'),values.get('fecha_fin'),limpiar_texto(values.get('tipo_trabajador') or ''),limpiar_texto(values.get('regimen_laboral') or ''),
+             limpiar_texto(values.get('regimen_laboral') or ''),limpiar_texto(values.get('tipo_contrato') or ''),remuneration,mode,daily,monthly,hours,
+             limpiar_texto(values.get('dia_descanso') or ''),funciones,'CARGO' if request.form.get('guardar_funciones_cargo') else 'MANUAL',descriptor.get('ref'),
+             1 if template_request.upper()=='AUTO' else 0,descriptor.get('ref'),descriptor.get('name'),hist_id,session.get('usuario'),now_str(),request.form.get('observacion') or '',ingreso_id),commit=True)
+        try: _ct307_save_extra_values(ingreso_id,request.form)
+        except Exception: pass
+        if request.form.get('guardar_funciones_cargo') and funciones:
+            temp_row.update({'funciones':funciones}); _ct325_save_default_functions(temp_row,funciones)
+        flash('Contrato configurado. Se guardó una versión laboral y se seleccionó: '+descriptor.get('name',''),'success')
+        if request.form.get('accion')=='guardar_previsualizar':
+            return redirect(url_for('contratacion_contrato_preview_324',ingreso_id=ingreso_id,plantilla=descriptor.get('ref')))
+        return redirect(url_for('contratacion_datos_contrato_307',ingreso_id=ingreso_id))
+    recommended=_ct325_auto_select_template(row); history=rows_to_dict(execute("SELECT * FROM trabajador_condiciones_historial WHERE dni=? AND modulo='contratacion' AND COALESCE(referencia_id,'')=? ORDER BY id DESC LIMIT 30",(row.get('dni'),str(ingreso_id)),fetchall=True))
+    extras=_ct307_extra_fields() if '_ct307_extra_fields' in globals() else []
+    body=_ct_css306()+r'''
+    <style>.ct325-rec{background:#eaf7ed;border:1px solid #8bc698;border-radius:9px;padding:9px;font-size:10px;margin-bottom:8px}.ct325-help{font-size:9px;color:#5f7d65;font-weight:800}</style>
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_postulantes',req=row.requerimiento_id)}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-magic"></i></div><div class="ttl">Contrato automatizado</div></div><div class="ct290-body">
+      <div class="ct290-info"><b>{{row.dni}} · {{row.nombres}}</b><br>Los valores se copian desde la base como sugerencia, pero quedan reemplazables exclusivamente para este contrato y conservan historial.</div>
+      {% if recommended %}<div class="ct325-rec"><b><i class="bi bi-stars"></i> Recomendación automática:</b><br>{{recommended.name}}<br>Puntaje {{recommended.auto_score or 0}} · {{recommended.auto_reasons|join(', ')}}</div>{% endif %}
+      <form method="post" class="ct290-form"><div class="ct290-row"><div><label>Inicio contrato</label><input type="date" name="fecha_inicio" value="{{row.fecha_inicio or row.fecha_ingreso or ''}}" class="form-control" required></div><div><label>Fin contrato</label><input type="date" name="fecha_fin" value="{{row.fecha_fin or ''}}" class="form-control" required></div></div>
+      <div class="ct290-row mt-2"><div><label>Tipo trabajador</label><input name="tipo_trabajador" value="{{row.tipo_trabajador or base.tipo_trabajador or ''}}" class="form-control" required></div><div><label>Régimen laboral</label><input name="regimen_laboral" value="{{row.regimen_laboral or row.regimen or base.regimen_laboral or ''}}" class="form-control" required></div></div>
+      <label class="mt-2">Tipo contrato</label><input name="tipo_contrato" value="{{row.tipo_contrato or base.tipo_contrato or 'INTERMITENTE'}}" class="form-control" required>
+      <div class="ct290-row mt-2"><div><label>Remuneración cargada</label><input type="number" step="0.01" min="0.01" name="remuneracion" value="{{row.basico or row.remuneracion or base.remuneracion or 0}}" class="form-control" required></div><div><label>Forma</label><select name="remuneracion_modalidad" class="form-select"><option value="MENSUAL" {{'selected' if (row.remuneracion_modalidad or 'MENSUAL')=='MENSUAL' else ''}}>MENSUAL → diaria ÷30</option><option value="DIARIA" {{'selected' if row.remuneracion_modalidad=='DIARIA' else ''}}>DIARIA</option></select></div></div><div class="ct325-help">El contrato cargado indica remuneración básica diaria. Si la base contiene S/ 1,300 mensual, el sistema colocará S/ 43.33 diaria y su monto en letras.</div>
+      <div class="ct290-row mt-2"><div><label>Horas mes</label><input type="number" step="0.01" min="0" name="horas_mes" value="{{row.horas_mes or base.horas_mes or 0}}" class="form-control"></div><div><label>Día descanso</label><input name="dia_descanso" value="{{row.dia_descanso or base.dia_descanso or ''}}" class="form-control"></div></div>
+      <label class="mt-2">Funciones</label><textarea name="funciones" class="form-control" style="height:120px" required>{{default_functions}}</textarea><label class="form-check mt-1"><input class="form-check-input" type="checkbox" name="guardar_funciones_cargo" value="1"><span class="form-check-label">Guardar estas funciones para futuros trabajadores del mismo cargo</span></label>
+      {% for f in extras %}<label class="mt-2">{{f.etiqueta or f.campo}}</label><input name="extra_{{f.campo}}" value="{{extra_values.get(f.campo,f.valor_defecto or '')}}" class="form-control">{% endfor %}
+      <label class="mt-2">Plantilla</label><select name="plantilla_ref" class="form-select" required>{{template_options|safe}}</select><div class="ct325-help">En AUTOMÁTICA se evalúan modalidad, régimen, empresa, área, cargo y etiquetas de cada plantilla.</div>
+      <label class="mt-2">Observación</label><input name="observacion" value="{{row.observacion or ''}}" class="form-control"><div class="ct290-row mt-2"><button name="accion" value="guardar" class="ct290-outline"><i class="bi bi-save"></i> Guardar</button><button name="accion" value="guardar_previsualizar" class="ct290-btn"><i class="bi bi-eye"></i> Vista previa real</button></div></form>
+      <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Versión</th><th>Condición</th></tr></thead><tbody>{% for h in history %}<tr><td>{{h.creado_en}}<br>{{'ACTUAL' if h.vigente else 'HISTÓRICO'}}</td><td>{{h.tipo_trabajador}} · {{h.regimen_laboral}} · {{h.tipo_contrato}}<br>S/ {{'%.2f'|format(h.remuneracion or 0)}} · {{h.horas_mes or 0}} h</td></tr>{% else %}<tr><td colspan="2">Sin versiones.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body,row=row,base=base,recommended=recommended,default_functions=default_functions,history=history,extras=extras,
+        extra_values=_ct324_extra_values(ingreso_id),template_options=_ct324_template_options(current_ref,row),title='Contrato automatizado')
+
+
+def contratacion_contrato_preview_325(ingreso_id):
+    if not _ct324_admin_ok(): return _ct324_deny()
+    _ct325_ensure_schema(); _ct325_install_builtin_template(); row=_ct324_contract_row(ingreso_id)
+    if not row:
+        flash('Postulante no encontrado.','danger'); return redirect(url_for('contratacion_contratos_324'))
+    requested=request.values.get('plantilla') or row.get('plantilla_contrato_ref') or 'AUTO'; descriptor=_ct324_template_descriptor(requested,row)
+    if not descriptor:
+        flash('No hay una plantilla activa.','danger'); return redirect(url_for('contratacion_datos_contrato_307',ingreso_id=ingreso_id))
+    instance=_ct325_get_or_create_instance(row,descriptor); manual={}
+    if request.method=='POST':
+        manual=_ct325_collect_manual(request.form); _ct324_save_manual_values(ingreso_id,manual)
+        action=request.form.get('accion') or 'actualizar'
+        if action=='firmar':
+            if limpiar_dni(request.form.get('firma_dni'))!=limpiar_dni(row.get('dni')):
+                flash('El DNI de confirmación no coincide con el trabajador.','danger'); return redirect(url_for('contratacion_contrato_preview_324',ingreso_id=ingreso_id,plantilla=descriptor.get('ref')))
+            if request.form.get('consentimiento')!='SI':
+                flash('Debe confirmar el consentimiento de firma.','danger'); return redirect(url_for('contratacion_contrato_preview_324',ingreso_id=ingreso_id,plantilla=descriptor.get('ref')))
+            data=request.form.get('firma_data') or ''
+            if not data.startswith('data:image/'):
+                flash('Dibuje la firma del trabajador.','danger'); return redirect(url_for('contratacion_contrato_preview_324',ingreso_id=ingreso_id,plantilla=descriptor.get('ref')))
+            signature_path=guardar_data_url(data,str(CONTRATACION_FIRMAS_DIR_324),f'firma_contrato_{row.get("dni")}_{now_file()}')
+            path,pdf,values,sources,unresolved,errors=_ct325_prepare_document(row,descriptor,instance,manual,signature_path)
+            if errors:
+                for e in errors: flash(e,'danger')
+            else:
+                execute('''UPDATE contratacion_documentos_instancias SET ip_firma=?,user_agent_firma=?,firmante_dni=?,firmante_nombre=?,consentimiento='SI' WHERE id=?''',
+                    (request.headers.get('X-Forwarded-For',request.remote_addr or ''),request.headers.get('User-Agent','')[:500],row.get('dni'),row.get('nombres') or '',instance.get('id')),commit=True)
+                execute("UPDATE contratacion_ingresos SET firma_estado='FIRMADO',contrato_estado='FIRMADO',contrato_version=COALESCE(contrato_version,0)+1 WHERE id=?",(ingreso_id,),commit=True)
+                final=row_to_dict(execute('SELECT * FROM contratacion_documentos_instancias WHERE id=?',(instance.get('id'),),fetchone=True)) or instance
+                _ct325_audit(instance.get('id'),row,'FIRMA_CONTRATO','Firma en pantalla con DNI y consentimiento',final.get('hash_sha256') or '')
+                flash('Contrato firmado y bloqueado para descarga final.','success')
+            return redirect(url_for('contratacion_contrato_preview_324',ingreso_id=ingreso_id,plantilla=descriptor.get('ref')))
+        _ct324_save_manual_values(ingreso_id,manual)
+    # Genera/re-genera la vista previa real en cada entrada o actualización.
+    path,pdf,values,sources,unresolved,errors=_ct325_prepare_document(row,descriptor,instance,manual or _ct324_extra_values(ingreso_id),'')
+    instance=row_to_dict(execute('SELECT * FROM contratacion_documentos_instancias WHERE id=?',(instance.get('id'),),fetchone=True)) or instance
+    fields=[]; req_norm={_ct324_norm_field(x) for x in descriptor.get('required') or []}
+    for f in descriptor.get('fields') or []:
+        fields.append({'name':f,'value':values.get(f,''),'source':sources.get(f,'PENDIENTE'),'required':_ct324_norm_field(f) in req_norm})
+    preview_html=_ct324_preview_html(path) if path and not pdf else ''
+    signed=_ct_norm306(instance.get('estado'))=='FIRMADO'; can_sign=not errors and not _ct325_required_missing(descriptor,unresolved)
+    body=_ct_css306()+r'''
+    <style>.ct325-paper{background:#fff;color:#202020;border:1px solid #d9d9d9;padding:20px 16px;margin:8px 0;font-size:11px;line-height:1.5;max-height:65vh;overflow:auto}.ct325-pdf{width:100%;height:72vh;border:1px solid #cad7cc;border-radius:9px;background:#eee}.ct325-field{border:1px solid #dfe7df;border-radius:8px;padding:7px;margin:5px 0;font-size:10px}.ct325-auto{background:#eaf7ed}.ct325-pending{background:#fff4e5;border-color:#f59e0b}.ct325-sign{width:100%;height:160px;border:2px dashed #2f773b;border-radius:10px;background:#fff;touch-action:none}.ct325-error{background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:8px;border-radius:8px;font-size:10px;margin:5px 0}.ct325-lock{background:#eaf7ed;border:1px solid #86c891;color:#166534;padding:9px;border-radius:8px;font-size:10px}</style>
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_datos_contrato_307',ingreso_id=row.id)}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-eye"></i></div><div class="ttl">Revisión y firma</div></div><div class="ct290-body">
+      <div class="ct290-info"><b>{{descriptor.name}}</b><br>{{row.dni}} · {{row.nombres}}<br>Primero revise el contrato completo. La descarga final se activa únicamente después de firmar.</div>
+      {% for e in errors %}<div class="ct325-error"><i class="bi bi-exclamation-triangle"></i> {{e}}</div>{% endfor %}
+      <form method="get" class="ct290-form"><label>Cambiar plantilla</label><select name="plantilla" class="form-select" onchange="this.form.submit()">{{template_options|safe}}</select></form>
+      <form method="post" onsubmit="return ct325Prepare(this)" class="ct290-form"><input type="hidden" name="plantilla" value="{{descriptor.ref}}"><input type="hidden" name="firma_data" id="ct325FirmaData"><input type="hidden" name="manual_count" value="{{fields|length}}">
+      <div class="ct306-docbox"><b>Control de campos</b><br>Verde: automático/guardado. Naranja: pendiente. Todos los obligatorios deben quedar completos.</div>
+      {% for f in fields %}<div class="ct325-field {{'ct325-pending' if f.source=='PENDIENTE' else 'ct325-auto'}}"><input type="hidden" name="manual_name_{{loop.index0}}" value="{{f.name}}"><label>«{{f.name}}» · {{f.source}} {{'· OBLIGATORIO' if f.required else ''}}</label>{% if f.source=='FIRMA' %}<input type="hidden" name="manual_value_{{loop.index0}}" value=""><div class="ct306-muted">Se insertará desde el panel de firma.</div>{% elif f.name|lower=='funciones' %}<textarea name="manual_value_{{loop.index0}}" class="form-control" style="height:100px" {{'required' if f.required else ''}}>{{f.value}}</textarea>{% else %}<input name="manual_value_{{loop.index0}}" value="{{f.value}}" class="form-control" {{'required' if f.required else ''}}>{% endif %}</div>{% endfor %}
+      <button name="accion" value="actualizar" class="ct290-outline mt-2"><i class="bi bi-arrow-clockwise"></i> Actualizar vista previa</button>
+      {% if instance.preview_pdf_path %}<iframe class="ct325-pdf" src="{{url_for('contratacion_contrato_preview_pdf_325',instancia_id=instance.id)}}#toolbar=1&navpanes=0"></iframe><a class="ct290-outline mt-2" target="_blank" href="{{url_for('contratacion_contrato_preview_pdf_325',instancia_id=instance.id)}}"><i class="bi bi-arrows-fullscreen"></i> Abrir PDF completo</a>{% else %}<div class="ct325-paper">{{preview_html|safe}}</div><div class="ct306-muted">Vista HTML de respaldo. Instale LibreOffice en el servidor para vista PDF idéntica al Word.</div>{% endif %}
+      {% if not signed %}<label class="mt-2">Firma del trabajador</label><canvas id="ct325Sign" class="ct325-sign"></canvas><button type="button" class="ct290-outline mt-1" onclick="ct325Clear()"><i class="bi bi-eraser"></i> Limpiar firma</button><label class="mt-2">Confirmar DNI del firmante</label><input name="firma_dni" maxlength="8" inputmode="numeric" class="form-control" required><label class="form-check mt-2"><input class="form-check-input" type="checkbox" name="consentimiento" value="SI" required><span class="form-check-label">El trabajador revisó el documento y firma en señal de conformidad.</span></label><button name="accion" value="firmar" class="ct290-btn mt-2" {{'disabled' if not can_sign else ''}}><i class="bi bi-pen"></i> Firmar y generar versión final</button>{% else %}<div class="ct325-lock"><i class="bi bi-shield-check"></i> Documento firmado el {{instance.firmado_en}}.<br>SHA-256: {{instance.hash_sha256}}</div>{% endif %}</form>
+      {% if signed %}<div class="ct290-row mt-2"><a class="ct306-btn" href="{{url_for('contratacion_contrato_descargar_324',instancia_id=instance.id,formato='docx')}}"><i class="bi bi-file-earmark-word"></i> Descargar Word</a>{% if instance.preview_pdf_path %}<a class="ct306-btn" href="{{url_for('contratacion_contrato_descargar_324',instancia_id=instance.id,formato='pdf')}}"><i class="bi bi-file-earmark-pdf"></i> Descargar PDF</a>{% endif %}</div>{% else %}<div class="ct306-muted mt-2 text-center"><i class="bi bi-lock"></i> Descarga bloqueada hasta firmar.</div>{% endif %}
+    </div></div></div>
+    <script>(function(){const c=document.getElementById('ct325Sign');if(!c)return;const x=c.getContext('2d');function size(){const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=Math.max(300,r.width*d);c.height=160*d;x.setTransform(d,0,0,d,0,0);x.lineWidth=2;x.lineCap='round';x.strokeStyle='#111';}setTimeout(size,80);let draw=false,last=null,ink=false;function p(e){const r=c.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}c.addEventListener('pointerdown',e=>{draw=true;last=p(e);c.setPointerCapture&&c.setPointerCapture(e.pointerId)});c.addEventListener('pointermove',e=>{if(!draw)return;const n=p(e);x.beginPath();x.moveTo(last.x,last.y);x.lineTo(n.x,n.y);x.stroke();last=n;ink=true});window.addEventListener('pointerup',()=>draw=false);window.ct325Clear=function(){x.clearRect(0,0,c.width,c.height);ink=false};window.ct325Prepare=function(){const action=(document.activeElement&&document.activeElement.value)||'';if(action==='firmar'&&!ink){alert('Dibuje la firma antes de continuar.');return false;}document.getElementById('ct325FirmaData').value=ink?c.toDataURL('image/png'):'';return true;};})();</script>'''
+    return render_page(body,row=row,descriptor=descriptor,fields=fields,errors=errors,preview_html=preview_html,instance=instance,signed=signed,can_sign=can_sign,
+        template_options=_ct324_template_options(descriptor.get('ref'),row),title='Revisión y firma')
+
+
+def contratacion_contrato_preview_pdf_325(instancia_id):
+    if not _ct324_admin_ok(): return _ct324_deny()
+    inst=row_to_dict(execute('SELECT * FROM contratacion_documentos_instancias WHERE id=?',(instancia_id,),fetchone=True))
+    path=str((inst or {}).get('preview_pdf_path') or '')
+    if not path or not os.path.exists(path):
+        return Response('Vista PDF no disponible.',status=404,mimetype='text/plain')
+    return send_file(path,as_attachment=False,mimetype='application/pdf',download_name=f'VISTA_CONTRATO_{inst.get("dni")}.pdf')
+
+
+def contratacion_contrato_descargar_325(instancia_id):
+    if not _ct324_admin_ok(): return _ct324_deny()
+    inst=row_to_dict(execute('SELECT * FROM contratacion_documentos_instancias WHERE id=?',(instancia_id,),fetchone=True))
+    if not inst:
+        flash('Documento no encontrado.','danger'); return redirect(url_for('contratacion_contratos_324'))
+    if _ct_norm306(inst.get('estado'))!='FIRMADO' or not inst.get('firmado_en'):
+        flash('La descarga final está bloqueada hasta completar la vista previa y la firma.','danger')
+        return redirect(url_for('contratacion_contrato_preview_324',ingreso_id=inst.get('ingreso_id'),plantilla=inst.get('plantilla_ref')))
+    formato=(request.args.get('formato') or 'docx').lower(); path=str(inst.get('preview_pdf_path') if formato=='pdf' else inst.get('archivo_path') or '')
+    if not path or not os.path.exists(path):
+        flash('Archivo final no disponible.','danger'); return redirect(url_for('contratacion_contrato_preview_324',ingreso_id=inst.get('ingreso_id'),plantilla=inst.get('plantilla_ref')))
+    execute('UPDATE contratacion_documentos_instancias SET download_count=COALESCE(download_count,0)+1,downloaded_en=? WHERE id=?',(now_str(),instancia_id),commit=True)
+    row={'id':inst.get('ingreso_id'),'dni':inst.get('dni')}; _ct325_audit(instancia_id,row,'DESCARGA_'+formato.upper(),'Descarga final',inst.get('hash_sha256') or '')
+    ext='pdf' if formato=='pdf' else 'docx'; mime='application/pdf' if formato=='pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    return send_file(path,as_attachment=True,download_name=f'CONTRATO_{inst.get("dni")}_FIRMADO.{ext}',mimetype=mime)
+
+
+def contratacion_contratos_325():
+    if not _ct324_admin_ok(): return _ct324_deny()
+    _ct325_ensure_schema(); _ct325_install_builtin_template()
+    req_id=request.values.get('req') or ''; q=request.values.get('q','').strip()
+    if request.method=='POST' and request.form.get('accion')=='preparar_masivo':
+        if not req_id:
+            flash('Seleccione un requerimiento para preparar contratos.','warning')
+        else:
+            rows=rows_to_dict(execute("SELECT * FROM contratacion_ingresos WHERE requerimiento_id=? AND UPPER(COALESCE(estado,''))<>'PRE-REGISTRO' ORDER BY id LIMIT 150",(req_id,),fetchall=True))
+            ok=0; skipped=[]
+            for r0 in rows:
+                row=_ct324_contract_row(r0.get('id')); d=_ct325_auto_select_template(row or {})
+                if not row or not d: skipped.append(str((r0 or {}).get('dni') or '?')); continue
+                inst=_ct325_get_or_create_instance(row,d); path,pdf,vals,src,unres,errs=_ct325_prepare_document(row,d,inst,_ct324_extra_values(row.get('id')),'')
+                if errs: skipped.append(str(row.get('dni'))); continue
+                execute("UPDATE contratacion_ingresos SET contrato_estado='PREVISUALIZADO' WHERE id=?",(row.get('id'),),commit=True); ok+=1
+            flash(f'Borradores previsualizados: {ok}. Omitidos por datos faltantes: {len(skipped)}'+((' ('+', '.join(skipped[:12])+')') if skipped else ''),'success' if ok else 'warning')
+        return redirect(url_for('contratacion_contratos_324',req=req_id,q=q))
+    where=["UPPER(COALESCE(i.estado,''))<>'PRE-REGISTRO'"]; params=[]
+    if req_id: where.append('i.requerimiento_id=?'); params.append(req_id)
+    if q:
+        like='%'+q.upper()+'%'; where.append('(i.dni LIKE ? OR UPPER(COALESCE(i.nombres,\'\')) LIKE ?)'); params.extend([like,like])
+    rows=rows_to_dict(execute(f'''SELECT i.*,
+        (SELECT COUNT(*) FROM contratacion_documentos_instancias d WHERE d.ingreso_id=i.id) AS documentos_generados,
+        (SELECT estado FROM contratacion_documentos_instancias d WHERE d.ingreso_id=i.id ORDER BY d.id DESC LIMIT 1) AS doc_estado,
+        (SELECT id FROM contratacion_documentos_instancias d WHERE d.ingreso_id=i.id ORDER BY d.id DESC LIMIT 1) AS doc_id
+        FROM contratacion_ingresos i WHERE {' AND '.join(where)} ORDER BY i.id DESC LIMIT 250''',params,fetchall=True))
+    reqs=rows_to_dict(execute('SELECT * FROM contratacion_requerimientos ORDER BY id DESC LIMIT 250',fetchall=True))
+    signed=sum(1 for r in rows if _ct_norm306(r.get('doc_estado'))=='FIRMADO'); previews=sum(1 for r in rows if _ct_norm306(r.get('doc_estado'))=='PREVISUALIZADO')
+    body=_ct_css306()+r'''
+    <div class="ct290-phone"><div class="ct290-app"><div class="ct290-head"><a href="{{url_for('contratacion_home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-files"></i></div><div class="ttl">Contratos automatizados</div></div><div class="ct290-body">
+      <div class="ct290-info">La plantilla se selecciona sola. Puede preparar vistas previas masivas; la firma y validación de DNI se realizan individualmente.</div><div class="ct290-row"><div class="ct306-docbox"><b>{{rows|length}}</b><br>Trabajadores</div><div class="ct306-ok"><b>{{signed}}</b><br>Firmados</div></div>
+      <form method="get" class="ct290-form"><select name="req" class="form-select"><option value="">Todos los requerimientos</option>{% for r in reqs %}<option value="{{r.id}}" {{'selected' if req_id|string==r.id|string else ''}}>REQ-{{'%03d'|format(r.id)}} · {{r.cargo or '-'}}</option>{% endfor %}</select><input name="q" value="{{q}}" class="form-control mt-2" placeholder="DNI o trabajador"><button class="ct290-btn mt-2"><i class="bi bi-search"></i> Buscar</button></form>
+      <div class="ct290-row"><a class="ct290-outline" href="{{url_for('contratacion_plantillas_dinamicas_324')}}"><i class="bi bi-file-earmark-word"></i> Plantillas</a><form method="post"><input type="hidden" name="accion" value="preparar_masivo"><input type="hidden" name="req" value="{{req_id}}"><input type="hidden" name="q" value="{{q}}"><button class="ct290-btn" onclick="return confirm('¿Generar vistas previas para trabajadores con datos completos?')" {{'disabled' if not req_id else ''}}><i class="bi bi-magic"></i> Preparar masivo</button></form></div>
+      <div class="ct290-tablewrap"><table class="ct290-table"><thead><tr><th>Trabajador</th><th>Condición</th><th>Contrato</th></tr></thead><tbody>{% for p in rows %}<tr><td>{{p.dni}}<br><b>{{p.nombres or '-'}}</b><br>{{p.cargo or '-'}}</td><td>{{p.tipo_contrato or '-'}}<br>S/ {{'%.2f'|format(p.basico or 0)}} {{p.remuneracion_modalidad or 'MENSUAL'}}<br>{{p.regimen_laboral or p.regimen or '-'}}</td><td><span class="status-pill">{{p.doc_estado or 'PENDIENTE'}}</span><br><a class="ct306-smalllink" href="{{url_for('contratacion_datos_contrato_307',ingreso_id=p.id)}}"><i class="bi bi-pencil-square"></i> Datos</a><br><a class="ct306-smalllink" href="{{url_for('contratacion_contrato_preview_324',ingreso_id=p.id,plantilla=p.plantilla_contrato_ref or 'AUTO')}}"><i class="bi bi-eye"></i> Revisar / firmar</a></td></tr>{% else %}<tr><td colspan="3">Sin postulantes.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body,rows=rows,reqs=reqs,req_id=req_id,q=q,signed=signed,previews=previews,title='Contratos automatizados')
+
+
+try:
+    _ct325_ensure_schema(); _ct325_install_builtin_template()
+except Exception as e:
+    print('CT325 inicio pendiente:', e)
+
+try: app.add_url_rule('/contratacion/plantilla-dinamica/<int:plantilla_id>/descargar','contratacion_plantilla_descargar_325',contratacion_plantilla_descargar_325,methods=['GET'])
+except Exception: app.view_functions['contratacion_plantilla_descargar_325']=contratacion_plantilla_descargar_325
+try: app.add_url_rule('/contratacion/contrato/instancia/<int:instancia_id>/vista.pdf','contratacion_contrato_preview_pdf_325',contratacion_contrato_preview_pdf_325,methods=['GET'])
+except Exception: app.view_functions['contratacion_contrato_preview_pdf_325']=contratacion_contrato_preview_pdf_325
+
+# Habilita POST en la ruta de listado que originalmente se registró solo como GET.
+try:
+    for _rule325 in app.url_map.iter_rules():
+        if _rule325.endpoint == 'contratacion_contratos_324':
+            _rule325.methods.add('POST')
+except Exception: pass
+
+app.view_functions['contratacion_plantillas_dinamicas_324']=contratacion_plantillas_dinamicas_325
+app.view_functions['contratacion_datos_contrato_307']=contratacion_datos_contrato_325
+app.view_functions['contratacion_contrato_preview_324']=contratacion_contrato_preview_325
+app.view_functions['contratacion_contrato_descargar_324']=contratacion_contrato_descargar_325
+app.view_functions['contratacion_contratos_324']=contratacion_contratos_325
+
+# ===================== FIN PATCH 325 =====================
+
+
+# ===================== PATCH 326 - MATERIALIZAR MERGEFIELDS =====================
+# Convierte los campos de combinación de Word en texto normal después del autollenado,
+# para impedir que Word vuelva a mostrar «Campo» al actualizar campos.
+
+def _ct326_unlink_mergefields(docx_path):
+    if _ct325_etree is None:
+        return
+    tmp = str(docx_path) + '.merge.tmp'
+    ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+    try:
+        with _zip306.ZipFile(str(docx_path), 'r') as zin, _zip306.ZipFile(tmp, 'w', _zip306.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if item.filename.startswith('word/') and item.filename.endswith('.xml'):
+                    try:
+                        root = _ct325_etree.fromstring(data)
+                        # Campos simples: conservar los runs de resultado y retirar el contenedor del campo.
+                        for fld in list(root.xpath('.//w:fldSimple', namespaces=ns)):
+                            instr = fld.get('{%s}instr' % ns['w']) or ''
+                            if 'MERGEFIELD' not in instr.upper():
+                                continue
+                            parent = fld.getparent(); pos = parent.index(fld)
+                            for child in list(fld):
+                                fld.remove(child); parent.insert(pos, child); pos += 1
+                            parent.remove(fld)
+                        # Campos complejos begin/instr/separate/result/end.
+                        for p in root.xpath('.//w:p', namespaces=ns):
+                            state = None
+                            for child in list(p):
+                                fld_types = child.xpath('.//w:fldChar/@w:fldCharType', namespaces=ns)
+                                instr_text = ''.join(child.xpath('.//w:instrText/text()', namespaces=ns))
+                                if 'begin' in fld_types:
+                                    state = {'pre': [child], 'merge': False, 'separated': False}
+                                    continue
+                                if state is None:
+                                    continue
+                                if not state['separated']:
+                                    state['pre'].append(child)
+                                    if 'MERGEFIELD' in instr_text.upper():
+                                        state['merge'] = True
+                                    if 'separate' in fld_types:
+                                        if state['merge']:
+                                            for node in state['pre']:
+                                                if node.getparent() is p: p.remove(node)
+                                        state['pre'] = []
+                                        state['separated'] = True
+                                    elif 'end' in fld_types:
+                                        if state['merge']:
+                                            for node in state['pre']:
+                                                if node.getparent() is p: p.remove(node)
+                                        state = None
+                                else:
+                                    if 'end' in fld_types:
+                                        if state['merge'] and child.getparent() is p:
+                                            p.remove(child)
+                                        state = None
+                        data = _ct325_etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
+                    except Exception:
+                        pass
+                zout.writestr(item, data)
+        os.replace(tmp, docx_path)
+    except Exception as e:
+        print('CT326 materializar campos:', e)
+        try: os.remove(tmp)
+        except Exception: pass
+
+
+_ct326_replace_docx_base = _ct325_replace_docx
+def _ct325_replace_docx(src, dst, mapping):
+    _ct326_replace_docx_base(src, dst, mapping)
+    _ct326_unlink_mergefields(dst)
+
+# ===================== FIN PATCH 326 =====================
+
+
+# ===================== PATCH 327 - BLOQUEO DE VERSIONES FIRMADAS =====================
+# Una versión firmada no puede ser regenerada como borrador al volver a abrir la pantalla.
+_ct327_prepare_document_base = _ct325_prepare_document
+def _ct325_prepare_document(row, descriptor, instance, manual=None, signature_path=''):
+    if not signature_path and _ct_norm306((instance or {}).get('estado')) == 'FIRMADO':
+        path = str(instance.get('archivo_path') or '')
+        pdf = str(instance.get('preview_pdf_path') or '')
+        values = _ct325_json(instance.get('campos_json'), {})
+        sources = {f: 'FIRMADO' for f in (descriptor.get('fields') or []) if f in values}
+        for f in descriptor.get('fields') or []:
+            if _ct324_norm_field(f) in _CT325_SIGNATURE_FIELDS: sources[f] = 'FIRMA'
+        unresolved = _ct325_json(instance.get('campos_pendientes_json'), [])
+        if path and os.path.exists(path):
+            return _Path306(path), pdf, values, sources, unresolved, []
+    return _ct327_prepare_document_base(row, descriptor, instance, manual, signature_path)
+# ===================== FIN PATCH 327 =====================
+
+
+# ===================== PATCH 328 - MOSTRAR ÚLTIMA VERSIÓN FIRMADA =====================
+_ct328_instance_base = _ct325_get_or_create_instance
+def _ct325_get_or_create_instance(row, descriptor):
+    latest = row_to_dict(execute('''SELECT * FROM contratacion_documentos_instancias
+        WHERE ingreso_id=? AND plantilla_ref=? ORDER BY id DESC LIMIT 1''',
+        (row.get('id'), descriptor.get('ref')), fetchone=True))
+    if latest:
+        state = _ct_norm306(latest.get('estado'))
+        if state != 'FIRMADO':
+            return latest
+        # Si el ingreso sigue marcado como firmado, se muestra la versión final bloqueada.
+        # Al guardar cambios en Datos del contrato, el estado vuelve a DATOS_COMPLETOS y se crea una nueva versión.
+        if _ct_norm306(row.get('contrato_estado')) == 'FIRMADO':
+            return latest
+    return _ct328_instance_base(row, descriptor)
+# ===================== FIN PATCH 328 =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
