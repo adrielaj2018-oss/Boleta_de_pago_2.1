@@ -16955,6 +16955,266 @@ def _g318_force_classic_all_modules(response):
 
 # ===================== FIN PATCH 318 INTERFAZ CLÁSICA GLOBAL =====================
 
+# ===================== PATCH 319 - COMPACTO, SIN TÍTULOS REPETIDOS Y CONFIGURACIÓN ORDENADA =====================
+# Ajustes solicitados por Omar:
+# 1) Todos los módulos quedan más delgados y centrados.
+# 2) Se elimina el título exterior repetido "TAREO MÓVIL – ...".
+# 3) Contratación ya no repite los mismos submódulos en pestañas, barra y tarjetas.
+# 4) Accesos de carga masiva, plantillas, maestros y configuraciones se agrupan
+#    dentro de un bloque de Configuración del módulo/submódulo.
+
+
+def _g319_compact_css():
+    return r'''
+<style id="g319-compact-ui">
+/* Ancho delgado y uniforme */
+body.g319-compact .shell{
+  width:100%!important;
+  max-width:382px!important;
+  margin:0 auto!important;
+  padding:7px 8px 24px!important;
+}
+body.g319-compact :is(
+  .phone-wrap,.he-phone,.bt291-phone,.b300-phone,.bol297-phone,.bol298-phone,
+  .vac294-phone,.ct290-phone,.tr286-phone,.tm-phone,.tf-phone,.report-wrap
+){
+  width:min(350px,calc(100vw - 22px))!important;
+  max-width:350px!important;
+  margin-left:auto!important;
+  margin-right:auto!important;
+}
+body.g319-compact :is(
+  .page-card,.rr292-app,.bt291-app,.b300-app,.bol297-app,.bol298-app,.b304-app,
+  .vac294-app,.he-app,.he-classic,.ct290-app,.tm-app,.tf-app,.tr279-app,.tr286-app,
+  .mv283-app,.mv284-app,.rp288-app,.rp289-app,.cfg303-app
+){
+  width:min(350px,calc(100vw - 22px))!important;
+  max-width:350px!important;
+  margin-left:auto!important;
+  margin-right:auto!important;
+}
+
+/* Quitar únicamente el título exterior grande; se conserva la cabecera verde del módulo */
+body.g319-compact .g318-module-title,
+body.g319-compact .header-title,
+body.g319-compact .ct290-phone::before{
+  display:none!important;
+  content:none!important;
+  height:0!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+/* Contratación: una sola navegación, sin repetir submódulos */
+body.g319-compact .ct317-tabs-main,
+body.g319-compact .ct317-tabs-sub,
+body.g319-compact .ct317-classic-toolbar{
+  display:none!important;
+}
+body.g319-compact .ct317-home .ct290-head{margin-top:0!important}
+body.g319-compact .ct317-home .ct290-body{padding-top:8px!important}
+body.g319-compact .ct317-menu-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;margin:7px 0!important}
+body.g319-compact .ct317-menu-grid a{min-width:0!important;min-height:64px!important;padding:5px 3px!important}
+
+/* Bloque único para configuraciones, cargas y plantillas */
+body.g319-compact .g319-config-box{
+  margin:9px 0 7px!important;
+  border:1px solid #b9d6bf!important;
+  border-radius:9px!important;
+  background:#f8fff9!important;
+  overflow:hidden!important;
+  box-shadow:0 3px 9px rgba(0,0,0,.06)!important;
+}
+body.g319-compact .g319-config-box>summary{
+  list-style:none!important;
+  cursor:pointer!important;
+  min-height:42px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:7px!important;
+  padding:8px 10px!important;
+  background:#fff!important;
+  color:#176a35!important;
+  font-size:10px!important;
+  font-weight:950!important;
+  text-transform:uppercase!important;
+}
+body.g319-compact .g319-config-box>summary::-webkit-details-marker{display:none!important}
+body.g319-compact .g319-config-box>summary::after{content:'⌄';margin-left:auto;font-size:15px;color:#2f773b}
+body.g319-compact .g319-config-box[open]>summary::after{content:'⌃'}
+body.g319-compact .g319-config-content{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:7px!important;
+  padding:8px!important;
+  border-top:1px solid #dce7de!important;
+}
+body.g319-compact .g319-config-content>a,
+body.g319-compact .g319-config-content>button{
+  width:100%!important;
+  min-width:0!important;
+  min-height:54px!important;
+  margin:0!important;
+  padding:7px 5px!important;
+  border:1px solid #cfe0d2!important;
+  border-radius:8px!important;
+  background:#fff!important;
+  color:#176a35!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+  text-decoration:none!important;
+  font-size:8.5px!important;
+  line-height:1.12!important;
+  font-weight:950!important;
+  box-shadow:none!important;
+}
+body.g319-compact .g319-config-content>a i,
+body.g319-compact .g319-config-content>button i{font-size:19px!important;color:#2f773b!important;margin:0 0 4px!important}
+body.g319-compact .g319-empty-action{display:none!important}
+
+/* Formularios/tablas siguen siendo legibles dentro del ancho delgado */
+body.g319-compact :is(.ct290-tablewrap,.he-tablewrap,.bt291-tablewrap,.b300-tablewrap,.bol297-tablewrap,.bol298-tablewrap,.rt286-tablewrap){max-width:100%!important;overflow-x:auto!important}
+body.g319-compact :is(.ct290-body,.rr292-body,.bt291-body,.b300-body,.bol297-body,.bol298-body,.b304-body,.vac294-body,.he-body,.he-classic-body,.tr286-body,.rt286-body){padding-left:8px!important;padding-right:8px!important}
+
+@media(max-width:370px){
+ body.g319-compact .shell{max-width:100%!important;padding:5px 6px 20px!important}
+ body.g319-compact :is(.phone-wrap,.he-phone,.bt291-phone,.b300-phone,.bol297-phone,.bol298-phone,.vac294-phone,.ct290-phone,.tr286-phone,.tm-phone,.tf-phone,.report-wrap),
+ body.g319-compact :is(.page-card,.rr292-app,.bt291-app,.b300-app,.bol297-app,.bol298-app,.b304-app,.vac294-app,.he-app,.he-classic,.ct290-app,.tm-app,.tf-app,.tr279-app,.tr286-app,.mv283-app,.mv284-app,.rp288-app,.rp289-app,.cfg303-app){
+   width:calc(100vw - 16px)!important;
+   max-width:340px!important;
+ }
+ body.g319-compact .g319-config-content{grid-template-columns:1fr 1fr!important;gap:6px!important;padding:7px!important}
+}
+</style>
+<script id="g319-compact-js">
+(function(){
+  'use strict';
+  function txt(el){return String((el&&el.textContent)||'').replace(/\s+/g,' ').trim().toUpperCase();}
+  function esPaginaConfig(){
+    var p=location.pathname.toLowerCase();
+    return /(?:\/config(?:uracion|uraciones)?(?:\/|$)|\/datos-maestros(?:\/|$))/.test(p);
+  }
+  function esAccesoConfig(el){
+    if(!el || el.closest('.g319-config-box')) return false;
+    if(el.closest('.ct290-head,.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.vac294-head,.he-head,.green-hero,.panel-green')) return false;
+    var t=txt(el), h=String(el.getAttribute('href')||'').toLowerCase();
+    var clave=/(CONFIGUR|AJUSTE|DATOS MAESTROS|MAESTRO |PLANTILLA|CARGA MASIVA|CARGAR BASE|IMPORTAR|SUBIR ARCHIVO|SUBIR BASE|CARGA DE |CARGA TRABAJADORES|CARGA ACTIVIDADES|FORMATO LLENADO|FORMATO BASE|DATOS CONTRATO MASIVO)/;
+    var ruta=/(\/config(?:\/|$)|\/configuracion|\/datos-maestros|carga-masiva|carga-trabajadores|cargar-base|cargar-actividades|\/plantilla(?:\/|$|-)|datos-contrato-masivo)/;
+    return clave.test(t)||ruta.test(h);
+  }
+  function contenedorDestino(){
+    return document.querySelector('.ct290-body,.rr292-body,.bt291-body,.b300-body,.bol297-body,.bol298-body,.b304-body,.vac294-body,.he-body,.he-classic-body,.tr286-body,.rt286-body,.page-card,.phone-wrap');
+  }
+  function ordenarConfiguracion(){
+    var p=location.pathname.toLowerCase();
+    if(p==='/'||p==='/home'||esPaginaConfig()) return;
+    var vistos=new Set(), nodos=[];
+    document.querySelectorAll('a[href],button[type="button"]').forEach(function(el){
+      if(!esAccesoConfig(el)) return;
+      var node=el.closest('a[href]')||el;
+      if(vistos.has(node)) return;
+      vistos.add(node);nodos.push(node);
+    });
+    if(!nodos.length) return;
+    var destino=contenedorDestino(); if(!destino) return;
+    var box=document.createElement('details');box.className='g319-config-box';
+    box.innerHTML='<summary><i class="bi bi-gear"></i><span>Configuración y cargas del módulo</span></summary><div class="g319-config-content"></div>';
+    var content=box.querySelector('.g319-config-content');
+    nodos.forEach(function(node){
+      var parent=node.parentElement;
+      node.classList.remove('active');
+      content.appendChild(node);
+      if(parent && parent!==content && !parent.textContent.trim() && !parent.querySelector('input,select,textarea')) parent.classList.add('g319-empty-action');
+    });
+    var leaf=destino.querySelector(':scope > .leaf,:scope > .ct317-leaf');
+    if(leaf) destino.insertBefore(box,leaf); else destino.appendChild(box);
+  }
+  function limpiarContratacion(){
+    if(location.pathname.toLowerCase()!=='/contratacion') return;
+    document.querySelectorAll('.ct317-tabs-main,.ct317-tabs-sub,.ct317-classic-toolbar').forEach(function(x){x.remove();});
+  }
+  function aplicar(){
+    document.body.classList.add('g318-classic','g319-compact');
+    document.querySelectorAll('.g318-module-title').forEach(function(x){x.remove();});
+    limpiarContratacion();
+    ordenarConfiguracion();
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',aplicar);else aplicar();
+})();
+</script>
+'''
+
+
+# Los filtros anteriores agregaban títulos y pestañas repetidas. Se retiran del
+# registro de Flask y se reemplazan por un único filtro final V319.
+try:
+    _g319_after = app.after_request_funcs.get(None, [])
+    app.after_request_funcs[None] = [
+        f for f in _g319_after
+        if getattr(f, '__name__', '') not in ('_g318_force_classic_all_modules', '_ct317_force_classic_skin')
+    ]
+except Exception as _g319_err:
+    print('G319 limpiar filtros anteriores:', _g319_err)
+
+
+@app.after_request
+def _g319_compact_all_modules(response):
+    try:
+        ctype = str(response.content_type or '').lower()
+        if 'text/html' not in ctype or not session.get('usuario'):
+            return response
+        if request.endpoint in ('static','manifest','service_worker') or request.path.startswith('/static/'):
+            return response
+        html = response.get_data(as_text=True)
+        if not html or '<html' not in html.lower():
+            return response
+
+        # No crear ni conservar el título exterior repetido.
+        html = re.sub(
+            r'<h1\s+class=["\'][^"\']*g318-module-title[^"\']*["\'][^>]*>.*?</h1>',
+            '', html, count=1, flags=re.I|re.S
+        )
+
+        # Las pantallas de contratación antiguas reciben el estilo clásico,
+        # pero se eliminan físicamente las pestañas y barras repetidas.
+        if request.path.startswith('/contratacion'):
+            html = re.sub(r"<div\s+class=['\"]ct317-tabs-main['\"]>.*?</div>", '', html, flags=re.I|re.S)
+            html = re.sub(r"<div\s+class=['\"]ct317-tabs-sub['\"]>.*?</div>", '', html, flags=re.I|re.S)
+            html = re.sub(r"<div\s+class=['\"]ct317-classic-toolbar['\"]>.*?</div>", '', html, flags=re.I|re.S)
+            if 'ct317-classic-skin' not in html:
+                html = html.replace('</head>', _ct317_classic_css() + '</head>', 1)
+
+        # Aplicar las clases desde el servidor para evitar parpadeos al cargar.
+        if 'g319-compact' not in html.split('</head>', 1)[-1][:1500]:
+            if '<body class="' in html:
+                html = html.replace('<body class="', '<body class="g318-classic g319-compact ', 1)
+            elif "<body class='" in html:
+                html = html.replace("<body class='", "<body class='g318-classic g319-compact ", 1)
+            else:
+                html = re.sub(r'<body(\s|>)', r'<body class="g318-classic g319-compact"\1', html, count=1, flags=re.I)
+
+        skin = ''
+        if 'g318-classic-global' not in html:
+            skin += _g318_classic_global_css()
+        if 'g319-compact-ui' not in html:
+            skin += _g319_compact_css()
+        if skin:
+            if '</body>' in html:
+                html = html.replace('</body>', skin + '</body>', 1)
+            else:
+                html += skin
+        response.set_data(html)
+        response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('G319 interfaz compacta:', e)
+    return response
+
+# ===================== FIN PATCH 319 =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
