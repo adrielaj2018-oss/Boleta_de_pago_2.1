@@ -21286,6 +21286,247 @@ def _ct325_get_or_create_instance(row, descriptor):
     return _ct328_instance_base(row, descriptor)
 # ===================== FIN PATCH 328 =====================
 
+# ===================== PATCH 329 - PLANTILLA GENERAL SIN CONDICIONES DE CONTRATACION =====================
+# Ajuste solicitado:
+# - La base Excel de trabajadores es una plantilla general.
+# - Se eliminan de la carga general las columnas amarillas:
+#   AREA, ACTIVIDAD, TIPO_TRABAJADOR, REGIMEN_LABORAL, TIPO_CONTRATO,
+#   REMUNERACION, HORAS_MES y DIA_DESCANSO.
+# - Esos datos se seleccionan o completan dentro del flujo de Contratacion
+#   (Requerimiento, Postulantes y Datos del contrato), sin ser sobrescritos
+#   por una nueva carga de la base general.
+
+from openpyxl.styles import Font as _G329_Font, PatternFill as _G329_PatternFill, Alignment as _G329_Alignment
+
+WORKER_GENERAL_EXCLUDED_329 = {
+    'area', 'actividad', 'tipo_trabajador', 'regimen_laboral',
+    'tipo_contrato', 'remuneracion', 'horas_mes', 'dia_descanso'
+}
+
+# Solo campos generales compartidos. CARGO se conserva como dato general del trabajador.
+WORKER_FIELDS_323 = [
+    'trabajador', 'empresa', 'cargo', 'planilla', 'estado', 'correo', 'celular',
+    'fecha_nacimiento', 'direccion', 'distrito', 'provincia', 'departamento'
+]
+
+WORKER_HEADERS_323 = [
+    'DNI', 'TRABAJADOR', 'EMPRESA', 'CARGO', 'PLANILLA', 'ESTADO', 'CORREO',
+    'CELULAR', 'FECHA_NACIMIENTO', 'DIRECCION', 'DISTRITO', 'PROVINCIA',
+    'DEPARTAMENTO'
+]
+
+# El importador central ignora deliberadamente las columnas laborales aunque
+# el usuario cargue una version antigua del Excel.
+WORKER_ALIASES_323 = {
+    'TRABAJADOR': 'trabajador', 'NOMBRE': 'trabajador', 'NOMBRES': 'trabajador',
+    'APELLIDOS Y NOMBRES': 'trabajador', 'APELLIDOS NOMBRES': 'trabajador',
+    'EMPRESA': 'empresa', 'CARGO': 'cargo', 'PLANILLA': 'planilla',
+    'ESTADO': 'estado', 'CORREO': 'correo', 'EMAIL': 'correo',
+    'CELULAR': 'celular', 'TELEFONO': 'celular', 'TELEFONO MOVIL': 'celular',
+    'FECHA NACIMIENTO': 'fecha_nacimiento', 'FEC NACIMIENTO': 'fecha_nacimiento',
+    'DIRECCION': 'direccion', 'DISTRITO': 'distrito', 'PROVINCIA': 'provincia',
+    'DEPARTAMENTO': 'departamento'
+}
+
+
+def _g329_style_sheet(ws, header_color='2F773B'):
+    """Formato uniforme y legible para las plantillas generadas por la app."""
+    if ws.max_row >= 1:
+        for cell in ws[1]:
+            cell.font = _G329_Font(bold=True, color='FFFFFF')
+            cell.fill = _G329_PatternFill('solid', fgColor=header_color)
+            cell.alignment = _G329_Alignment(horizontal='center', vertical='center', wrap_text=True)
+        ws.row_dimensions[1].height = 32
+        ws.freeze_panes = 'A2'
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.alignment = _G329_Alignment(vertical='top', wrap_text=True)
+    for col in ws.columns:
+        values = [len(str(c.value or '')) for c in col]
+        width = min(max(max(values or [0]) + 3, 12), 38)
+        ws.column_dimensions[col[0].column_letter].width = width
+
+
+def _g329_add_general_workers_sheet(wb, include_example=True):
+    ws = wb.active
+    ws.title = 'TRABAJADORES'
+    ws.append(WORKER_HEADERS_323)
+    if include_example:
+        ws.append([
+            '74324033', 'JOSE GARCIA PEREZ', 'AQUANQA I', 'OPERARIO', 'AGRARIO',
+            'ACTIVO', 'jose@empresa.com', '999999999', '1995-06-15',
+            'AV. EJEMPLO 123', 'TRUJILLO', 'TRUJILLO', 'LA LIBERTAD'
+        ])
+    _g329_style_sheet(ws)
+    ws.auto_filter.ref = f'A1:{ws.cell(1, len(WORKER_HEADERS_323)).column_letter}{max(ws.max_row, 2)}'
+    ws.column_dimensions['A'].width = 12
+    ws.column_dimensions['B'].width = 30
+    ws.column_dimensions['C'].width = 18
+    ws.column_dimensions['D'].width = 22
+    ws.column_dimensions['G'].width = 27
+    ws.column_dimensions['J'].width = 30
+    if ws.max_row >= 2:
+        ws['I2'].number_format = 'yyyy-mm-dd'
+    return ws
+
+
+def _g329_add_instructions_sheet(wb, contratacion=False):
+    ins = wb.create_sheet('INSTRUCCIONES')
+    ins.append(['SECCION', 'REGLA', 'DETALLE'])
+    rows = [
+        ('PLANTILLA GENERAL', 'USAR PARA CARGA MASIVA', 'Contiene solamente datos generales del trabajador y sirve para reconocer nuevos ingresos y reingresantes por DNI.'),
+        ('DNI', 'OBLIGATORIO', 'Debe contener 8 digitos. Si ya existe, se actualizan solamente las celdas generales que tengan valor.'),
+        ('TRABAJADOR', 'OBLIGATORIO PARA NUEVOS', 'Apellidos y nombres completos.'),
+        ('CAMPOS VACIOS', 'NO BORRAN INFORMACION', 'En un trabajador existente, una celda vacia no elimina el dato guardado anteriormente.'),
+        ('NO INCLUIDOS', 'AREA / ACTIVIDAD', 'Se seleccionan en el Requerimiento y se heredan al registro del postulante dentro de Contratacion.'),
+        ('NO INCLUIDOS', 'TIPO_TRABAJADOR / REGIMEN_LABORAL / TIPO_CONTRATO', 'Se seleccionan en el flujo de Contratacion y quedan vinculados al ingreso o contrato correspondiente.'),
+        ('NO INCLUIDOS', 'REMUNERACION / HORAS_MES / DIA_DESCANSO', 'Se completan en Datos del contrato antes de la vista previa y firma.'),
+        ('PROTECCION', 'NO SE SOBRESCRIBEN', 'Aunque se cargue una plantilla antigua con esas columnas, el cargador general las ignora para no modificar condiciones de contratacion.'),
+    ]
+    if contratacion:
+        rows.append(('HOJA ESTRUCTURA_REQ', 'CONFIGURACION SEPARADA', 'Sirve para administrar los desplegables Empresa, Tipo, Regimen, Area, Actividad, Cargo y Tipo de contrato. No carga condiciones directamente al trabajador.'))
+    for row in rows:
+        ins.append(row)
+    _g329_style_sheet(ins)
+    ins.column_dimensions['A'].width = 24
+    ins.column_dimensions['B'].width = 34
+    ins.column_dimensions['C'].width = 95
+    return ins
+
+
+def _g323_template_response(modulo='central'):
+    """Plantilla general compartida por la base central y configuraciones de modulo."""
+    wb = Workbook()
+    _g329_add_general_workers_sheet(wb)
+    _g329_add_instructions_sheet(wb, contratacion=(str(modulo or '').lower() == 'contratacion'))
+    out = BytesIO(); wb.save(out); out.seek(0)
+    safe_mod = re.sub(r'[^a-z0-9]+', '_', str(modulo or 'central').lower()).strip('_') or 'central'
+    filename = 'plantilla_trabajadores_general.xlsx' if safe_mod == 'central' else f'plantilla_trabajadores_general_{safe_mod}.xlsx'
+    return send_file(out, as_attachment=True, download_name=filename,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+def _ct307_excel_response(filename='plantilla_general_contratacion.xlsx'):
+    """Excel de Contratacion: trabajadores generales y maestros en hojas separadas."""
+    wb = Workbook()
+    _g329_add_general_workers_sheet(wb)
+
+    req = wb.create_sheet('ESTRUCTURA_REQ')
+    req.append(['EMPRESA','TIPO_TRABAJADOR','REGIMEN','AREA','ACTIVIDAD','CARGO','TIPO_CONTRATO','ESTADO'])
+    req.append(['AQUANQA','OBRERO','AGRARIO','CAMPO','OB_PODA / COSECHA','OBRERO DE CAMPO','TEMPORAL','ACTIVO'])
+    req.append(['AQUANQA','OBRERO','AGRARIO','PACKING','OB_PACKING','OBRERO DE PLANTA','INTERMITENTE','ACTIVO'])
+    req.append(['AQUANQA','EMPLEADO','GENERAL','ADMINISTRACION','RRHH','ASISTENTE RRHH','INDETERMINADO','ACTIVO'])
+    _g329_style_sheet(req)
+
+    extra = wb.create_sheet('CAMPOS_EXTRA')
+    extra.append(['CAMPO_PLANTILLA','ETIQUETA','OBLIGATORIO','TIPO_DATO','VALOR_DEFECTO','ESTADO'])
+    extra.append(['Funciones','Funciones para contrato','SI','TEXTO','','ACTIVO'])
+    extra.append(['Sede','Sede','NO','TEXTO','RAZURI','ACTIVO'])
+    extra.append(['Producto','Producto','NO','TEXTO','ARANDANO','ACTIVO'])
+    _g329_style_sheet(extra)
+
+    _g329_add_instructions_sheet(wb, contratacion=True)
+    out = BytesIO(); wb.save(out); out.seek(0)
+    return send_file(out, as_attachment=True, download_name=filename,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+def _ct314_import_trabajadores(file_storage):
+    """La carga de reingresantes de Contratacion usa exactamente la base general."""
+    ins, upd, omi, err = _g323_import_workers(file_storage, 'contratacion', 'EXCEL_CONTRATACION_GENERAL')
+    if err:
+        raise ValueError(err)
+    return int(ins or 0) + int(upd or 0)
+
+
+def cargar_base_329():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo administrador puede cargar trabajadores.', 'danger')
+        return redirect(url_for('home'))
+    if request.method == 'POST':
+        ins, upd, omi, err = _g323_import_workers(request.files.get('archivo'), 'central', 'EXCEL_GENERAL')
+        msg = f'Carga general completa: {ins} nuevos, {upd} actualizados y {omi} omitidos. Las condiciones de contratacion no fueron modificadas.'
+        flash(('Error: ' + err) if err else msg, 'danger' if err else 'success')
+        return redirect(url_for('cargar_base'))
+    q = request.args.get('q', '').strip(); params = []; where = ''
+    if q:
+        like = '%' + q.upper() + '%'
+        where = "WHERE dni LIKE ? OR UPPER(COALESCE(trabajador,'')) LIKE ? OR UPPER(COALESCE(empresa,'')) LIKE ?"
+        params = [like, like, like]
+    trabajadores = rows_to_dict(execute(f'''SELECT dni,trabajador,empresa,cargo,planilla,estado,origen_datos,fuente_modulo,actualizado_en,fecha_carga
+        FROM trabajadores {where} ORDER BY COALESCE(actualizado_en,fecha_carga) DESC,id DESC LIMIT 80''', params, fetchall=True))
+    total = int(scalar('SELECT COUNT(*) AS c FROM trabajadores') or 0)
+    body = _g323_css() + r'''
+    <div class="g323-wrap"><div class="g323-app"><div class="g323-head"><a class="back" href="{{url_for('configuraciones')}}"><i class="bi bi-chevron-left"></i></a><div><b>CARGA GENERAL</b><small>Base central de trabajadores</small></div><i class="bi bi-people ico"></i></div><div class="g323-body">
+      <div class="g323-note g323-ok"><b>Plantilla general protegida.</b><br>Solo carga datos generales. Área, Actividad, Tipo de trabajador, Régimen, Tipo de contrato, Remuneración, Horas mes y Día de descanso se completan dentro de Contratación y no serán sobrescritos por este Excel.</div>
+      <div class="g323-kpis"><div class="g323-kpi"><small>Total base</small><b>{{total}}</b></div><div class="g323-kpi"><small>Formato</small><b><i class="bi bi-file-earmark-excel"></i></b></div><div class="g323-kpi"><small>Protegidos</small><b>8</b></div></div>
+      <form method="post" enctype="multipart/form-data" class="g323-form"><label><i class="bi bi-cloud-arrow-up"></i> Plantilla general Excel</label><input class="form-control mt-1" type="file" name="archivo" accept=".xlsx,.xlsm" required><div class="small text-muted fw-bold mt-1">Columnas: DNI, Trabajador, Empresa, Cargo, Planilla, Estado y datos personales.</div><button class="g323-btn mt-2"><i class="bi bi-upload"></i> Cargar base general</button></form>
+      <a class="g323-outline" href="{{url_for('plantilla_trabajadores')}}"><i class="bi bi-download"></i> Descargar plantilla general</a>
+      <form method="get" class="g323-form"><label>Buscar trabajador</label><div class="d-flex gap-2"><input class="form-control" name="q" value="{{q}}" placeholder="DNI, nombre o empresa"><button class="g323-btn" style="width:48px"><i class="bi bi-search"></i></button></div></form>
+      <div class="g323-section">Últimos registros</div><div class="g323-table"><table><thead><tr><th>DNI</th><th>Trabajador</th><th>Empresa</th><th>Cargo / Planilla</th><th>Estado</th></tr></thead><tbody>{% for t in trabajadores %}<tr><td>{{t.dni}}</td><td><b>{{t.trabajador or '-'}}</b><br><small>{{t.fuente_modulo or 'central'}}</small></td><td>{{t.empresa or '-'}}</td><td>{{t.cargo or '-'}}<br><small>{{t.planilla or '-'}}</small></td><td><span class="g323-status {{'off' if (t.estado or 'ACTIVO')|upper!='ACTIVO' else ''}}">{{t.estado or 'ACTIVO'}}</span></td></tr>{% else %}<tr><td colspan="5" class="text-center">Sin trabajadores.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body, trabajadores=trabajadores, total=total, q=q, title='Carga general de trabajadores')
+
+
+def modulo_trabajadores_329(modulo='general'):
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo administrador puede cargar trabajadores.', 'danger')
+        return redirect(url_for('home'))
+    modulo = str(modulo or 'general').lower(); info = _modulo_info_303(modulo)
+    if request.method == 'POST':
+        ins, upd, omi, err = _g323_import_workers(request.files.get('archivo'), modulo, 'EXCEL_GENERAL_MODULO')
+        msg = f'{info["titulo"]}: {ins} nuevos, {upd} actualizados y {omi} omitidos. No se modificaron condiciones laborales ni contractuales.'
+        flash(('Error: ' + err) if err else msg, 'danger' if err else 'success')
+        return redirect(url_for('modulo_trabajadores_303', modulo=modulo))
+    total = int(scalar('SELECT COUNT(*) AS c FROM trabajadores') or 0)
+    activos = int(scalar("SELECT COUNT(*) AS c FROM trabajadores WHERE UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO'") or 0)
+    ultimos = rows_to_dict(execute('''SELECT dni,trabajador,empresa,cargo,planilla,estado,fuente_modulo,actualizado_en,fecha_carga
+        FROM trabajadores ORDER BY COALESCE(actualizado_en,fecha_carga) DESC,id DESC LIMIT 40''', fetchall=True))
+    body = _g323_css() + r'''
+    <div class="g323-wrap"><div class="g323-app"><div class="g323-head"><a class="back" href="{{back_url}}"><i class="bi bi-chevron-left"></i></a><div><b>BASE GENERAL</b><small>{{info.titulo}}</small></div><i class="bi {{info.icon}} ico"></i></div><div class="g323-body">
+      <div class="g323-note g323-ok"><b>Una sola base de trabajadores.</b><br>Esta carga sirve para identificar al trabajador y autocompletar sus datos generales. Las condiciones de contratación se registran en Requerimiento, Postulantes y Datos del contrato.</div>
+      <div class="g323-kpis"><div class="g323-kpi"><small>Total</small><b>{{total}}</b></div><div class="g323-kpi"><small>Activos</small><b>{{activos}}</b></div><div class="g323-kpi"><small>Módulo</small><b><i class="bi {{info.icon}}"></i></b></div></div>
+      <form method="post" enctype="multipart/form-data" class="g323-form"><label>Excel general de trabajadores</label><input class="form-control mt-1" type="file" name="archivo" accept=".xlsx,.xlsm" required><button class="g323-btn mt-2"><i class="bi bi-cloud-arrow-up"></i> Cargar datos generales</button></form>
+      <a class="g323-outline" href="{{url_for('modulo_trabajadores_plantilla_303', modulo=modulo)}}"><i class="bi bi-file-earmark-excel"></i> Plantilla general {{info.titulo}}</a>
+      <div class="g323-section">Últimos trabajadores</div><div class="g323-table"><table><thead><tr><th>DNI / Trabajador</th><th>Empresa</th><th>Cargo / Planilla</th><th>Estado</th></tr></thead><tbody>{% for t in ultimos %}<tr><td>{{t.dni}}<br><b>{{t.trabajador or '-'}}</b></td><td>{{t.empresa or '-'}}</td><td>{{t.cargo or '-'}}<br><small>{{t.planilla or '-'}}</small></td><td><span class="g323-status {{'off' if (t.estado or 'ACTIVO')|upper!='ACTIVO' else ''}}">{{t.estado or 'ACTIVO'}}</span></td></tr>{% else %}<tr><td colspan="4">Sin trabajadores.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body, info=info, modulo=modulo, total=total, activos=activos, ultimos=ultimos,
+                       back_url=_modulo_config_url_303(modulo), title=f'Base general {info["titulo"]}')
+
+
+# Ajusta los textos de la configuracion de Contratacion sin eliminar sus otras opciones.
+_ct329_prev_config = app.view_functions.get('contratacion_config')
+def contratacion_config_329():
+    response = _ct329_prev_config() if _ct329_prev_config else contratacion_config_314()
+    try:
+        if request.method == 'GET' and hasattr(response, 'get_data'):
+            html = response.get_data(as_text=True)
+            old = 'La base TRABAJADORES solo detecta reingresantes. Use solo columnas base: DNI, TRABAJADOR, TIPO_TRABAJADOR, EMPRESA y ESTADO. Los campos amarillos no son obligatorios para esta carga.'
+            new = 'La base TRABAJADORES es general y solo identifica/autocompleta al trabajador. No incluye Área, Actividad ni condiciones contractuales; esos datos se seleccionan en Requerimiento, Postulantes y Datos del contrato.'
+            html = html.replace(old, new)
+            html = html.replace('Descargar plantilla Excel V315', 'Descargar plantilla general')
+            html = html.replace('Excel trabajadores activos / reingresantes', 'Excel general de trabajadores activos / reingresantes')
+            response.set_data(html)
+            response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('G329 texto configuracion contratacion:', e)
+    return response
+
+
+# Reemplazos finales activos.
+app.view_functions['cargar_base'] = cargar_base_329
+app.view_functions['modulo_trabajadores_303'] = modulo_trabajadores_329
+app.view_functions['contratacion_config'] = contratacion_config_329
+app.view_functions['contratacion_plantilla_excel_307'] = contratacion_plantilla_excel_307
+if 'contratacion_plantilla_trabajadores' in app.view_functions:
+    app.view_functions['contratacion_plantilla_trabajadores'] = contratacion_plantilla_excel_307
+
+# ===================== FIN PATCH 329 =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
