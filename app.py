@@ -16593,6 +16593,368 @@ app.view_functions['contratacion_firma_bio'] = contratacion_firma_bio_316
 
 # ===================== FIN PATCH CONTRATACIÓN 316 OMAR =====================
 
+# ===================== PATCH CONTRATACIÓN 317 - INTERFAZ CLÁSICA =====================
+# Unifica visualmente todos los submódulos de contratación con el estilo clásico
+# del Tareo Móvil: tipografía tradicional, pestañas blancas/verdes, cabecera verde,
+# barra flotante de acciones, tarjetas compactas e iconografía lineal.
+
+
+def _ct317_classic_css():
+    return r"""
+    <style id="ct317-classic-skin">
+      body.ct317-page{background:#fff!important;font-family:Arial,Helvetica,sans-serif!important;color:#21472a!important}
+      body.ct317-page .shell{width:100%!important;max-width:430px!important;margin:0 auto!important;padding:6px 8px 24px!important}
+      .ct290-phone{width:100%!important;max-width:390px!important;margin:0 auto!important}
+      .ct290-phone:before{content:'TAREO MÓVIL – MÓDULO DE CONTRATACIÓN';display:block;text-align:center;color:#176b2d;font-family:Georgia,'Times New Roman',serif;font-size:16px;font-weight:900;line-height:1.08;letter-spacing:.15px;text-transform:uppercase;margin:10px 20px 13px}
+      .ct290-app{background:#fff!important;border:1px solid #d8ddd8!important;border-radius:12px!important;overflow:hidden!important;box-shadow:none!important}
+
+      .ct317-tabs-main{display:grid;grid-template-columns:repeat(3,1fr);background:#fff;border-top:4px solid #d6d6d6;margin:0!important;padding:0!important}
+      .ct317-tabs-main a{min-height:64px;padding:10px 4px 8px;display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none!important;color:#3d7d45!important;background:#fff!important;border-radius:7px 7px 0 0;font-size:10px;font-weight:950;line-height:1.12;text-transform:uppercase}
+      .ct317-tabs-main a i{display:block;font-size:18px;margin-right:4px}.ct317-tabs-main a.active{background:#2f773b!important;color:#fff!important;box-shadow:0 3px 7px rgba(0,0,0,.16)}
+      .ct317-tabs-sub{display:grid;grid-template-columns:repeat(4,1fr);background:#fff;margin:0!important;padding:0!important;border-bottom:1px solid #e5e9e5}
+      .ct317-tabs-sub a{min-height:43px;padding:8px 3px;display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none!important;color:#43804b!important;background:#fff!important;font-size:8.8px;font-weight:950;line-height:1.05;text-transform:uppercase}.ct317-tabs-sub a.active{background:#2f773b!important;color:#fff!important}
+
+      .ct290-head{height:104px!important;min-height:104px!important;background:#2f773b!important;color:#fff!important;border-radius:0!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;position:relative!important;padding:13px 12px 27px!important}
+      .ct290-head>a:first-child{position:absolute!important;left:12px!important;top:16px!important;color:#fff!important;font-size:29px!important;line-height:1!important;text-decoration:none!important}
+      .ct290-head .ico{font-size:34px!important;line-height:1!important;margin:1px 0 7px!important;color:#fff!important}.ct290-head .ttl{font-size:11.2px!important;line-height:1.15!important;font-weight:950!important;color:#fff!important;text-transform:uppercase!important;letter-spacing:.15px!important;text-align:center!important;max-width:270px}
+      .ct316-headgear{left:auto!important;right:12px!important;top:14px!important;width:34px!important;height:34px!important;border:1px solid rgba(255,255,255,.75)!important;border-radius:999px!important;background:transparent!important;color:#fff!important;font-size:18px!important;display:grid!important;place-items:center!important}
+
+      .ct290-body{padding:0 8px 14px!important;background:#fff!important}
+      .ct317-flow-actions,.ct306-nav{position:relative!important;z-index:5!important;display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;background:#fff!important;margin:-22px 0 7px!important;padding:7px!important;min-height:48px!important;border-radius:8px!important;box-shadow:0 5px 13px rgba(0,0,0,.22)!important}
+      .ct317-flow-actions .ct306-btn,.ct317-flow-actions .ct306-outline,.ct306-nav .ct306-btn,.ct306-nav .ct306-outline{height:34px!important;min-height:34px!important;border-radius:7px!important;font-size:9.4px!important;line-height:1.05!important;padding:0 5px!important;box-shadow:none!important}
+      .ct306-btn,.ct290-btn{background:#2f773b!important;border-color:#2f773b!important;color:#fff!important}.ct306-outline,.ct290-outline{background:#fff!important;border-color:#2f773b!important;color:#2f773b!important}.ct306-dangerbtn{background:#fff!important;border-color:#b42318!important;color:#b42318!important}
+
+      .ct290-kpis{display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:0!important;margin:4px 0 7px!important;background:#2f773b!important;border-radius:3px!important;overflow:hidden!important}.ct290-kpi{background:#2f773b!important;color:#fff!important;border-radius:0!important;box-shadow:none!important;padding:5px 4px!important;border-right:1px solid rgba(255,255,255,.28)!important}.ct290-kpi:last-child{border-right:0!important}.ct290-kpi small{font-size:8px!important;line-height:1!important}.ct290-kpi b{font-size:12px!important;line-height:1.05!important;margin-top:2px!important}
+
+      .ct290-form,.ct290-card{background:#fff!important;border:1px solid #dfe7df!important;border-radius:9px!important;box-shadow:0 4px 10px rgba(0,0,0,.08)!important;padding:10px!important;margin:8px 0!important}.ct290-form label,.ct290-section,.ct316-card-title{color:#2f773b!important;font-size:10px!important;font-weight:950!important}
+      .ct290-form .form-control,.ct290-form .form-select,.ct290-search,.ct306-namebox{height:36px!important;border:1px solid #cfd9cf!important;border-radius:7px!important;background:#fff!important;color:#203329!important;font-size:11px!important;font-weight:850!important;box-shadow:none!important}.ct290-form .form-control:focus,.ct290-form .form-select:focus,.ct290-search:focus{border-color:#2f773b!important;box-shadow:0 0 0 3px rgba(47,119,59,.13)!important}.ct306-scan{height:36px!important;border-radius:7px!important;border-color:#2f773b!important;color:#2f773b!important;background:#fff!important}
+      .ct290-info,.ct306-docbox{background:#f4f8ff!important;border:1px solid #a9cbff!important;color:#07368a!important;border-radius:8px!important;padding:9px 10px!important;font-size:10px!important;line-height:1.35!important;font-weight:900!important;margin:8px 0!important}.ct306-lock,.ct316-lock{background:#fff2f2!important;border:1px solid #f5b4b4!important;color:#a31515!important;border-radius:8px!important;padding:9px 10px!important;font-size:10px!important;font-weight:950!important;line-height:1.35!important;margin:8px 0!important}.ct306-ok,.ct316-ok{background:#eef9f0!important;border:1px solid #9bd5a4!important;color:#176b2d!important;border-radius:8px!important;padding:9px 10px!important;font-size:10px!important;font-weight:950!important}.ct316-actions{gap:7px!important;margin:7px 0!important}.ct316-actions a{min-height:36px!important;height:36px!important;font-size:9.5px!important;border-radius:7px!important}
+
+      .ct290-tablewrap{border:1px solid #dfe4df!important;border-radius:8px!important;background:#fff!important;box-shadow:0 3px 8px rgba(0,0,0,.06)!important;margin:7px 0!important;scrollbar-color:#2f773b #e7ebe7!important}.ct290-table th{background:#f5f7f9!important;color:#0f2340!important;font-size:9px!important;font-weight:950!important;padding:7px 6px!important;border-bottom:1px solid #dfe4df!important}.ct290-table td{color:#24364b!important;font-size:9px!important;font-weight:750!important;padding:7px 6px!important;border-bottom:1px solid #edf0ed!important}.ct290-badge{border-radius:999px!important;font-size:7.8px!important;padding:4px 7px!important}.ct306-smalllink{color:#176b2d!important;font-size:9px!important}
+
+      .ct306-cam{border-radius:9px!important;border:1px dashed #7fbe8a!important;background:#f7faf7!important}.ct306-sign,.ct316-sign{border-radius:9px!important;border:1px dashed #2f773b!important;background:#fff!important}.ct316-sign-note,.ct306-muted,.ct316-file{font-size:8.8px!important;line-height:1.25!important}
+
+      .ct317-classic-toolbar{position:relative;z-index:5;display:grid;grid-template-columns:repeat(6,1fr);gap:2px;background:#fff;margin:-22px 8px 7px;padding:7px 5px;border-radius:8px;box-shadow:0 5px 13px rgba(0,0,0,.22)}.ct317-classic-toolbar a{height:36px;display:flex;align-items:center;justify-content:center;color:#2f773b!important;text-decoration:none!important;font-size:20px;border-right:1px solid #e4e8e4}.ct317-classic-toolbar a:last-child{border-right:0}
+      .ct317-statusbar{display:grid;grid-template-columns:repeat(4,1fr);align-items:center;height:23px;margin:0 8px 7px;background:#2f773b;color:#fff;border-radius:3px;font-size:8px;font-weight:950;text-align:center}.ct317-statusbar span{border-right:1px solid rgba(255,255,255,.28)}.ct317-statusbar span:last-child{border-right:0}
+      .ct317-menu-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:8px}.ct317-menu-grid a{min-height:68px;border:1px solid #dfe7df;border-radius:8px;background:#fff;color:#2f773b!important;text-decoration:none!important;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 4px 10px rgba(0,0,0,.08);font-size:8.8px;font-weight:950;line-height:1.08;padding:5px}.ct317-menu-grid a i{font-size:23px;margin-bottom:5px;color:#2f773b}.ct317-home-note{margin:8px;background:#fff;border:1px solid #dfe7df;border-radius:9px;box-shadow:0 4px 10px rgba(0,0,0,.08);padding:12px;text-align:center;color:#4b5f50;font-family:Georgia,'Times New Roman',serif;font-size:13px;line-height:1.45}.ct317-leaf{width:76px;height:76px;border-radius:70% 30% 70% 30%;background:linear-gradient(135deg,#ffe3c8,#eef4c7,#cbd9b6);opacity:.65;margin:14px auto 2px;transform:rotate(-20deg)}
+
+      @media(max-width:420px){body.ct317-page .shell{padding:4px 6px 20px!important}.ct290-phone{max-width:360px!important}.ct290-phone:before{font-size:15px;margin-left:14px;margin-right:14px}.ct317-tabs-main a{font-size:9px;min-height:58px}.ct317-tabs-sub a{font-size:8px}.ct317-classic-toolbar a{font-size:18px}.ct317-menu-grid a{min-height:64px;font-size:8.2px}.ct290-row3{grid-template-columns:1fr 1fr!important}.ct290-row3>*:last-child{grid-column:1/-1}}
+    </style>
+    <script id="ct317-classic-js">
+      document.addEventListener('DOMContentLoaded',function(){
+        document.body.classList.add('ct317-page');
+        document.querySelectorAll('.ct290-app').forEach(function(app){
+          var head=app.querySelector(':scope > .ct290-head');
+          var main=app.querySelector('.ct317-tabs-main');
+          var sub=app.querySelector('.ct317-tabs-sub');
+          if(head&&main&&main.parentElement!==app) app.insertBefore(main,head);
+          if(head&&sub&&sub.parentElement!==app) app.insertBefore(sub,head);
+        });
+      });
+    </script>"""
+
+
+def _ct317_tabs(current='', req_id=''):
+    current = str(current or '').lower()
+    top = [('requerimientos','clipboard2-plus','Requerimientos'),('postulantes','person-lines-fill','Postulantes'),('medica','heart-pulse','Médica')]
+    sub = [('induccion','mortarboard','Inducción'),('indumentaria','bag-check','Indumentaria'),('firma','pen','Firma'),('fotocheck','person-badge','Fotocheck')]
+    def item(step, icon, label):
+        try: href = _ct_step_url306(step, req_id)
+        except Exception: href = url_for('contratacion_home')
+        active = ' active' if current == step else ''
+        return f"<a class='{active.strip()}' href='{_ct_h306(href)}'><i class='bi bi-{icon}'></i><span>{_ct_h306(label)}</span></a>"
+    return "<div class='ct317-tabs-main'>" + ''.join(item(*x) for x in top) + "</div><div class='ct317-tabs-sub'>" + ''.join(item(*x) for x in sub) + "</div>"
+
+
+def _ct_nav306(current, req_id=''):
+    steps = ['requerimientos','postulantes','medica','induccion','indumentaria','firma','fotocheck']
+    labels = {'requerimientos':'Requerimientos','postulantes':'Postulantes','medica':'Médica','induccion':'Inducción','indumentaria':'Indumentaria','firma':'Firma','fotocheck':'Fotocheck'}
+    if current not in steps: return _ct317_tabs(current, req_id)
+    i = steps.index(current)
+    prev_html = f"<a class='ct306-outline' href='{_ct_step_url306(steps[i-1], req_id)}'><i class='bi bi-chevron-left'></i> {labels[steps[i-1]]}</a>" if i > 0 else f"<a class='ct306-outline' href='{url_for('contratacion_home')}'><i class='bi bi-house'></i> Inicio</a>"
+    if current == 'requerimientos' and (not req_id or ('_ct311_count_registros_req' in globals() and _ct311_count_registros_req(req_id) <= 0)):
+        next_html = "<a class='ct306-btn' href='#' onclick=\"alert('Primero realice al menos un pre-registro DNI / QR / código de barras.');return false;\"><i class='bi bi-lock-fill'></i> Postulantes</a>"
+    elif i < len(steps)-1:
+        next_html = f"<a class='ct306-btn' href='{_ct_step_url306(steps[i+1], req_id)}'>{labels[steps[i+1]]} <i class='bi bi-chevron-right'></i></a>"
+    else:
+        next_html = f"<a class='ct306-btn' href='{url_for('contratacion_home')}'>Finalizar <i class='bi bi-check-circle'></i></a>"
+    return _ct317_tabs(current, req_id) + f"<div class='ct317-flow-actions ct306-nav'>{prev_html}{next_html}</div>"
+
+
+_ct317_prev_css306 = _ct_css306
+def _ct_css306():
+    return _ct317_prev_css306() + _ct317_classic_css()
+
+
+def contratacion_home_317():
+    if not _is_admin_292(): return _deny_admin_292()
+    try: _ensure_contratacion_316()
+    except Exception:
+        try: _ensure_contratacion_313()
+        except Exception: _ensure_contratacion_306()
+    total_req = int(scalar('SELECT COUNT(*) AS c FROM contratacion_requerimientos') or 0)
+    abiertos = int(scalar("SELECT COUNT(*) AS c FROM contratacion_requerimientos WHERE UPPER(COALESCE(estado,'ABIERTO')) NOT IN ('CERRADO','CANCELADO','COMPLETO')") or 0)
+    total_post = int(scalar("SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE UPPER(COALESCE(estado,'')) <> 'PRE-REGISTRO'") or 0)
+    firmados = int(scalar("SELECT COUNT(*) AS c FROM contratacion_ingresos WHERE UPPER(COALESCE(firma_estado,'')) IN ('FIRMADO','OK','COMPLETO','APROBADO')") or 0)
+    docs = len(CONTRATACION_DOCS_CATALOGO_306) if 'CONTRATACION_DOCS_CATALOGO_306' in globals() else 0
+    body = _ct_css306() + r'''
+    <div class="ct290-phone"><div class="ct290-app ct317-home">
+      {{tabs|safe}}
+      <div class="ct290-head"><a href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div class="ico"><i class="bi bi-person-plus"></i></div><div class="ttl">Contrataciones</div></div>
+      <div class="ct290-body">
+        <div class="ct317-classic-toolbar">
+          <a href="{{url_for('contratacion_requerimientos')}}" title="Requerimientos"><i class="bi bi-list-check"></i></a><a href="{{url_for('contratacion_postulantes')}}" title="Postulantes"><i class="bi bi-search"></i></a><a href="{{url_for('contratacion_etapa', etapa='medica')}}" title="Evaluación médica"><i class="bi bi-heart-pulse"></i></a><a href="{{url_for('contratacion_firma_bio')}}" title="Firma"><i class="bi bi-pen"></i></a><a href="{{url_for('contratacion_config')}}" title="Configuraciones"><i class="bi bi-person-gear"></i></a><a href="{{url_for('contratacion_reportes')}}" title="Reportes"><i class="bi bi-graph-up-arrow"></i></a>
+        </div>
+        <div class="ct317-statusbar"><span>REQ. {{total_req}}</span><span>ABIERTOS {{abiertos}}</span><span>POST. {{total_post}}</span><span>FIRM. {{firmados}}</span></div>
+        <div class="ct317-home-note">Seleccione un módulo para continuar con el flujo de contratación.</div>
+        <div class="ct317-menu-grid">
+          <a href="{{url_for('contratacion_requerimientos')}}"><i class="bi bi-clipboard-plus"></i>REQUERIMIENTOS</a><a href="{{url_for('contratacion_postulantes')}}"><i class="bi bi-person-lines-fill"></i>POSTULANTES</a><a href="{{url_for('contratacion_etapa', etapa='medica')}}"><i class="bi bi-heart-pulse"></i>EVALUACIÓN MÉDICA</a><a href="{{url_for('contratacion_etapa', etapa='induccion')}}"><i class="bi bi-mortarboard"></i>INDUCCIÓN</a><a href="{{url_for('contratacion_etapa', etapa='indumentaria')}}"><i class="bi bi-bag-check"></i>INDUMENTARIA</a><a href="{{url_for('contratacion_firma_bio')}}"><i class="bi bi-pen"></i>FIRMA</a><a href="{{url_for('contratacion_etapa', etapa='fotocheck')}}"><i class="bi bi-person-badge"></i>FOTOCHECK</a><a href="{{url_for('contratacion_config')}}"><i class="bi bi-gear"></i>CONFIGURACIÓN</a><a href="{{url_for('contratacion_reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i>REPORTES</a>
+        </div>
+        <div class="ct306-ok"><i class="bi bi-file-earmark-word"></i> Plantillas Word configuradas: {{docs}} · Firmados: {{firmados}}</div><div class="ct317-leaf"></div>
+      </div>
+    </div></div>'''
+    return render_page(body, tabs=_ct317_tabs('', ''), total_req=total_req, abiertos=abiertos, total_post=total_post, firmados=firmados, docs=docs, title='Contrataciones')
+
+
+app.view_functions['contratacion_home'] = contratacion_home_317
+
+
+def _ct317_current_step():
+    endpoint = str(request.endpoint or '').lower()
+    path = str(request.path or '').lower()
+    if 'requerimiento' in endpoint or '/requerimientos' in path: return 'requerimientos'
+    if 'postulante' in endpoint or '/postulantes' in path: return 'postulantes'
+    if 'firma' in endpoint or '/firma' in path: return 'firma'
+    if 'etapa' in endpoint or '/etapa/' in path:
+        etapa = str((request.view_args or {}).get('etapa') or request.values.get('etapa') or '').lower()
+        if etapa in ('medica','induccion','indumentaria','fotocheck'): return etapa
+    modulo = str((request.view_args or {}).get('modulo') or '').lower()
+    return modulo if modulo in ('requerimientos','postulantes','medica','induccion','indumentaria','firma','fotocheck') else ''
+
+
+@app.after_request
+def _ct317_force_classic_skin(response):
+    try:
+        if request.path.startswith('/contratacion') and 'text/html' in (response.content_type or ''):
+            txt = response.get_data(as_text=True)
+            # Las pantallas de selección/configuración también reciben las pestañas clásicas.
+            if 'ct290-app' in txt and 'ct317-tabs-main' not in txt:
+                req_id = request.values.get('req') or request.values.get('requerimiento_id') or ''
+                tabs = _ct317_tabs(_ct317_current_step(), req_id)
+                txt = txt.replace('<div class="ct290-head">', tabs + '<div class="ct290-head">', 1)
+            if 'ct317-classic-skin' not in txt:
+                txt = txt.replace('</head>', _ct317_classic_css() + '</head>', 1)
+            response.set_data(txt)
+            response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('CT317 interfaz clásica:', e)
+    return response
+
+# ===================== FIN PATCH CONTRATACIÓN 317 =====================
+
+# ===================== PATCH 318 - INTERFAZ CLÁSICA GLOBAL TODOS LOS MÓDULOS =====================
+# Unifica visualmente Tareo, Asistencia, Transporte, Contratación, Boletas,
+# Vacaciones, Renovaciones, Horas Extras, Reportes, Configuraciones y accesos.
+
+
+def _g318_module_meta(path):
+    p = str(path or '/').lower()
+    if p.startswith('/horas-extras') or p.startswith('/exportar/horas-extras'):
+        return 'TAREO MÓVIL – MÓDULO HORAS EXTRAS', 'clock-history'
+    if p.startswith('/renovacion'):
+        return 'TAREO MÓVIL – MÓDULO RENOVACIONES', 'arrow-repeat'
+    if p.startswith('/boletas'):
+        return 'TAREO MÓVIL – BOLETAS DIGITALES', 'file-earmark-text'
+    if p.startswith('/vacaciones'):
+        return 'TAREO MÓVIL – MÓDULO VACACIONES', 'calendar-check'
+    if p.startswith('/contratacion'):
+        return 'TAREO MÓVIL – MÓDULO CONTRATACIÓN', 'person-plus'
+    if p.startswith('/transporte'):
+        return 'TAREO MÓVIL – MÓDULO TRANSPORTE', 'bus-front'
+    if p.startswith('/asistencia'):
+        return 'TAREO MÓVIL – MÓDULO ASISTENCIA', 'fingerprint'
+    if p.startswith('/documentos') or p.startswith('/firma'):
+        return 'TAREO MÓVIL – DOCUMENTOS Y FIRMAS', 'pen'
+    if p.startswith('/reportes') or p.startswith('/exportar'):
+        return 'TAREO MÓVIL – REPORTES', 'file-earmark-bar-graph'
+    if p.startswith('/configuraciones') or p.startswith('/configuracion'):
+        return 'TAREO MÓVIL – CONFIGURACIONES', 'gear'
+    if p.startswith('/sincronizacion'):
+        return 'TAREO MÓVIL – SINCRONIZACIÓN', 'arrow-repeat'
+    if p.startswith('/soporte'):
+        return 'TAREO MÓVIL – SOPORTE', 'headset'
+    if p.startswith('/acceso'):
+        return 'TAREO MÓVIL – ACCESO AL MÓDULO', 'shield-lock'
+    if p.startswith('/hojas') or p.startswith('/crear-hoja') or p.startswith('/hoja') or p.startswith('/tareo'):
+        return 'TAREO MÓVIL – GRUPO DE COSECHA', 'list-check'
+    if p == '/' or p.startswith('/home'):
+        return 'TAREO MÓVIL – PORTAL RR.HH.', 'grid'
+    return 'TAREO MÓVIL – PORTAL RR.HH.', 'grid'
+
+
+def _g318_classic_global_css():
+    return r'''
+<style id="g318-classic-global">
+:root{--g318-verde:#2f773b;--g318-verde2:#08763c;--g318-claro:#f8fff9;--g318-linea:#dce7de;--g318-texto:#21472a;--g318-gris:#66756a}
+body.g318-classic{background:#fff!important;color:var(--g318-texto)!important;font-family:Arial,Helvetica,sans-serif!important;overflow-x:hidden!important}
+body.g318-classic .app-bg{background:#fff!important;min-height:100vh!important}
+body.g318-classic .shell{width:100%!important;max-width:430px!important;margin:0 auto!important;padding:6px 8px 28px!important;background:#fff!important}
+body.g318-classic .phone-wrap,body.g318-classic .he-phone,body.g318-classic .bt291-phone,body.g318-classic .b300-phone,body.g318-classic .bol297-phone,body.g318-classic .bol298-phone,body.g318-classic .vac294-phone,body.g318-classic .ct290-phone,body.g318-classic .tr286-phone,body.g318-classic .tm-phone,body.g318-classic .tf-phone{width:100%!important;max-width:390px!important;margin-left:auto!important;margin-right:auto!important}
+body.g318-classic .g318-module-title{margin:10px 10px 13px!important;text-align:center!important;color:#166534!important;font-family:Georgia,'Times New Roman',serif!important;font-size:16px!important;line-height:1.08!important;font-weight:900!important;letter-spacing:.15px!important;text-transform:uppercase!important}
+body.g318-classic .g318-module-title i{display:block!important;font-family:'bootstrap-icons'!important;font-size:20px!important;margin-bottom:4px!important;color:#2f773b!important}
+body.g318-classic .header-title{color:#166534!important;font-family:Georgia,'Times New Roman',serif!important;font-size:16px!important;line-height:1.08!important;font-weight:900!important;letter-spacing:.15px!important;text-transform:uppercase!important;margin:10px 8px 13px!important}
+body.g318-classic .ct290-phone:before{display:none!important}
+
+/* Contenedores tipo aplicación */
+body.g318-classic :is(.page-card,.rr292-app,.bt291-app,.b300-app,.bol297-app,.bol298-app,.b304-app,.vac294-app,.he-app,.he-classic,.ct290-app,.tm-app,.tf-app,.tr279-app,.tr286-app,.mv283-app,.mv284-app,.rp288-app,.rp289-app,.cfg303-app){
+  width:100%!important;max-width:390px!important;margin:0 auto 10px!important;background:#fff!important;border:1px solid #d7ddd8!important;border-radius:12px!important;overflow:hidden!important;box-shadow:0 4px 13px rgba(0,0,0,.09)!important
+}
+
+/* Cabeceras verdes clásicas */
+body.g318-classic :is(.green-hero,.panel-green,.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head,.ct290-head,.tm-head,.tf-head,.tr279-head,.tr286-hero,.rt286-head,.cfg303-head){
+  background:#2f773b!important;color:#fff!important;border-radius:0!important;box-shadow:none!important
+}
+body.g318-classic :is(.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.ct290-head,.tm-head,.tf-head,.tr279-head,.rt286-head,.cfg303-head){min-height:82px!important;height:auto!important;padding:13px 48px!important;display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;position:relative!important}
+body.g318-classic .he-classic-head{min-height:116px!important;padding:13px 48px 18px!important}
+body.g318-classic .tr286-hero{min-height:116px!important;padding:13px 48px 18px!important;text-align:center!important}
+body.g318-classic :is(.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head,.ct290-head,.tm-head,.tf-head,.tr279-head,.tr286-hero,.rt286-head,.cfg303-head) :is(.ttl,.title,h1,h2,h3,h4){color:#fff!important;font-family:Arial,Helvetica,sans-serif!important;font-size:14px!important;line-height:1.1!important;font-weight:950!important;text-transform:uppercase!important;margin:0!important}
+body.g318-classic :is(.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head,.ct290-head,.tm-head,.tf-head,.tr279-head,.tr286-hero,.rt286-head,.cfg303-head) :is(.ico,.bus,.tr286-bus){color:#fff!important;font-size:29px!important;line-height:1!important;margin:0 0 6px!important}
+body.g318-classic :is(.back,.back-mini,.tr286-back,.cfg,.tr286-config){color:inherit!important}
+body.g318-classic :is(.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head,.ct290-head,.tm-head,.tf-head,.tr279-head,.tr286-hero,.rt286-head,.cfg303-head) :is(a.back,.back,.tr286-back){position:absolute!important;left:11px!important;top:50%!important;transform:translateY(-50%)!important;color:#fff!important;font-size:27px!important;text-decoration:none!important}
+body.g318-classic :is(.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head,.ct290-head,.tm-head,.tf-head,.tr279-head,.tr286-hero,.rt286-head,.cfg303-head) :is(.cfg,.tr286-config){position:absolute!important;right:9px!important;top:10px!important;color:#fff!important;border:1px solid rgba(255,255,255,.72)!important;background:transparent!important;border-radius:8px!important;padding:5px 7px!important;font-size:9px!important;font-weight:900!important;text-decoration:none!important}
+
+/* Cuerpos compactos */
+body.g318-classic :is(.rr292-body,.bt291-body,.b300-body,.bol297-body,.bol298-body,.b304-body,.vac294-body,.he-body,.he-classic-body,.ct290-body,.tm-body,.tf-body,.tr279-body,.tr286-body,.rt286-body,.cfg303-body){padding:10px!important;background:#fff!important}
+
+/* Pestañas clásicas blancas / verde activo */
+body.g318-classic :is(.tab-main,.subtabs,.b300-tabs,.bol297-tabs,.bol298-tabs,.ct317-tabs-main,.ct317-tabs-sub){background:#fff!important;border-color:#d6d6d6!important;box-shadow:none!important}
+body.g318-classic :is(.tab-main,.subtabs,.b300-tabs,.bol297-tabs,.bol298-tabs,.ct317-tabs-main,.ct317-tabs-sub) a{background:#fff!important;color:#3d7d45!important;border-radius:6px 6px 0 0!important;font-size:9px!important;font-weight:950!important;text-transform:uppercase!important;box-shadow:none!important}
+body.g318-classic :is(.tab-main,.subtabs,.b300-tabs,.bol297-tabs,.bol298-tabs,.ct317-tabs-main,.ct317-tabs-sub) a.active{background:#2f773b!important;color:#fff!important;box-shadow:0 3px 7px rgba(0,0,0,.15)!important}
+
+/* Menús: tarjetas blancas con iconos verdes, como interfaz clásica */
+body.g318-classic :is(.tile,.rr292-tile,.bt291-tile,.he-menu-card,.tr286-tile,.tm-tile,.tf-tile,.ct317-menu-grid a,.b300-type,.bol297-tile,.bol298-tile,.vac294-action,.vac294-btn-card){
+  background:#fff!important;color:#2f773b!important;border:1px solid #dce7de!important;border-radius:8px!important;box-shadow:0 4px 10px rgba(0,0,0,.09)!important;min-height:67px!important;height:auto!important;text-decoration:none!important;padding:6px!important;font-family:Arial,Helvetica,sans-serif!important;font-size:8.8px!important;font-weight:950!important;line-height:1.08!important;text-align:center!important
+}
+body.g318-classic :is(.tile,.rr292-tile,.bt291-tile,.he-menu-card,.tr286-tile,.tm-tile,.tf-tile,.ct317-menu-grid a,.b300-type,.bol297-tile,.bol298-tile,.vac294-action,.vac294-btn-card) i{color:#2f773b!important;font-size:22px!important;margin-bottom:4px!important}
+body.g318-classic :is(.tile,.rr292-tile,.bt291-tile,.he-menu-card,.tr286-tile,.tm-tile,.tf-tile,.ct317-menu-grid a,.b300-type,.bol297-tile,.bol298-tile) :is(.lbl,.sub,span,small){color:#2f773b!important;font-weight:900!important}
+body.g318-classic .top-actions{gap:7px!important;margin-top:9px!important}
+body.g318-classic .top-actions .tile{width:72px!important;min-height:66px!important}
+
+/* Barra flotante de acciones */
+body.g318-classic :is(.toolstrip,.ct317-classic-toolbar,.b300-actions,.rr292-actions,.vac294-actions,.he-actions){background:#fff!important;border:1px solid #e2e8e3!important;border-radius:8px!important;box-shadow:0 5px 13px rgba(0,0,0,.18)!important;padding:6px!important;gap:5px!important}
+body.g318-classic :is(.toolstrip,.ct317-classic-toolbar) :is(a,button){color:#2f773b!important;background:transparent!important;border-color:#dfe7df!important;font-size:19px!important}
+
+/* KPIs en franja verde compacta */
+body.g318-classic :is(.info-bar,.ct317-statusbar,.rr292-kpis,.bt291-kpis,.bt296-kpis,.b300-kpis3,.b300-kpis4,.vac294-kpis,.he-kpis,.he-mini-kpis,.tr286-kpis,.rt286-kpis){gap:4px!important;margin:7px 0!important}
+body.g318-classic :is(.rr292-kpi,.bt291-kpi,.bt296-kpi,.b300-kpi,.vac294-kpi,.he-kpi,.he-mini-kpi,.tr286-kpi,.rt286-kpi){background:#2f773b!important;color:#fff!important;border:0!important;border-radius:4px!important;box-shadow:none!important;padding:6px 3px!important;min-height:45px!important;text-align:center!important}
+body.g318-classic :is(.rr292-kpi,.bt291-kpi,.bt296-kpi,.b300-kpi,.vac294-kpi,.he-kpi,.he-mini-kpi,.tr286-kpi,.rt286-kpi) :is(small,b,em,span){color:#fff!important;font-style:normal!important}
+body.g318-classic :is(.rr292-kpi,.bt291-kpi,.bt296-kpi,.b300-kpi,.vac294-kpi,.he-kpi,.he-mini-kpi,.tr286-kpi,.rt286-kpi) small{font-size:8px!important;font-weight:900!important}
+body.g318-classic :is(.rr292-kpi,.bt291-kpi,.bt296-kpi,.b300-kpi,.vac294-kpi,.he-kpi,.he-mini-kpi,.tr286-kpi,.rt286-kpi) b{font-size:16px!important;line-height:1.05!important;font-weight:950!important}
+
+/* Formularios y tarjetas */
+body.g318-classic :is(.floating-card,.worker-card,.rr292-form,.bt291-form,.bt291-filter,.bt296-card,.b300-card,.bol297-card,.bol298-card,.b304-card,.vac294-form,.vac294-card,.vac294-period,.he-form,.he-card,.he-operativo,.ct290-form,.ct306-card,.tr286-info,.rt286-form,.rt286-upload,.cfg303-card){background:#fff!important;border:1px solid #dce7de!important;border-radius:9px!important;box-shadow:0 3px 9px rgba(0,0,0,.07)!important;padding:9px!important;margin:7px 0!important}
+body.g318-classic :is(label,.form-label){color:#176a35!important;font-size:10px!important;font-weight:950!important;margin-bottom:3px!important}
+body.g318-classic :is(.form-control,.form-select){height:35px!important;min-height:35px!important;border:1px solid #cfdad1!important;border-radius:7px!important;background:#fff!important;color:#1f3d27!important;font-size:11px!important;font-weight:800!important;box-shadow:none!important;padding:5px 8px!important}
+body.g318-classic textarea.form-control{height:auto!important;min-height:68px!important}
+body.g318-classic :is(.form-control,.form-select):focus{border-color:#2f773b!important;box-shadow:0 0 0 3px rgba(47,119,59,.16)!important}
+
+/* Botones */
+body.g318-classic :is(.btn-green,.rr292-btn,.bt291-btn,.b300-btn,.bol297-btn,.bol298-btn,.b304-btn,.vac294-btn,.he-btn,.rt286-btn,.ct290-btn,.ct306-btn){background:#2f773b!important;border:1px solid #2f773b!important;color:#fff!important;border-radius:7px!important;min-height:36px!important;height:auto!important;font-size:10px!important;font-weight:950!important;box-shadow:none!important;text-decoration:none!important}
+body.g318-classic :is(.rr292-outline,.bt291-outline,.b300-outline,.bol297-outline,.bol298-outline,.b304-outline,.vac294-outline,.he-outline,.ct290-outline,.ct306-outline){background:#fff!important;border:1px solid #2f773b!important;color:#2f773b!important;border-radius:7px!important;min-height:36px!important;height:auto!important;font-size:10px!important;font-weight:950!important;box-shadow:none!important;text-decoration:none!important}
+
+/* Mensajes */
+body.g318-classic :is(.alert,.rr292-info,.bt291-info,.bt296-help,.b300-info,.bol297-info,.bol298-info,.vac294-info,.he-note,.he-classic-note,.ct290-info,.ct306-info,.tr286-info,.rt286-help){border-radius:8px!important;font-size:10px!important;line-height:1.35!important;font-weight:850!important;padding:8px 9px!important;box-shadow:none!important}
+
+/* Secciones y textos */
+body.g318-classic :is(.rr292-section,.bt291-section,.bt296-card-title,.b300-section,.bol297-section,.bol298-section,.b304-section,.vac294-section,.he-section,.he-menu-title,.ct290-section,.rt286-title,.tr286-section){color:#166534!important;font-family:Georgia,'Times New Roman',serif!important;font-size:12px!important;line-height:1.1!important;font-weight:900!important;text-transform:uppercase!important;margin:10px 1px 7px!important}
+
+/* Tablas pequeñas y clásicas */
+body.g318-classic :is(.table-responsive,.bt291-tablewrap,.b300-tablewrap,.bol297-tablewrap,.bol298-tablewrap,.vac294-list,.he-tablewrap,.rt286-tablewrap){border:1px solid #dfe6e0!important;border-radius:7px!important;overflow:auto!important;background:#fff!important;box-shadow:none!important}
+body.g318-classic :is(table,.bt291-table,.b300-table,.bol297-table,.bol298-table,.vac294-table,.he-table,.rt286-table) th{background:#f3f6f3!important;color:#21472a!important;font-size:8.8px!important;font-weight:950!important;padding:6px!important;border-color:#dfe6e0!important;white-space:nowrap!important}
+body.g318-classic :is(table,.bt291-table,.b300-table,.bol297-table,.bol298-table,.vac294-table,.he-table,.rt286-table) td{background:#fff!important;color:#314d37!important;font-size:9.4px!important;font-weight:750!important;padding:6px!important;border-color:#edf1ed!important}
+
+/* Listados */
+body.g318-classic :is(.rr292-rowlink,.bt291-doc,.bt296-doc,.b300-doc,.b300-row,.bol297-doc,.bol298-doc,.vac294-period,.he-card,.ct306-row){background:#fff!important;border:1px solid #dfe7df!important;border-radius:8px!important;box-shadow:0 3px 8px rgba(0,0,0,.06)!important;margin:6px 0!important;color:#21472a!important}
+body.g318-classic :is(.rr292-rowlink,.bt291-doc,.bt296-doc,.b300-doc,.b300-row,.bol297-doc,.bol298-doc,.vac294-period,.he-card,.ct306-row) i{color:#2f773b!important}
+
+/* Gráficas / firma / cámaras */
+body.g318-classic :is(canvas,.bt296-canvas,.rr292-canvas,.he-canvas){max-width:100%!important;border-radius:8px!important}
+body.g318-classic :is(.rr292-video,.rr292-photo,.ct306-video,.ct306-photo){border:1px solid #cfe0d2!important;border-radius:8px!important;background:#f8fff9!important}
+
+/* Home clásico */
+body.g318-classic .desktop-grid{display:block!important}
+body.g318-classic .desk-panel{display:none!important}
+body.g318-classic .green-hero{min-height:150px!important;padding:11px 14px 25px!important}
+body.g318-classic .avatar{width:66px!important;height:66px!important;font-size:35px!important;margin:8px auto 2px!important;box-shadow:0 5px 13px rgba(0,0,0,.15)!important}
+body.g318-classic .white-input{height:31px!important;border-radius:7px!important;box-shadow:0 4px 10px rgba(0,0,0,.15)!important}
+body.g318-classic .leaf,body.g318-classic .ct317-leaf{width:72px!important;height:72px!important;margin:13px auto 2px!important;opacity:.55!important}
+body.g318-classic .bottom-sync{position:static!important;text-align:left!important;margin:8px 3px!important;font-size:8px!important}
+body.g318-classic .bottom-out{position:static!important;display:block!important;text-align:right!important;margin:-31px 4px 6px!important}
+
+/* Horas extras: procesos también clásicos */
+body.g318-classic .he-process-head{border-bottom:1px solid #dfe7df!important;padding-bottom:7px!important}
+body.g318-classic .he-process-head h2{font-family:Georgia,'Times New Roman',serif!important;font-size:13px!important;color:#166534!important}
+body.g318-classic .he-choice button{border-radius:7px!important;font-size:10px!important}
+body.g318-classic .he-choice button.active{background:#2f773b!important;color:#fff!important}
+body.g318-classic .he-total-pay{background:#2f773b!important;border-radius:7px!important}
+
+@media(max-width:420px){
+ body.g318-classic .shell{padding:4px 6px 22px!important}
+ body.g318-classic .g318-module-title,body.g318-classic .header-title{font-size:15px!important;margin:8px 6px 11px!important}
+ body.g318-classic :is(.page-card,.rr292-app,.bt291-app,.b300-app,.bol297-app,.bol298-app,.b304-app,.vac294-app,.he-app,.he-classic,.ct290-app,.tm-app,.tf-app,.tr279-app,.tr286-app,.cfg303-app){max-width:360px!important}
+ body.g318-classic :is(.rr292-body,.bt291-body,.b300-body,.bol297-body,.bol298-body,.b304-body,.vac294-body,.he-body,.he-classic-body,.ct290-body,.tr286-body,.rt286-body){padding:8px!important}
+ body.g318-classic :is(.rr292-grid3,.bt291-grid3,.he-menu-grid,.tr286-grid3,.ct317-menu-grid){gap:6px!important}
+ body.g318-classic :is(.tile,.rr292-tile,.bt291-tile,.he-menu-card,.tr286-tile,.ct317-menu-grid a){min-height:62px!important;font-size:8px!important}
+}
+</style>
+<script id="g318-classic-global-js">
+(function(){
+  function aplicar(){
+    document.body.classList.add('g318-classic');
+    document.querySelectorAll('button,a').forEach(function(el){
+      if(el.querySelector('.bi') && !el.getAttribute('aria-label')){
+        var t=(el.textContent||'').trim().replace(/\s+/g,' ');
+        if(t) el.setAttribute('aria-label',t);
+      }
+    });
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',aplicar);else aplicar();
+})();
+</script>
+'''
+
+
+@app.after_request
+def _g318_force_classic_all_modules(response):
+    try:
+        ctype = str(response.content_type or '').lower()
+        if 'text/html' not in ctype or not session.get('usuario'):
+            return response
+        if request.endpoint in ('static','manifest','service_worker') or request.path.startswith('/static/'):
+            return response
+        txt = response.get_data(as_text=True)
+        if not txt or '<html' not in txt.lower():
+            return response
+        if 'g318-classic-global' not in txt:
+            title, icon = _g318_module_meta(request.path)
+            titulo_html = '<h1 class="g318-module-title"><i class="bi bi-' + icon + '"></i>' + title + '</h1>'
+            # Tareo ya puede traer su propio título clásico; en portada se fuerza título global.
+            tiene_titulo = bool(re.search(r'class=["\'][^"\']*header-title', txt, flags=re.I))
+            if (request.path == '/' or not tiene_titulo) and 'g318-module-title' not in txt:
+                txt = txt.replace('<main class="shell">', '<main class="shell">' + titulo_html, 1)
+            skin = _g318_classic_global_css()
+            if '</body>' in txt:
+                txt = txt.replace('</body>', skin + '</body>', 1)
+            else:
+                txt += skin
+            response.set_data(txt)
+            response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('G318 interfaz clásica global:', e)
+    return response
+
+# ===================== FIN PATCH 318 INTERFAZ CLÁSICA GLOBAL =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
