@@ -17215,6 +17215,253 @@ def _g319_compact_all_modules(response):
 
 # ===================== FIN PATCH 319 =====================
 
+# ===================== PATCH 320 - CONFIGURACIÓN SUPERIOR Y DISEÑO ALINEADO =====================
+# 1) Todas las cargas/importaciones/plantillas se abren desde Config. arriba a la derecha.
+# 2) Se elimina el acordeón inferior V319 y el efecto de barra blanca atravesando la pantalla.
+# 3) Login de todos los módulos alineado como una sola tarjeta clásica y compacta.
+# 4) Encabezados, formularios y contenedores mantienen el mismo ancho y centrado.
+
+
+def _g320_polished_skin():
+    return r'''
+<style id="g320-polished-ui">
+:root{--g320-green:#2f773b;--g320-green-dark:#176a35;--g320-line:#d8e4da;--g320-soft:#f7fbf7}
+html,body{max-width:100%;overflow-x:hidden!important;background:#fff!important}
+body.g320-ui .app-bg{min-height:100vh;background:#fff!important}
+body.g320-ui .shell{width:100%!important;max-width:390px!important;margin:0 auto!important;padding:8px 9px 26px!important}
+body.g320-ui :is(.phone-wrap,.he-phone,.bt291-phone,.b300-phone,.bol297-phone,.bol298-phone,.vac294-phone,.ct290-phone,.tr286-phone,.tm-phone,.tf-phone,.report-wrap){width:100%!important;max-width:360px!important;margin-left:auto!important;margin-right:auto!important}
+body.g320-ui :is(.page-card,.rr292-app,.bt291-app,.b300-app,.bol297-app,.bol298-app,.b304-app,.vac294-app,.he-app,.he-classic,.ct290-app,.tm-app,.tf-app,.tr279-app,.tr286-app,.mv283-app,.mv284-app,.rp288-app,.rp289-app,.cfg303-app){width:100%!important;max-width:360px!important;margin-left:auto!important;margin-right:auto!important}
+body.g320-ui .g318-module-title,body.g320-ui .header-title,body.g320-ui .ct290-phone::before{display:none!important;content:none!important;height:0!important;margin:0!important;padding:0!important}
+body.g320-ui .g319-config-box{display:none!important}
+
+/* Cabeceras rectas, centradas y sin elementos escapándose del módulo */
+body.g320-ui :is(.green-hero,.panel-green,.tr286-hero,.tr279-hero,.ct290-head,.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head,.tm-head,.tf-head,.cfg303-head){position:relative!important;width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important;overflow:hidden!important}
+body.g320-ui :is(.tr286-body,.tr279-body,.ct290-body,.rr292-body,.bt291-body,.b300-body,.bol297-body,.bol298-body,.b304-body,.vac294-body,.he-body,.he-classic-body,.tm-body,.tf-body,.cfg303-body){width:100%!important;max-width:100%!important;padding-left:9px!important;padding-right:9px!important}
+
+/* Botón Config. siempre dentro de la esquina superior derecha */
+body.g320-ui .g320-config-trigger{position:absolute!important;right:10px!important;top:10px!important;left:auto!important;bottom:auto!important;z-index:40!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:3px!important;width:auto!important;min-width:0!important;max-width:max-content!important;height:27px!important;min-height:27px!important;margin:0!important;padding:2px 3px!important;border:0!important;border-radius:4px!important;background:transparent!important;color:#fff!important;box-shadow:none!important;text-decoration:none!important;font-family:Arial,sans-serif!important;font-size:9px!important;line-height:1!important;font-weight:900!important;white-space:nowrap!important;cursor:pointer!important}
+body.g320-ui .g320-config-trigger i{font-size:13px!important;color:inherit!important;margin:0!important}
+body.g320-ui .g320-config-trigger:hover{background:rgba(255,255,255,.12)!important;color:#fff!important}
+body.g320-ui :is(.green-top,.tr286-hero,.tr279-hero,.ct290-head,.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head)>.g320-config-trigger{color:#fff!important}
+
+/* Ventana de configuración superior */
+body.g320-ui .g320-config-overlay{position:fixed!important;inset:0!important;z-index:99990!important;display:none!important;align-items:flex-start!important;justify-content:center!important;padding:54px 12px 18px!important;background:rgba(15,38,21,.46)!important;backdrop-filter:blur(2px)}
+body.g320-ui .g320-config-overlay.open{display:flex!important}
+body.g320-ui .g320-config-panel{width:min(360px,calc(100vw - 24px))!important;max-height:calc(100vh - 74px)!important;overflow:auto!important;background:#fff!important;border:1px solid #bed3c2!important;border-radius:12px!important;box-shadow:0 18px 45px rgba(0,0,0,.28)!important}
+body.g320-ui .g320-config-head{position:sticky!important;top:0!important;z-index:2!important;display:grid!important;grid-template-columns:34px 1fr 34px!important;align-items:center!important;min-height:54px!important;padding:7px 8px!important;background:var(--g320-green)!important;color:#fff!important}
+body.g320-ui .g320-config-head b{text-align:center!important;font-family:Georgia,'Times New Roman',serif!important;font-size:13px!important;line-height:1.1!important;text-transform:uppercase!important}
+body.g320-ui .g320-config-head i{font-size:19px!important;text-align:center!important}
+body.g320-ui .g320-config-close{width:32px!important;height:32px!important;border:0!important;border-radius:7px!important;background:rgba(255,255,255,.14)!important;color:#fff!important;font-size:22px!important;line-height:30px!important;font-weight:900!important}
+body.g320-ui .g320-config-menu{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;padding:10px!important;background:#f8fbf8!important}
+body.g320-ui .g320-config-item,body.g320-ui .g320-config-menu>a,body.g320-ui .g320-config-menu>button{position:static!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;width:100%!important;min-width:0!important;min-height:66px!important;margin:0!important;padding:8px 6px!important;border:1px solid #cdddcf!important;border-radius:9px!important;background:#fff!important;color:var(--g320-green-dark)!important;box-shadow:0 3px 8px rgba(0,0,0,.06)!important;text-align:center!important;text-decoration:none!important;font-family:Arial,sans-serif!important;font-size:9px!important;line-height:1.15!important;font-weight:900!important;white-space:normal!important;overflow:visible!important}
+body.g320-ui .g320-config-item i,body.g320-ui .g320-config-menu>a i,body.g320-ui .g320-config-menu>button i{font-size:21px!important;color:var(--g320-green)!important;margin:0 0 5px!important}
+body.g320-ui .g320-config-form{grid-column:1/-1!important;background:#fff!important;border:1px solid #cdddcf!important;border-radius:9px!important;padding:9px!important;margin:0!important;box-shadow:none!important}
+body.g320-ui .g320-config-form :is(.form-control,.form-select){width:100%!important}
+body.g320-ui .g320-config-empty{grid-column:1/-1!important;text-align:center!important;padding:18px 10px!important;color:#56705c!important;font-size:11px!important;font-weight:800!important}
+body.g320-ui.g320-config-open{overflow:hidden!important}
+
+/* Login por módulo: encabezado y formulario como una sola pieza alineada */
+body.g320-module-login .shell,body.g320-global-login .shell{max-width:382px!important;padding:10px 10px 24px!important}
+body.g320-module-login .phone-wrap,body.g320-global-login .phone-wrap{width:100%!important;max-width:350px!important;margin:0 auto!important}
+body.g320-module-login .green-hero,body.g320-global-login .green-hero{width:100%!important;min-height:218px!important;height:auto!important;margin:0!important;padding:12px 16px 20px!important;border-radius:12px 12px 0 0!important;box-shadow:0 5px 14px rgba(0,0,0,.12)!important;overflow:hidden!important}
+body.g320-module-login .green-top,body.g320-global-login .green-top{height:25px!important;min-height:25px!important;align-items:center!important}
+body.g320-module-login .splash-logo,body.g320-global-login .splash-logo{width:94px!important;height:94px!important;margin:8px auto 8px!important;border-width:5px!important;font-size:43px!important;box-shadow:0 5px 14px rgba(0,0,0,.18)!important}
+body.g320-module-login .splash-title,body.g320-global-login .splash-title{margin:8px 0 1px!important;font-family:Arial,sans-serif!important;font-size:18px!important;line-height:1.05!important;font-weight:950!important;color:#fff!important;text-align:center!important}
+body.g320-module-login .login-name,body.g320-global-login .login-name{font-size:11px!important;line-height:1.1!important;text-align:center!important;color:#fff!important}
+body.g320-module-login .floating-card.login-form,body.g320-global-login .floating-card.login-form{width:100%!important;max-width:none!important;margin:0!important;padding:10px!important;border:1px solid #d8e4da!important;border-top:0!important;border-radius:0 0 12px 12px!important;box-shadow:0 7px 16px rgba(0,0,0,.11)!important;background:#fff!important}
+body.g320-module-login .role-toggle,body.g320-global-login .role-toggle{grid-template-columns:1fr 1fr!important;gap:7px!important;margin-bottom:8px!important}
+body.g320-module-login .role-toggle label,body.g320-global-login .role-toggle label{display:flex!important;align-items:center!important;justify-content:center!important;min-height:43px!important;margin:0!important;padding:4px!important;border:1px solid #d7e2d9!important;border-radius:8px!important;background:#fff!important}
+body.g320-module-login .role-toggle span,body.g320-global-login .role-toggle span{display:flex!important;align-items:center!important;justify-content:center!important;width:100%!important;min-height:34px!important;padding:6px!important;border-radius:7px!important;font-size:10px!important;font-weight:950!important}
+body.g320-module-login .form-control,body.g320-global-login .form-control{width:100%!important;height:36px!important;margin-bottom:7px!important;border-radius:7px!important;font-size:12px!important}
+body.g320-module-login .login-form .btn,body.g320-global-login .login-form .btn{width:100%!important;min-height:39px!important;height:39px!important;margin-top:2px!important;border-radius:7px!important;font-size:11px!important}
+body.g320-module-login .login-form .text-muted,body.g320-global-login .login-form .text-muted{margin:7px 4px 1px!important;font-size:9px!important;line-height:1.35!important;color:#5b6f60!important}
+
+/* Tablas y formularios no rompen el ancho */
+body.g320-ui :is(.ct290-tablewrap,.he-tablewrap,.bt291-tablewrap,.b300-tablewrap,.bol297-tablewrap,.bol298-tablewrap,.rt286-tablewrap,.table-responsive){max-width:100%!important;overflow-x:auto!important}
+body.g320-ui :is(form,.floating-card,.worker-card){max-width:100%!important}
+@media(max-width:380px){
+ body.g320-ui .shell{max-width:100%!important;padding:6px 7px 22px!important}
+ body.g320-ui :is(.phone-wrap,.he-phone,.bt291-phone,.b300-phone,.bol297-phone,.bol298-phone,.vac294-phone,.ct290-phone,.tr286-phone,.tm-phone,.tf-phone,.report-wrap),body.g320-ui :is(.page-card,.rr292-app,.bt291-app,.b300-app,.bol297-app,.bol298-app,.b304-app,.vac294-app,.he-app,.he-classic,.ct290-app,.tm-app,.tf-app,.tr279-app,.tr286-app,.mv283-app,.mv284-app,.rp288-app,.rp289-app,.cfg303-app){max-width:calc(100vw - 14px)!important}
+ body.g320-ui .g320-config-menu{grid-template-columns:1fr 1fr!important;gap:7px!important;padding:8px!important}
+}
+</style>
+<script id="g320-polished-js">
+(function(){
+ 'use strict';
+ const upper=v=>String(v||'').replace(/\s+/g,' ').trim().toUpperCase();
+ const path=location.pathname.toLowerCase();
+ const isConfigPage=/(?:\/config(?:uracion|uraciones)?(?:\/|$)|\/datos-maestros(?:\/|$)|\/configuracion-modulo(?:\/|$))/.test(path);
+ const isAdmin=document.body.classList.contains('g320-admin');
+ const headerSelector='.tr286-hero,.tr279-hero,.ct290-head,.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head,.tm-head,.tf-head,.cfg303-head,.green-hero,.panel-green';
+ function header(){return document.querySelector(headerSelector);}
+ function isConfigText(el){
+   const t=upper(el.textContent),h=String(el.getAttribute&&el.getAttribute('href')||el.getAttribute&&el.getAttribute('action')||'').toLowerCase();
+   const words=/(CONFIGUR|AJUSTES?|DATOS MAESTROS?|MAESTRO DE|PLANTILLAS?|CARGA MASIVA|(?:^|\s)CARGAS(?:\s|$)|CARGAR (?:BASE|ARCHIVO|TRABAJADORES|ACTIVIDADES|UBIGEO)|IMPORTAR|SUBIR (?:ARCHIVO|BASE|EXCEL|PLANTILLA)|FORMATO BASE|FORMATO LLENADO|DESCARGAR PLANTILLA|SINCRONIZAR MAESTROS)/;
+   const routes=/(\/config(?:\/|$)|\/configuracion|\/datos-maestros|\/configuracion-modulo|carga-masiva|carga-trabajadores|cargar-base|cargar-actividades|importar|\/subir(?:\/|$|-)|\/plantilla(?:\/|$|-)|formato\/.*plantilla|datos-contrato-masivo)/;
+   return words.test(t)||routes.test(h);
+ }
+ function markTrigger(el){
+   if(!el)return null;
+   el.classList.add('g320-config-trigger');
+   if(!el.querySelector('i'))el.insertAdjacentHTML('afterbegin','<i class="bi bi-gear"></i>');
+   let txt=upper(el.textContent);
+   if(!txt.includes('CONFIG'))el.appendChild(document.createTextNode(' Config.'));
+   el.setAttribute('role','button');el.setAttribute('aria-label','Abrir configuración y cargas del módulo');
+   return el;
+ }
+ function existingTrigger(){
+   const h=header(); if(!h)return null;
+   const candidates=[...h.querySelectorAll('a,button,span')];
+   return candidates.find(e=>/CONFIG/.test(upper(e.textContent))||String(e.getAttribute('href')||'').toLowerCase().includes('/config'))||null;
+ }
+ function fallbackUrl(){
+   if(path.startsWith('/transporte'))return '/transporte/config';
+   if(path.startsWith('/contratacion'))return '/contratacion/config';
+   if(path.startsWith('/renovacion'))return '/renovacion/config';
+   if(path.startsWith('/vacaciones'))return '/vacaciones/config';
+   if(path.startsWith('/boletas')||path.startsWith('/boleta'))return '/configuraciones';
+   if(path.startsWith('/horas-extras')||path.startsWith('/horas_extras'))return '/configuraciones';
+   return '/configuraciones';
+ }
+ function buildOverlay(){
+   let o=document.querySelector('.g320-config-overlay');if(o)return o;
+   o=document.createElement('div');o.className='g320-config-overlay';
+   o.innerHTML='<section class="g320-config-panel" role="dialog" aria-modal="true" aria-label="Configuración y cargas"><div class="g320-config-head"><i class="bi bi-gear"></i><b>Configuración y cargas</b><button type="button" class="g320-config-close" aria-label="Cerrar">×</button></div><div class="g320-config-menu"></div></section>';
+   document.body.appendChild(o);
+   o.addEventListener('click',e=>{
+     if(e.target===o||e.target.closest('.g320-config-close')){closeOverlay();return;}
+     if(e.target.closest('.g320-config-menu > a,.g320-config-menu > button'))setTimeout(closeOverlay,30);
+   });
+   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeOverlay();});
+   return o;
+ }
+ function openOverlay(e){if(e)e.preventDefault();const o=buildOverlay();o.classList.add('open');document.body.classList.add('g320-config-open');}
+ function closeOverlay(){const o=document.querySelector('.g320-config-overlay');if(o)o.classList.remove('open');document.body.classList.remove('g320-config-open');}
+ function cleanupParent(parent){
+   if(!parent||parent===document.body)return;
+   const meaningful=parent.querySelector('input,select,textarea,table,canvas,video,img');
+   if(!meaningful && !parent.textContent.trim())parent.style.display='none';
+ }
+ function addLinkClone(menu,el,label){
+   const a=document.createElement('a');a.className='g320-config-item';a.href=el&&el.getAttribute('href')?el.getAttribute('href'):fallbackUrl();
+   const icon=el&&el.querySelector('i')?el.querySelector('i').className:'bi bi-gear';
+   a.innerHTML='<i class="'+icon+'"></i><span>'+String(label||upper(el&&el.textContent)||'CONFIGURACIÓN GENERAL')+'</span>';
+   menu.appendChild(a);
+ }
+ function collectActions(menu,trigger){
+   const seen=new Set();
+   document.querySelectorAll('a[href]').forEach(el=>{
+     if(el===trigger||el.closest('.g320-config-overlay')||el.closest(headerSelector)||!isConfigText(el))return;
+     const href=el.getAttribute('href')||'',key='A|'+href+'|'+upper(el.textContent);if(seen.has(key))return;seen.add(key);
+     const parent=el.parentElement;el.classList.add('g320-config-item');menu.appendChild(el);cleanupParent(parent);
+   });
+   document.querySelectorAll('button').forEach(el=>{
+     if(el===trigger||el.closest('.g320-config-overlay')||el.closest(headerSelector)||el.closest('form')||!isConfigText(el))return;
+     const key='B|'+upper(el.textContent)+'|'+String(el.getAttribute('onclick')||'');if(seen.has(key))return;seen.add(key);
+     const parent=el.parentElement;el.classList.add('g320-config-item');menu.appendChild(el);cleanupParent(parent);
+   });
+   document.querySelectorAll('form').forEach(form=>{
+     if(form.closest('.g320-config-overlay')||form.closest(headerSelector))return;
+     const signature=upper(form.textContent)+' '+String(form.getAttribute('action')||'').toUpperCase();
+     if(!/(CARGA MASIVA|IMPORTAR|SUBIR (?:ARCHIVO|BASE|EXCEL|PLANTILLA)|CARGAR (?:BASE|ARCHIVO|TRABAJADORES|ACTIVIDADES|UBIGEO)|DESCARGAR PLANTILLA|DATOS MAESTROS)/.test(signature))return;
+     const key='F|'+String(form.getAttribute('action')||'')+'|'+signature.slice(0,90);if(seen.has(key))return;seen.add(key);
+     const parent=form.parentElement;form.classList.add('g320-config-form');menu.appendChild(form);cleanupParent(parent);
+   });
+   /* Solo agrega el enlace del engranaje cuando no existe ya una opción de configuración en el módulo. */
+   if(!menu.children.length && trigger)addLinkClone(menu,trigger,'Configuración general');
+   if(!menu.children.length){
+     if(isAdmin){const a=document.createElement('a');a.className='g320-config-item';a.href=fallbackUrl();a.innerHTML='<i class="bi bi-sliders"></i><span>Abrir configuración general</span>';menu.appendChild(a);}
+     else menu.innerHTML='<div class="g320-config-empty">No hay cargas o configuraciones disponibles para este acceso.</div>';
+   }
+ }
+ function setup(){
+   document.body.classList.add('g320-ui');
+   document.querySelectorAll('.g319-config-box,.g318-module-title').forEach(e=>e.remove());
+   if(isConfigPage)return;
+   const h=header();if(!h)return;
+   let trigger=existingTrigger();
+   if(!trigger && isAdmin){trigger=document.createElement('button');trigger.type='button';trigger.innerHTML='<i class="bi bi-gear"></i> Config.';h.appendChild(trigger);}
+   if(!trigger)return;
+   trigger=markTrigger(trigger);
+   const overlay=buildOverlay(),menu=overlay.querySelector('.g320-config-menu');menu.innerHTML='';collectActions(menu,trigger);
+   trigger.addEventListener('click',openOverlay);
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',setup);else setup();
+})();
+</script>
+'''
+
+
+# Quitar filtros anteriores que provocaban títulos/repeticiones y el acordeón inferior.
+try:
+    _g320_after = app.after_request_funcs.get(None, [])
+    app.after_request_funcs[None] = [
+        f for f in _g320_after
+        if getattr(f, '__name__', '') not in (
+            '_g318_force_classic_all_modules', '_ct317_force_classic_skin',
+            '_g319_compact_all_modules'
+        )
+    ]
+except Exception as _g320_err:
+    print('G320 limpiar filtros anteriores:', _g320_err)
+
+
+@app.after_request
+def _g320_presentable_all_modules(response):
+    try:
+        ctype = str(response.content_type or '').lower()
+        if 'text/html' not in ctype:
+            return response
+        if request.endpoint in ('static','manifest','service_worker') or request.path.startswith('/static/'):
+            return response
+        html = response.get_data(as_text=True)
+        if not html or '<html' not in html.lower():
+            return response
+
+        # Eliminar cualquier título exterior agregado por parches previos.
+        html = re.sub(
+            r'<h1\s+class=["\'][^"\']*g318-module-title[^"\']*["\'][^>]*>.*?</h1>',
+            '', html, flags=re.I|re.S
+        )
+
+        # Mantener la piel clásica de Contratación sin sus barras repetidas.
+        if request.path.startswith('/contratacion'):
+            html = re.sub(r"<div\s+class=['\"]ct317-tabs-main['\"]>.*?</div>", '', html, flags=re.I|re.S)
+            html = re.sub(r"<div\s+class=['\"]ct317-tabs-sub['\"]>.*?</div>", '', html, flags=re.I|re.S)
+            html = re.sub(r"<div\s+class=['\"]ct317-classic-toolbar['\"]>.*?</div>", '', html, flags=re.I|re.S)
+            if 'ct317-classic-skin' not in html:
+                html = html.replace('</head>', _ct317_classic_css() + '</head>', 1)
+
+        classes = ['g318-classic','g320-ui']
+        if session.get('rol') == 'admin' or session.get('module_role') == 'admin':
+            classes.append('g320-admin')
+        if request.path.startswith('/acceso/') or request.endpoint == 'modulo_acceso':
+            classes.append('g320-module-login')
+        if request.path in ('/login','/inicio') or request.endpoint in ('login','inicio'):
+            classes.append('g320-global-login')
+        class_text = ' '.join(classes) + ' '
+        if '<body class="' in html:
+            html = html.replace('<body class="', '<body class="' + class_text, 1)
+        elif "<body class='" in html:
+            html = html.replace("<body class='", "<body class='" + class_text, 1)
+        else:
+            html = re.sub(r'<body(\s|>)', '<body class="' + ' '.join(classes) + '"\\1', html, count=1, flags=re.I)
+
+        skin = ''
+        if 'g318-classic-global' not in html:
+            skin += _g318_classic_global_css()
+        if 'g320-polished-ui' not in html:
+            skin += _g320_polished_skin()
+        if skin:
+            html = html.replace('</body>', skin + '</body>', 1) if '</body>' in html else html + skin
+        response.set_data(html)
+        response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('G320 interfaz presentable:', e)
+    return response
+
+# ===================== FIN PATCH 320 =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
