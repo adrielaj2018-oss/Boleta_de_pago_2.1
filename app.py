@@ -17462,6 +17462,224 @@ def _g320_presentable_all_modules(response):
 
 # ===================== FIN PATCH 320 =====================
 
+
+# ===================== PATCH 321 - CONFIGURACIONES DENTRO DEL ENGRANAJE Y MAQUETACIÓN FINAL =====================
+# Ajustes solicitados:
+# 1) Plantillas, formatos y cargas masivas dentro de Config. por módulo/submódulo.
+# 2) Ventana Config. mostrando lista completa de opciones, no solo iconos sueltos.
+# 3) Contratación con cabecera más compacta y sin bloque inferior repetitivo.
+# 4) Accesos con mejor distribución, home centrado y menús en 3 columnas.
+# 5) Reportes y otras pantallas con botón volver visible y mejor alineación.
+
+
+def _g321_refine_skin():
+    return r'''
+<style id="g321-refine-ui">
+html,body{overflow-x:hidden!important}
+body.g321-ui .shell,body.g321-ui .phone-wrap,body.g321-ui .report-wrap{scroll-margin-top:10px}
+body.g321-ui .shell{max-width:430px!important;padding:12px 10px 28px!important}
+body.g321-ui .desktop-grid{display:block!important}
+body.g321-ui .phone-wrap{padding-top:10px!important}
+body.g321-ui .green-hero{min-height:196px!important;padding:12px 16px 18px!important}
+body.g321-ui .white-input{margin-top:12px!important}
+body.g321-ui .top-actions,body.g321-ui .ct317-menu-grid,body.g321-ui .cfg303-grid,body.g321-ui .ct306-grid,body.g321-ui .tr286-grid,body.g321-ui .tr286-opgrid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:9px!important;justify-content:center!important}
+body.g321-ui .top-actions{max-width:308px!important;margin:12px auto 0!important}
+body.g321-ui .top-actions .tile,body.g321-ui .ct317-menu-grid>a{width:100%!important;min-width:0!important}
+body.g321-ui .leaf{margin:18px auto 0!important}
+body.g321-ui .bottom-sync{position:static!important;left:auto!important;bottom:auto!important;display:block!important;max-width:310px!important;margin:14px auto 0!important;text-align:left!important;font-size:10px!important;line-height:1.2!important}
+body.g321-ui .bottom-out{position:static!important;right:auto!important;bottom:auto!important;display:block!important;width:max-content!important;margin:6px 10px 0 auto!important}
+body.g321-ui .ct290-head{min-height:74px!important;padding:10px 44px!important}
+body.g321-ui .ct290-head .ico{font-size:24px!important;margin-bottom:2px!important}
+body.g321-ui .ct290-head .ttl{font-size:13px!important;line-height:1.05!important}
+body.g321-ui .ct317-home .ct306-ok,body.g321-ui .ct317-home .ct317-leaf{display:none!important}
+body.g321-ui .ct317-home .ct317-home-note{margin-bottom:10px!important}
+body.g321-ui .ct317-menu-grid{margin-top:8px!important}
+body.g321-ui .tr286-body .tr286-grid,body.g321-ui .tr286-body .tr286-opgrid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+body.g321-ui .report-wrap{max-width:360px!important;padding-top:20px!important}
+body.g321-ui .report-wrap .config-header{position:relative!important;display:block!important;min-height:24px!important;margin:0 0 8px!important}
+body.g321-ui .report-wrap .back-mini{position:absolute!important;left:0!important;top:-2px!important}
+body.g321-ui .report-wrap .floating-card{margin-top:8px!important}
+body.g321-ui .g320-config-overlay{padding-top:42px!important;align-items:flex-start!important}
+body.g321-ui .g320-config-panel{width:min(365px,calc(100vw - 20px))!important}
+body.g321-ui .g320-config-head{min-height:52px!important}
+body.g321-ui .g320-config-head b{font-size:12px!important;letter-spacing:.2px!important}
+body.g321-ui .g320-config-menu{grid-template-columns:1fr!important;gap:9px!important;padding:10px!important;background:#f8fbf8!important}
+body.g321-ui .g320-config-item,body.g321-ui .g320-config-menu>a,body.g321-ui .g320-config-menu>button{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:10px!important;min-height:58px!important;padding:10px 12px!important;font-size:11px!important;line-height:1.15!important;text-align:left!important}
+body.g321-ui .g320-config-item i,body.g321-ui .g320-config-menu>a i,body.g321-ui .g320-config-menu>button i{margin:0!important;flex:0 0 22px!important;font-size:20px!important}
+body.g321-ui .g321-config-note{grid-column:1/-1!important;background:#eef8ef!important;border:1px solid #cfe3d1!important;border-radius:9px!important;padding:9px 10px!important;color:#355f3c!important;font-size:10px!important;font-weight:800!important;line-height:1.3!important}
+body.g321-ui .g320-config-form{grid-column:1/-1!important;padding:10px!important;border:1px solid #cfe0d2!important;border-radius:10px!important;background:#fff!important}
+body.g321-ui .g320-config-form label{font-size:11px!important;font-weight:900!important;color:#1d6c34!important}
+body.g321-ui .g320-config-form .form-control,body.g321-ui .g320-config-form .form-select{margin-bottom:8px!important}
+body.g321-ui .g321-source-hidden,body.g321-ui .g321-hidden-link{display:none!important}
+body.g321-ui .g321-back-auto{position:absolute!important;left:10px!important;top:50%!important;transform:translateY(-50%)!important;color:#fff!important;font-size:27px!important;text-decoration:none!important;z-index:5!important}
+body.g321-ui .g321-home-center{max-width:330px!important;margin:0 auto!important}
+body.g321-ui .g321-home-center .top-actions{max-width:100%!important}
+body.g321-ui .g321-home-center .green-hero{margin-top:6px!important}
+</style>
+<script id="g321-refine-js">
+(function(){
+ const path=(location.pathname||'/').toLowerCase();
+ function $(s,r){return (r||document).querySelector(s)}
+ function $$(s,r){return [...(r||document).querySelectorAll(s)]}
+ function up(t){return String(t||'').replace(/\s+/g,' ').trim().toUpperCase()}
+ function header(){return $('.ct290-head,.tr286-hero,.tr279-hero,.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head,.tm-head,.tf-head,.cfg303-head,.green-hero,.panel-green')}
+ function cleaned(t){
+   t=up(t).replace(/\s+/g,' ').trim();
+   t=t.replace(/^CONFIG\.?\s*/,'CONFIGURACIÓN ');
+   return t||'CONFIGURACIÓN GENERAL';
+ }
+ function isCfgNode(el){
+   if(!el)return false;
+   const txt=up(el.textContent);
+   const href=String((el.getAttribute&&el.getAttribute('href')) || (el.getAttribute&&el.getAttribute('action')) || '').toLowerCase();
+   return /(CONFIGUR|PLANTILLA|PLANTILLAS|CARGA MASIVA|CARGAR |IMPORTAR|FORMATO BASE|FORMATO LLENADO|DATOS MAESTROS|MAESTRO|SUBIR ARCHIVO|SUBIR BASE|EXCEL|UBIGEO|VIDEOS? DE INDUCCION|CONTRATO MASIVO|PLANTILLA WORD|PLANTILLAS WORD)/.test(txt) || /(\/config(?:\/|$)|\/configuracion|\/datos-maestros|carga-masiva|carga-trabajadores|cargar-base|cargar-actividades|importar|plantilla|formato|datos-contrato-masivo|ubigeo|videos?)/.test(href);
+ }
+ function hasUsefulContent(parent){
+   if(!parent)return false;
+   const keep=parent.querySelector('input:not([type="hidden"]),select,textarea,table,.worker-card,.ct290-table,.tf-table,.list-table,.rr292-rowlink,.cfg303-item');
+   if(keep)return true;
+   return /[A-ZÁÉÍÓÚÑ0-9]{3,}/i.test(parent.textContent||'');
+ }
+ function cloneLink(el,label){
+   const a=document.createElement('a');
+   a.className='g320-config-item';
+   a.href=el.getAttribute('href')||'#';
+   const icon=el.querySelector('i')?el.querySelector('i').className:'bi bi-gear';
+   a.innerHTML='<i class="'+icon+'"></i><span>'+String(label||cleaned(el.textContent))+'</span>';
+   return a;
+ }
+ function moveStandaloneForms(menu){
+   $$('form').forEach(form=>{
+     if(form.closest('.g320-config-overlay')||form.dataset.g321Moved==='1')return;
+     const text=up(form.textContent)+' '+up(form.getAttribute('action')||'');
+     if(!/(CARGA MASIVA|CARGAR |IMPORTAR|SUBIR ARCHIVO|SUBIR BASE|EXCEL|PLANTILLA WORD|PLANTILLAS WORD|UBIGEO|VIDEOS? DE INDUCCION|DATOS MAESTROS|CONTRATO MASIVO|FORMATO BASE|FORMATO LLENADO)/.test(text))return;
+     const parent=form.parentElement;
+     form.dataset.g321Moved='1';
+     form.classList.add('g320-config-form');
+     menu.appendChild(form);
+     if(parent && !hasUsefulContent(parent)) parent.classList.add('g321-source-hidden');
+   });
+ }
+ function cloneStandaloneLinks(menu, trigger){
+   const seen=new Set();
+   $$('a[href],button').forEach(el=>{
+     if(el===trigger || el.closest('.g320-config-overlay'))return;
+     if(!isCfgNode(el))return;
+     if(el.closest('.ct290-head,.tr286-hero,.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head,.tm-head,.tf-head,.cfg303-head,.green-hero,.panel-green'))return;
+     const key=(el.tagName||'')+'|'+(el.getAttribute('href')||el.getAttribute('onclick')||'')+'|'+cleaned(el.textContent);
+     if(seen.has(key))return; seen.add(key);
+     if(el.tagName==='A') menu.appendChild(cloneLink(el));
+     else if(el.tagName==='BUTTON'){
+       const b=document.createElement('button');
+       b.type='button';
+       b.className='g320-config-item';
+       const icon=el.querySelector('i')?el.querySelector('i').className:'bi bi-gear';
+       b.innerHTML='<i class="'+icon+'"></i><span>'+cleaned(el.textContent)+'</span>';
+       b.addEventListener('click',()=>el.click());
+       menu.appendChild(b);
+     }
+     if(el.classList.contains('tf-template-btn')||/PLANTILLA|CONFIGUR/i.test(el.textContent||'')) el.classList.add('g321-hidden-link');
+   });
+ }
+ function addFallbackItems(menu){
+   const h=header();
+   const items=[];
+   function push(href,icon,label){items.push({href,icon,label})}
+   if(path.startsWith('/transporte')) push('/transporte/config','bi bi-gear','Configuración general del módulo');
+   if(path.startsWith('/contratacion')) push('/contratacion/config','bi bi-gear','Configuración general del módulo');
+   if(path.startsWith('/horas-extras')) push('/configuraciones','bi bi-gear','Configuración general del módulo');
+   if(path.startsWith('/boletas')||path.startsWith('/boleta')) push('/configuraciones','bi bi-gear','Configuración general del módulo');
+   if(path.startsWith('/vacaciones')) push('/vacaciones/config','bi bi-gear','Configuración general del módulo');
+   if(path.startsWith('/renovacion')) push('/renovacion/config','bi bi-gear','Configuración general del módulo');
+   if(!items.length && h) push('/configuraciones','bi bi-gear','Configuración general del módulo');
+   const existing=up(menu.textContent);
+   items.forEach(it=>{
+     if(existing.includes(up(it.label))) return;
+     const a=document.createElement('a');
+     a.className='g320-config-item';
+     a.href=it.href;
+     a.innerHTML='<i class="'+it.icon+'"></i><span>'+it.label+'</span>';
+     menu.prepend(a);
+   });
+ }
+ function refineOverlay(){
+   const overlay=$('.g320-config-overlay'); if(!overlay) return;
+   const menu=overlay.querySelector('.g320-config-menu'); if(!menu) return;
+   const trigger=$('.g320-config-trigger');
+   menu.innerHTML='';
+   const note=document.createElement('div');
+   note.className='g321-config-note';
+   note.textContent='Aquí se agrupan las plantillas, formatos, cargas masivas, datos maestros y otras configuraciones del acceso actual.';
+   menu.appendChild(note);
+   addFallbackItems(menu);
+   cloneStandaloneLinks(menu, trigger);
+   moveStandaloneForms(menu);
+   if(!menu.querySelector('.g320-config-item,.g320-config-form')) menu.innerHTML='<div class="g321-config-note">No hay cargas o configuraciones adicionales en este acceso.</div>';
+ }
+ function ensureBack(){
+   if(path==='/'||path==='/home'||path==='/inicio'||path==='/login') return;
+   const h=header(); if(!h) return;
+   if(h.querySelector('.back,.back-mini,.tr286-back,.g321-back-auto,a[href*="javascript:history.back"],a[href="#volver"]')) return;
+   const a=document.createElement('a');
+   a.className='g321-back-auto';
+   a.href='javascript:history.back()';
+   a.setAttribute('aria-label','Volver');
+   a.innerHTML='<i class="bi bi-chevron-left"></i>';
+   h.appendChild(a);
+ }
+ function arrangeHome(){
+   if(path!=='/' && path!=='/home') return;
+   const wrap=$('.phone-wrap');
+   if(wrap) wrap.classList.add('g321-home-center');
+ }
+ function trimContract(){
+   if(!path.startsWith('/contratacion')) return;
+   $$('.ct306-ok').forEach(el=>{ if(/PLANTILLAS WORD/i.test(el.textContent||'')) el.style.display='none'; });
+ }
+ function run(){
+   document.body.classList.add('g321-ui');
+   arrangeHome();
+   trimContract();
+   ensureBack();
+   setTimeout(refineOverlay,80);
+   setTimeout(refineOverlay,350);
+ }
+ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', run); else run();
+})();
+</script>
+'''
+
+
+@app.after_request
+def _g321_refine_presentable_modules(response):
+    try:
+        ctype = str(response.content_type or '').lower()
+        if 'text/html' not in ctype:
+            return response
+        if request.endpoint in ('static','manifest','service_worker') or str(request.path or '').startswith('/static/'):
+            return response
+        html = response.get_data(as_text=True)
+        if not html or '<html' not in html.lower():
+            return response
+        if '<body class="' in html:
+            html = html.replace('<body class="', '<body class="g321-ui ', 1)
+        elif "<body class='" in html:
+            html = html.replace("<body class='", "<body class='g321-ui ", 1)
+        else:
+            html = re.sub(r'<body(\s|>)', '<body class="g321-ui"\\1', html, count=1, flags=re.I)
+        skin=''
+        if 'g321-refine-ui' not in html:
+            skin += _g321_refine_skin()
+        if skin:
+            html = html.replace('</body>', skin + '</body>', 1) if '</body>' in html else html + skin
+        response.set_data(html)
+        response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('G321 interfaz final:', e)
+    return response
+
+# ===================== FIN PATCH 321 =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
