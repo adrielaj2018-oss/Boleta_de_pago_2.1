@@ -17680,6 +17680,156 @@ def _g321_refine_presentable_modules(response):
 
 # ===================== FIN PATCH 321 =====================
 
+
+# ===================== PATCH 322 - CONFIG DIRECTA POR MÓDULO Y AJUSTES FINALES =====================
+# Cambios:
+# 1) Se elimina la ventana modal de Configuración y se usa la pantalla propia del módulo.
+# 2) Se oculta la configuración global /configuraciones del portal principal.
+# 3) Se quita la flecha duplicada del acceso Tareo y demás pantallas.
+# 4) Se compacta el home en 3 columnas más cercanas y se recoloca el botón salir.
+
+
+def _g322_direct_config_skin():
+    return r'''
+<style id="g322-direct-config-ui">
+body.g322-ui .g320-config-overlay{display:none!important}
+body.g322-ui .g321-back-auto{display:none!important}
+body.g322-ui .phone-wrap{position:relative!important}
+body.g322-ui.home-page .top-actions{
+  display:grid!important;
+  grid-template-columns:repeat(3,72px)!important;
+  justify-content:center!important;
+  column-gap:14px!important;
+  row-gap:10px!important;
+  max-width:244px!important;
+  margin:12px auto 0!important;
+}
+body.g322-ui.home-page .top-actions .tile{
+  width:72px!important;min-width:72px!important;max-width:72px!important;
+  min-height:64px!important;padding:6px 4px!important
+}
+body.g322-ui.home-page .green-hero{max-width:360px!important;margin:0 auto!important}
+body.g322-ui.home-page .leaf{margin:18px auto 0!important}
+body.g322-ui.home-page .bottom-sync{
+  position:absolute!important;left:10px!important;right:50px!important;bottom:8px!important;
+  margin:0!important;max-width:none!important;font-size:9.5px!important;line-height:1.15!important;text-align:left!important
+}
+body.g322-ui.home-page .bottom-out{
+  position:absolute!important;right:10px!important;bottom:8px!important;left:auto!important;
+  margin:0!important;display:flex!important;align-items:center!important;justify-content:center!important;
+  width:24px!important;height:24px!important
+}
+body.g322-ui.home-page .green-top a[href$="/configuraciones"],
+body.g322-ui.home-page .green-top a[href="/configuraciones"]{display:none!important}
+body.g322-ui .cfg303-grid{grid-template-columns:repeat(3,1fr)!important;gap:8px!important}
+body.g322-ui .cfg303-tile{height:73px!important;padding:4px!important}
+body.g322-ui .cfg303-tile b{font-size:10px!important}
+body.g322-ui .cfg303-tile small{font-size:8px!important}
+</style>
+<script id="g322-direct-config-js">
+(function(){
+  const path=(location.pathname||'/').toLowerCase();
+  function header(){return document.querySelector('.ct290-head,.tr286-hero,.tr279-hero,.rr292-head,.bt291-head,.b300-head,.bol297-head,.bol298-head,.b304-head,.vac294-head,.he-head,.he-classic-head,.tm-head,.tf-head,.cfg303-head,.green-hero,.panel-green')}
+  function firstBackLike(root){
+    if(!root) return null;
+    return [...root.querySelectorAll('a,button')].find(el=>el.querySelector('i.bi-chevron-left') || /volver/i.test((el.textContent||'')) ) || null;
+  }
+  function moduleConfigHref(){
+    if(path.startsWith('/transporte')) return '/transporte/config';
+    if(path.startsWith('/contratacion')) return '/contratacion/config';
+    if(path.startsWith('/boletas')||path.startsWith('/boleta')) return '/boletas/config';
+    if(path.startsWith('/vacaciones')) return '/vacaciones/config';
+    if(path.startsWith('/renovacion')) return '/renovacion/config';
+    if(path.startsWith('/horas-extras')) return '/horas-extras/config';
+    if(path.startsWith('/reportes')) return '/reportes';
+    return '';
+  }
+  function replaceConfigTrigger(){
+    const h=header(); if(!h) return;
+    const trig=h.querySelector('.g320-config-trigger,.cfg,.config,.tr286-config,.tr279-config,.tm-config');
+    if(!trig) return;
+    const href=trig.getAttribute('href') || moduleConfigHref() || '#';
+    if(path==='/'||path==='/home'){
+      trig.style.display='none';
+      return;
+    }
+    const a=document.createElement('a');
+    a.className=trig.className;
+    a.setAttribute('href', href);
+    a.innerHTML=trig.innerHTML || '<i class="bi bi-gear"></i> Config.';
+    a.classList.add('g322-direct-config');
+    trig.replaceWith(a);
+  }
+  function clearDuplicateBack(){
+    document.querySelectorAll('.g321-back-auto').forEach(el=>el.remove());
+    const h=header(); if(!h) return;
+    const backs=[...h.querySelectorAll('a,button')].filter(el=>el.querySelector('i.bi-chevron-left'));
+    if(backs.length>1){
+      backs.slice(1).forEach(el=>{
+        if(el.classList.contains('g321-back-auto')) el.remove();
+      });
+    }
+  }
+  function markHome(){ if(path==='/'||path==='/home') document.body.classList.add('home-page'); }
+  function killGlobalConfigLinks(){
+    if(path==='/'||path==='/home'){
+      document.querySelectorAll('a[href="/configuraciones"],a[href$="/configuraciones"]').forEach(a=>a.style.display='none');
+    }
+  }
+  function run(){
+    document.body.classList.add('g322-ui');
+    markHome();
+    clearDuplicateBack();
+    replaceConfigTrigger();
+    killGlobalConfigLinks();
+    const ov=document.querySelector('.g320-config-overlay'); if(ov) ov.remove();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', run); else run();
+})();
+</script>
+'''
+
+
+def _configuraciones_ocultas_322():
+    # Ya no se muestra la pantalla global; cada módulo tiene su propia configuración.
+    flash('Cada módulo tiene su propia configuración independiente.', 'info')
+    return redirect(url_for('home'))
+
+
+try:
+    app.view_functions['configuraciones'] = _configuraciones_ocultas_322
+except Exception as _g322_cfg_err:
+    print('G322 override configuraciones:', _g322_cfg_err)
+
+
+@app.after_request
+def _g322_direct_config_and_compact_home(response):
+    try:
+        ctype = str(response.content_type or '').lower()
+        if 'text/html' not in ctype:
+            return response
+        if request.endpoint in ('static','manifest','service_worker') or str(request.path or '').startswith('/static/'):
+            return response
+        html = response.get_data(as_text=True)
+        if not html or '<html' not in html.lower():
+            return response
+        if '<body class="' in html:
+            html = html.replace('<body class="', '<body class="g322-ui ', 1)
+        elif "<body class='" in html:
+            html = html.replace("<body class='", "<body class='g322-ui ", 1)
+        else:
+            html = re.sub(r'<body(\s|>)', '<body class="g322-ui"\\1', html, count=1, flags=re.I)
+        if 'g322-direct-config-ui' not in html:
+            extra = _g322_direct_config_skin()
+            html = html.replace('</body>', extra + '</body>', 1) if '</body>' in html else html + extra
+        response.set_data(html)
+        response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('G322 interfaz final:', e)
+    return response
+
+# ===================== FIN PATCH 322 =====================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
