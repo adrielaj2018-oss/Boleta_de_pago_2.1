@@ -17720,7 +17720,7 @@ body.g322-ui.home-page .bottom-out{
   width:24px!important;height:24px!important
 }
 body.g322-ui.home-page .green-top a[href$="/configuraciones"],
-body.g322-ui.home-page .green-top a[href="/configuraciones"]{display:none!important}
+body.g322-ui.home-page .green-top a[href="/configuraciones"]{display:inline-flex!important;align-items:center!important;gap:4px!important}
 body.g322-ui .cfg303-grid{grid-template-columns:repeat(3,1fr)!important;gap:8px!important}
 body.g322-ui .cfg303-tile{height:73px!important;padding:4px!important}
 body.g322-ui .cfg303-tile b{font-size:10px!important}
@@ -17750,7 +17750,7 @@ body.g322-ui .cfg303-tile small{font-size:8px!important}
     if(!trig) return;
     const href=trig.getAttribute('href') || moduleConfigHref() || '#';
     if(path==='/'||path==='/home'){
-      trig.style.display='none';
+      trig.style.display='inline-flex';
       return;
     }
     const a=document.createElement('a');
@@ -17773,7 +17773,7 @@ body.g322-ui .cfg303-tile small{font-size:8px!important}
   function markHome(){ if(path==='/'||path==='/home') document.body.classList.add('home-page'); }
   function killGlobalConfigLinks(){
     if(path==='/'||path==='/home'){
-      document.querySelectorAll('a[href="/configuraciones"],a[href$="/configuraciones"]').forEach(a=>a.style.display='none');
+      document.querySelectorAll('a[href="/configuraciones"],a[href$="/configuraciones"]').forEach(a=>a.style.display='inline-flex');
     }
   }
   function run(){
@@ -17829,6 +17829,533 @@ def _g322_direct_config_and_compact_home(response):
     return response
 
 # ===================== FIN PATCH 322 =====================
+
+# ===================== PATCH 323 - BASE CENTRAL DE TRABAJADORES E INTEGRACIONES =====================
+# Objetivos:
+# 1) Restaurar el icono Configuración en la portada.
+# 2) Mantener una sola tabla maestra "trabajadores" compartida por todos los módulos.
+# 3) Permitir carga/plantilla desde la configuración general y desde cada módulo.
+# 4) Dejar preparada la configuración futura para SQL Server o ERP Nisira,
+#    sin guardar contraseñas directamente en la base de datos.
+
+WORKER_FIELDS_323 = [
+    'trabajador', 'empresa', 'area', 'cargo', 'actividad', 'planilla', 'estado',
+    'correo', 'celular', 'fecha_nacimiento', 'direccion', 'distrito', 'provincia',
+    'departamento', 'tipo_trabajador', 'regimen_laboral', 'tipo_contrato',
+    'remuneracion', 'horas_mes', 'dia_descanso'
+]
+
+WORKER_HEADERS_323 = [
+    'DNI', 'TRABAJADOR', 'EMPRESA', 'AREA', 'CARGO', 'ACTIVIDAD', 'PLANILLA',
+    'ESTADO', 'CORREO', 'CELULAR', 'FECHA_NACIMIENTO', 'DIRECCION', 'DISTRITO',
+    'PROVINCIA', 'DEPARTAMENTO', 'TIPO_TRABAJADOR', 'REGIMEN_LABORAL',
+    'TIPO_CONTRATO', 'REMUNERACION', 'HORAS_MES', 'DIA_DESCANSO'
+]
+
+WORKER_ALIASES_323 = {
+    'TRABAJADOR': 'trabajador', 'NOMBRE': 'trabajador', 'NOMBRES': 'trabajador',
+    'APELLIDOS Y NOMBRES': 'trabajador', 'APELLIDOS_NOMBRES': 'trabajador',
+    'EMPRESA': 'empresa', 'AREA': 'area', 'CARGO': 'cargo', 'ACTIVIDAD': 'actividad',
+    'PLANILLA': 'planilla', 'ESTADO': 'estado', 'CORREO': 'correo', 'EMAIL': 'correo',
+    'CELULAR': 'celular', 'TELEFONO': 'celular', 'TELEFONO MOVIL': 'celular',
+    'FECHA NACIMIENTO': 'fecha_nacimiento', 'FECHA_NACIMIENTO': 'fecha_nacimiento',
+    'FEC NACIMIENTO': 'fecha_nacimiento', 'DIRECCION': 'direccion',
+    'DISTRITO': 'distrito', 'PROVINCIA': 'provincia', 'DEPARTAMENTO': 'departamento',
+    'TIPO TRABAJADOR': 'tipo_trabajador', 'TIPO_TRABAJADOR': 'tipo_trabajador',
+    'REGIMEN': 'regimen_laboral', 'REGIMEN LABORAL': 'regimen_laboral',
+    'REGIMEN_LABORAL': 'regimen_laboral', 'TIPO CONTRATO': 'tipo_contrato',
+    'TIPO_CONTRATO': 'tipo_contrato', 'REMUNERACION': 'remuneracion',
+    'SUELDO': 'remuneracion', 'BASICO': 'remuneracion', 'HORAS MES': 'horas_mes',
+    'HORAS_MES': 'horas_mes', 'DIA DESCANSO': 'dia_descanso',
+    'DIA_DESCANSO': 'dia_descanso'
+}
+
+
+def _g323_ensure_schema():
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        for col, ddl in [
+            ('correo', 'TEXT'), ('celular', 'TEXT'), ('fecha_nacimiento', 'TEXT'),
+            ('direccion', 'TEXT'), ('distrito', 'TEXT'), ('provincia', 'TEXT'),
+            ('departamento', 'TEXT'), ('tipo_trabajador', 'TEXT'),
+            ('regimen_laboral', 'TEXT'), ('tipo_contrato', 'TEXT'),
+            ('remuneracion', 'REAL DEFAULT 0'), ('horas_mes', 'REAL DEFAULT 0'),
+            ('dia_descanso', 'TEXT'), ('origen_datos', "TEXT DEFAULT 'EXCEL'"),
+            ('fuente_modulo', 'TEXT'), ('actualizado_en', 'TEXT'), ('carga_id', 'INTEGER')
+        ]:
+            _add_column_if_missing(cur, 'trabajadores', col, ddl)
+
+        idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS cargas_trabajadores(
+            id {idtype}, origen TEXT, modulo TEXT, archivo TEXT, insertados INTEGER DEFAULT 0,
+            actualizados INTEGER DEFAULT 0, omitidos INTEGER DEFAULT 0, estado TEXT,
+            detalle TEXT, usuario TEXT, fecha_hora TEXT)'''))
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS integraciones_rrhh(
+            id {idtype}, fuente TEXT UNIQUE NOT NULL, habilitado INTEGER DEFAULT 0,
+            modo TEXT DEFAULT 'PREPARADO', servidor TEXT, puerto TEXT, base_datos TEXT,
+            usuario TEXT, driver TEXT, endpoint_url TEXT, empresa_codigo TEXT,
+            secreto_env TEXT, consulta_trabajadores TEXT, observacion TEXT,
+            actualizado_por TEXT, actualizado_en TEXT)'''))
+
+        for fuente, obs in [
+            ('SQLSERVER', 'Preparado para conexión ODBC a SQL Server.'),
+            ('NISIRA', 'Preparado para conexión futura con ERP Nisira por BD, API o procedimiento almacenado.')
+        ]:
+            cur.execute(qmark('SELECT id FROM integraciones_rrhh WHERE fuente=?'), (fuente,))
+            if not cur.fetchone():
+                cur.execute(qmark('''INSERT INTO integraciones_rrhh(
+                    fuente,habilitado,modo,observacion,actualizado_por,actualizado_en
+                ) VALUES(?,?,?,?,?,?)'''),
+                (fuente, 0, 'PREPARADO', obs, 'SISTEMA', now_str()))
+        conn.commit()
+    finally:
+        try: cur.close(); conn.close()
+        except Exception: pass
+
+
+def _g323_dni(value):
+    if value is None:
+        return ''
+    try:
+        if isinstance(value, bool):
+            return ''
+        if isinstance(value, (int, float)) and float(value).is_integer():
+            return str(int(value)).zfill(8)[-8:]
+    except Exception:
+        pass
+    raw = str(value).strip()
+    if raw.endswith('.0') and raw[:-2].isdigit():
+        raw = raw[:-2]
+    digits = re.sub(r'\D', '', raw)
+    return digits[-8:] if len(digits) >= 8 else digits.zfill(8) if digits else ''
+
+
+def _g323_cell(value, field=''):
+    if value is None:
+        return None
+    if isinstance(value, (datetime, date)):
+        return value.strftime('%Y-%m-%d')
+    if field in ('remuneracion', 'horas_mes'):
+        try:
+            txt = str(value).replace(',', '').strip()
+            return float(txt) if txt else None
+        except Exception:
+            return None
+    txt = str(value).strip()
+    if not txt:
+        return None
+    if field in ('correo',):
+        return txt.lower()
+    if field in ('celular',):
+        return re.sub(r'[^0-9+]', '', txt)
+    return limpiar_texto(txt)
+
+
+def _g323_log_carga(origen, modulo, archivo, ins, upd, omi, estado, detalle=''):
+    try:
+        execute('''INSERT INTO cargas_trabajadores(
+            origen,modulo,archivo,insertados,actualizados,omitidos,estado,detalle,usuario,fecha_hora
+        ) VALUES(?,?,?,?,?,?,?,?,?,?)''',
+        (origen, modulo, archivo, int(ins), int(upd), int(omi), estado,
+         str(detalle or '')[:1500], session.get('usuario') or 'SISTEMA', now_str()), commit=True)
+    except Exception as e:
+        print('G323 log carga:', e)
+
+
+def _g323_import_workers(file_storage, modulo='central', origen='EXCEL'):
+    if not file_storage or not getattr(file_storage, 'filename', ''):
+        return 0, 0, 0, 'Seleccione un archivo Excel.'
+    filename = secure_filename(file_storage.filename)
+    if not filename.lower().endswith(('.xlsx', '.xlsm')):
+        return 0, 0, 0, 'Use un archivo .xlsx o .xlsm.'
+    try:
+        wb = load_workbook(file_storage, data_only=True, read_only=True)
+        ws = wb.active
+        iterator = ws.iter_rows(values_only=True)
+        first = next(iterator, None)
+        if not first:
+            _g323_log_carga(origen, modulo, filename, 0, 0, 0, 'ERROR', 'Excel vacío')
+            return 0, 0, 0, 'El Excel está vacío.'
+        headers = [normalizar_columna(c).replace('_', ' ') for c in first]
+        try:
+            dni_index = headers.index('DNI')
+        except ValueError:
+            _g323_log_carga(origen, modulo, filename, 0, 0, 0, 'ERROR', 'Falta columna DNI')
+            return 0, 0, 0, 'La plantilla debe contener la columna DNI.'
+
+        mapped = {}
+        for i, h in enumerate(headers):
+            key = WORKER_ALIASES_323.get(h)
+            if key:
+                mapped[i] = key
+
+        conn = get_conn(); cur = conn.cursor()
+        ins = upd = omi = 0
+        try:
+            for row in iterator:
+                dni = _g323_dni(row[dni_index] if dni_index < len(row) else None)
+                if len(dni) != 8:
+                    omi += 1
+                    continue
+                incoming = {}
+                for idx, field in mapped.items():
+                    if idx < len(row):
+                        val = _g323_cell(row[idx], field)
+                        if val not in (None, ''):
+                            incoming[field] = val
+                cur.execute(qmark('SELECT * FROM trabajadores WHERE dni=?'), (dni,))
+                current_row = cur.fetchone()
+                current = row_to_dict(current_row) if current_row else None
+                if not current:
+                    if not incoming.get('trabajador'):
+                        omi += 1
+                        continue
+                    payload = {f: incoming.get(f) for f in WORKER_FIELDS_323}
+                    payload['estado'] = payload.get('estado') or 'ACTIVO'
+                    payload['origen_datos'] = origen
+                    payload['fuente_modulo'] = modulo
+                    payload['fecha_carga'] = now_str()
+                    payload['actualizado_en'] = now_str()
+                    cols = ['dni'] + list(payload.keys())
+                    vals = [dni] + [payload[c] for c in payload]
+                    cur.execute(qmark(
+                        'INSERT INTO trabajadores(' + ','.join(cols) + ') VALUES(' + ','.join(['?'] * len(cols)) + ')'
+                    ), vals)
+                    ins += 1
+                else:
+                    changes = dict(incoming)
+                    changes['origen_datos'] = origen
+                    changes['fuente_modulo'] = modulo
+                    changes['fecha_carga'] = now_str()
+                    changes['actualizado_en'] = now_str()
+                    set_sql = ','.join([f'{c}=?' for c in changes])
+                    cur.execute(qmark(f'UPDATE trabajadores SET {set_sql} WHERE dni=?'),
+                                [changes[c] for c in changes] + [dni])
+                    upd += 1
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            try: cur.close(); conn.close()
+            except Exception: pass
+        _g323_log_carga(origen, modulo, filename, ins, upd, omi, 'OK', 'Carga completada')
+        return ins, upd, omi, ''
+    except Exception as e:
+        _g323_log_carga(origen, modulo, filename, 0, 0, 0, 'ERROR', str(e))
+        return 0, 0, 0, str(e)
+
+
+def _g323_template_response(modulo='central'):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'TRABAJADORES'
+    ws.append(WORKER_HEADERS_323)
+    ws.append([
+        '74324033', 'JOSE GARCIA PEREZ', 'AQUANQA I', 'COSECHA', 'OPERARIO',
+        'ARANDANO', 'AGRARIO', 'ACTIVO', 'jose@empresa.com', '999999999',
+        '1995-06-15', 'AV. EJEMPLO 123', 'TRUJILLO', 'TRUJILLO', 'LA LIBERTAD',
+        'OBRERO', 'AGRARIO', 'TEMPORAL', 1300.00, 192, 'DOMINGO'
+    ])
+    ws.freeze_panes = 'A2'
+    ws.auto_filter.ref = f'A1:{ws.cell(1, len(WORKER_HEADERS_323)).column_letter}2'
+    for c in ws[1]:
+        c.font = c.font.copy(bold=True, color='FFFFFF')
+        c.fill = c.fill.copy(fill_type='solid', fgColor='2F773B')
+        c.alignment = c.alignment.copy(horizontal='center', vertical='center', wrap_text=True)
+    widths = {
+        'A':12,'B':28,'C':18,'D':18,'E':20,'F':20,'G':15,'H':12,'I':25,'J':15,
+        'K':16,'L':28,'M':17,'N':17,'O':18,'P':18,'Q':18,'R':18,'S':15,'T':13,'U':16
+    }
+    for col, width in widths.items(): ws.column_dimensions[col].width = width
+    ws.row_dimensions[1].height = 32
+    ws['K2'].number_format = 'yyyy-mm-dd'
+    ws['S2'].number_format = '#,##0.00'
+
+    ins = wb.create_sheet('INSTRUCCIONES')
+    ins.append(['CAMPO', 'OBLIGATORIO', 'USO'])
+    instructions = [
+        ('DNI', 'SI', 'Identificador único de 8 dígitos. Actualiza si ya existe.'),
+        ('TRABAJADOR', 'SI PARA NUEVOS', 'Apellidos y nombres completos.'),
+        ('EMPRESA / AREA / CARGO / ACTIVIDAD', 'RECOMENDADO', 'Se comparte con Tareo, Asistencia, Transporte, Contratación, Boletas, Vacaciones, Renovación, Horas Extras y Reportes.'),
+        ('ESTADO', 'NO', 'ACTIVO o INACTIVO. Si está vacío en un nuevo registro se usa ACTIVO.'),
+        ('CORREO / CELULAR', 'NO', 'Datos para notificaciones y documentos.'),
+        ('REGIMEN_LABORAL / TIPO_CONTRATO', 'NO', 'Datos de contratación y renovaciones.'),
+        ('REMUNERACION / HORAS_MES / DIA_DESCANSO', 'NO', 'Datos usados por Horas Extras y cálculos relacionados.'),
+        ('CAMPOS VACIOS', 'IMPORTANTE', 'En trabajadores existentes, un campo vacío no borra el dato anterior.'),
+    ]
+    for row in instructions: ins.append(row)
+    for c in ins[1]:
+        c.font = c.font.copy(bold=True, color='FFFFFF')
+        c.fill = c.fill.copy(fill_type='solid', fgColor='2F773B')
+    ins.column_dimensions['A'].width = 36; ins.column_dimensions['B'].width = 18; ins.column_dimensions['C'].width = 95
+    for row in ins.iter_rows():
+        for c in row: c.alignment = c.alignment.copy(vertical='top', wrap_text=True)
+    ins.freeze_panes = 'A2'
+
+    out = BytesIO(); wb.save(out); out.seek(0)
+    safe_mod = re.sub(r'[^a-z0-9]+', '_', str(modulo or 'central').lower()).strip('_') or 'central'
+    return send_file(out, as_attachment=True,
+                     download_name=f'plantilla_trabajadores_{safe_mod}.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+def _g323_css():
+    return r'''
+    <style id="g323-master-workers-ui">
+    .g323-wrap{max-width:405px;margin:0 auto}.g323-app{background:#fff;border:1px solid #e3e9e4;border-radius:14px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,.08)}
+    .g323-head{min-height:78px;background:linear-gradient(135deg,#226f36,#2f773b);color:#fff;display:flex;align-items:center;justify-content:center;position:relative;padding:12px 52px;text-align:center}.g323-head .back{position:absolute;left:12px;color:#fff;font-size:30px;text-decoration:none}.g323-head .ico{position:absolute;right:14px;font-size:23px}.g323-head b{display:block;font-size:17px}.g323-head small{display:block;color:#ddf8e2;font-weight:800;font-size:10px;margin-top:2px}
+    .g323-body{padding:12px}.g323-note{background:#eef6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:10px;font-size:11px;font-weight:800;line-height:1.35}.g323-ok{background:#ecfdf3;border-color:#a7f3d0;color:#166534}
+    .g323-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:10px 0}.g323-kpi{background:#f8fff9;border:1px solid #acd3b4;border-radius:9px;text-align:center;padding:8px 3px;color:#166534}.g323-kpi small{display:block;font-size:9px;font-weight:900}.g323-kpi b{display:block;font-size:19px;line-height:1.1;margin-top:3px}
+    .g323-form{border:1px solid #d9eadc;background:#fbfffc;border-radius:11px;padding:11px;margin:10px 0}.g323-form label{font-size:11px;color:#176a35;font-weight:950}.g323-form .form-control,.g323-form .form-select{height:37px!important;font-size:12px!important;border-radius:8px!important}.g323-btn,.g323-outline{min-height:40px;border-radius:9px;font-weight:900;font-size:12px;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:6px;width:100%;border:1px solid #08713b}.g323-btn{background:#08713b;color:#fff!important}.g323-outline{background:#fff;color:#08713b!important}
+    .g323-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:9px}.g323-tile{height:72px;border:1px solid #dbe8dc;border-radius:10px;background:#fff;color:#08713b!important;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:4px;box-shadow:0 4px 10px rgba(0,0,0,.04)}.g323-tile i{font-size:22px}.g323-tile b{font-size:9.5px;line-height:1.05;margin-top:4px}.g323-section{font-size:12px;color:#08713b;font-weight:950;text-transform:uppercase;margin:13px 1px 7px}.g323-list{display:grid;gap:7px}.g323-item{display:grid;grid-template-columns:30px 1fr 16px;gap:8px;align-items:center;border:1px solid #e3e9e4;border-radius:10px;padding:9px;text-decoration:none;color:#1f2937;background:#fff}.g323-item>i:first-child{font-size:20px;color:#08713b;text-align:center}.g323-item b{display:block;font-size:11.5px}.g323-item small{display:block;font-size:9px;color:#61756a;font-weight:750;line-height:1.2;margin-top:2px}.g323-item .bi-chevron-right{color:#111}
+    .g323-table{overflow:auto;border:1px solid #e5e7eb;border-radius:9px;max-height:240px}.g323-table table{width:100%;min-width:500px;border-collapse:collapse}.g323-table th{background:#f8fafc;padding:7px;font-size:10px}.g323-table td{padding:7px;font-size:10px;border-top:1px solid #eef2f1}.g323-status{display:inline-block;border-radius:5px;background:#dcfce7;color:#166534;padding:3px 6px;font-size:8px;font-weight:900}.g323-status.off{background:#f3f4f6;color:#4b5563}
+    .home-gear-323{width:35px;height:35px;border:1px solid rgba(255,255,255,.45);border-radius:999px;display:inline-flex!important;align-items:center;justify-content:center;color:#fff!important;text-decoration:none!important;font-size:18px}.home-gear-323 span{display:none}.home-gear-323:hover{background:rgba(255,255,255,.14)}
+    body.g322-ui.home-page .green-top a[href="/configuraciones"],body.g322-ui.home-page .green-top a[href$="/configuraciones"]{display:inline-flex!important}
+    @media(max-width:420px){.g323-wrap{max-width:375px}.g323-grid{gap:6px}.g323-tile{height:68px}}
+    </style>
+    '''
+
+
+def _g323_module_keys():
+    preferred = ['tareo','asistencia','transporte','contratacion','boletas','vacaciones','renovacion','horas_extras','reportes','sincronizacion']
+    return [(k, MODULOS_303[k]) for k in preferred if k in MODULOS_303]
+
+
+def configuraciones_323():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo el administrador puede ingresar a configuraciones.', 'danger')
+        return redirect(url_for('home'))
+    total = int(scalar('SELECT COUNT(*) AS c FROM trabajadores') or 0)
+    activos = int(scalar("SELECT COUNT(*) AS c FROM trabajadores WHERE UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO'") or 0)
+    cargas = rows_to_dict(execute('SELECT * FROM cargas_trabajadores ORDER BY id DESC LIMIT 5', fetchall=True))
+    body = _g323_css() + r'''
+    <div class="g323-wrap"><div class="g323-app">
+      <div class="g323-head"><a class="back" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><div><b>CONFIGURACIONES</b><small>Base central para todos los módulos</small></div><i class="bi bi-gear ico"></i></div>
+      <div class="g323-body">
+        <div class="g323-note g323-ok"><b>Una sola base de trabajadores.</b><br>Todo Excel cargado desde aquí o desde la configuración de un módulo actualiza la tabla central <b>trabajadores</b>. Tareo, Asistencia, Transporte, Contratación, Boletas, Vacaciones, Renovación, Horas Extras, Reportes y Sincronización consultan esta misma base.</div>
+        <div class="g323-kpis"><div class="g323-kpi"><small>Total</small><b>{{total}}</b></div><div class="g323-kpi"><small>Activos</small><b>{{activos}}</b></div><div class="g323-kpi"><small>Módulos</small><b>{{modules|length}}</b></div></div>
+        <div class="g323-grid">{% for key,info in modules %}<a class="g323-tile" href="{{config_url(key)}}"><i class="bi {{info.icon}}"></i><b>{{info.titulo}}</b></a>{% endfor %}</div>
+        <div class="g323-section">Base central</div><div class="g323-list">
+          <a class="g323-item" href="{{url_for('cargar_base')}}"><i class="bi bi-database-up"></i><div><b>Cargar trabajadores</b><small>Actualiza y agrega por DNI sin borrar información cuando una celda viene vacía.</small></div><i class="bi bi-chevron-right"></i></a>
+          <a class="g323-item" href="{{url_for('plantilla_trabajadores')}}"><i class="bi bi-file-earmark-excel"></i><div><b>Descargar plantilla completa</b><small>Incluye datos básicos, contratación, vacaciones y horas extras.</small></div><i class="bi bi-chevron-right"></i></a>
+          <a class="g323-item" href="{{url_for('trabajadores_exportar_323')}}"><i class="bi bi-download"></i><div><b>Exportar base actual</b><small>Respaldo Excel de los trabajadores registrados.</small></div><i class="bi bi-chevron-right"></i></a>
+          <a class="g323-item" href="{{url_for('integraciones_rrhh_323')}}"><i class="bi bi-database-gear"></i><div><b>SQL Server / ERP Nisira</b><small>Configuración preparada para una conexión futura.</small></div><i class="bi bi-chevron-right"></i></a>
+          <a class="g323-item" href="{{url_for('usuarios')}}"><i class="bi bi-person-gear"></i><div><b>Usuarios</b><small>Administradores y operadores del aplicativo.</small></div><i class="bi bi-chevron-right"></i></a>
+        </div>
+        {% if cargas %}<div class="g323-section">Últimas cargas</div><div class="g323-table"><table><thead><tr><th>Fecha</th><th>Módulo</th><th>Archivo</th><th>Resultado</th></tr></thead><tbody>{% for c in cargas %}<tr><td>{{c.fecha_hora}}</td><td>{{c.modulo}}</td><td>{{c.archivo}}</td><td><span class="g323-status {{'off' if c.estado!='OK' else ''}}">{{c.estado}}</span><br>{{c.insertados}} N / {{c.actualizados}} A / {{c.omitidos}} O</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+      </div>
+    </div></div>'''
+    return render_page(body, total=total, activos=activos, modules=_g323_module_keys(),
+                       config_url=_modulo_config_url_303, cargas=cargas, title='Configuraciones')
+
+
+def cargar_base_323():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo administrador puede cargar trabajadores.', 'danger')
+        return redirect(url_for('home'))
+    if request.method == 'POST':
+        ins, upd, omi, err = _g323_import_workers(request.files.get('archivo'), 'central', 'EXCEL')
+        flash(('Error: ' + err) if err else f'Carga completa: {ins} nuevos, {upd} actualizados y {omi} omitidos.', 'danger' if err else 'success')
+        return redirect(url_for('cargar_base'))
+    q = request.args.get('q', '').strip()
+    params = []
+    where = ''
+    if q:
+        like = '%' + q.upper() + '%'
+        where = 'WHERE dni LIKE ? OR UPPER(COALESCE(trabajador,\'\')) LIKE ? OR UPPER(COALESCE(empresa,\'\')) LIKE ?'
+        params = [like, like, like]
+    trabajadores = rows_to_dict(execute(f'''SELECT dni,trabajador,empresa,area,cargo,estado,origen_datos,fuente_modulo,actualizado_en,fecha_carga
+                                           FROM trabajadores {where} ORDER BY COALESCE(actualizado_en,fecha_carga) DESC, id DESC LIMIT 80''', params, fetchall=True))
+    total = int(scalar('SELECT COUNT(*) AS c FROM trabajadores') or 0)
+    body = _g323_css() + r'''
+    <div class="g323-wrap"><div class="g323-app"><div class="g323-head"><a class="back" href="{{url_for('configuraciones')}}"><i class="bi bi-chevron-left"></i></a><div><b>CARGA DE TRABAJADORES</b><small>Base central compartida</small></div><i class="bi bi-people ico"></i></div><div class="g323-body">
+      <div class="g323-note"><b>Regla de actualización:</b> el DNI es único. Los trabajadores existentes se actualizan; los nuevos se agregan. Una celda vacía no elimina el dato anterior.</div>
+      <div class="g323-kpis"><div class="g323-kpi"><small>Total base</small><b>{{total}}</b></div><div class="g323-kpi"><small>Fuente</small><b><i class="bi bi-file-earmark-excel"></i></b></div><div class="g323-kpi"><small>Conexión</small><b>10</b></div></div>
+      <form method="post" enctype="multipart/form-data" class="g323-form"><label><i class="bi bi-cloud-arrow-up"></i> Archivo Excel</label><input class="form-control mt-1" type="file" name="archivo" accept=".xlsx,.xlsm" required><div class="small text-muted fw-bold mt-1">Use la plantilla completa. Máximo configurado por la aplicación: 30 MB.</div><button class="g323-btn mt-2"><i class="bi bi-upload"></i> Cargar y conectar a todos los módulos</button></form>
+      <a class="g323-outline" href="{{url_for('plantilla_trabajadores')}}"><i class="bi bi-download"></i> Descargar plantilla</a>
+      <form method="get" class="g323-form"><label>Buscar trabajador</label><div class="d-flex gap-2"><input class="form-control" name="q" value="{{q}}" placeholder="DNI, nombre o empresa"><button class="g323-btn" style="width:48px"><i class="bi bi-search"></i></button></div></form>
+      <div class="g323-section">Últimos registros</div><div class="g323-table"><table><thead><tr><th>DNI</th><th>Trabajador</th><th>Empresa / Área</th><th>Cargo</th><th>Estado</th></tr></thead><tbody>{% for t in trabajadores %}<tr><td>{{t.dni}}</td><td><b>{{t.trabajador or '-'}}</b><br><small>{{t.fuente_modulo or 'central'}}</small></td><td>{{t.empresa or '-'}}<br><small>{{t.area or '-'}}</small></td><td>{{t.cargo or '-'}}</td><td><span class="g323-status {{'off' if (t.estado or 'ACTIVO')|upper!='ACTIVO' else ''}}">{{t.estado or 'ACTIVO'}}</span></td></tr>{% else %}<tr><td colspan="5" class="text-center">Sin trabajadores.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body, trabajadores=trabajadores, total=total, q=q, title='Carga trabajadores')
+
+
+def plantilla_trabajadores_323():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo administrador puede descargar esta plantilla.', 'danger')
+        return redirect(url_for('home'))
+    return _g323_template_response('central')
+
+
+def modulo_trabajadores_plantilla_323(modulo='general'):
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo administrador puede descargar la plantilla.', 'danger')
+        return redirect(url_for('home'))
+    return _g323_template_response(modulo)
+
+
+def modulo_trabajadores_323(modulo='general'):
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo administrador puede cargar trabajadores.', 'danger')
+        return redirect(url_for('home'))
+    modulo = str(modulo or 'general').lower()
+    info = _modulo_info_303(modulo)
+    if request.method == 'POST':
+        ins, upd, omi, err = _g323_import_workers(request.files.get('archivo'), modulo, 'EXCEL_MODULO')
+        flash(('Error: ' + err) if err else f'{info["titulo"]}: {ins} nuevos, {upd} actualizados y {omi} omitidos. La base ya está disponible para todos los módulos.', 'danger' if err else 'success')
+        return redirect(url_for('modulo_trabajadores_303', modulo=modulo))
+    total = int(scalar('SELECT COUNT(*) AS c FROM trabajadores') or 0)
+    activos = int(scalar("SELECT COUNT(*) AS c FROM trabajadores WHERE UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO'") or 0)
+    ultimos = rows_to_dict(execute('''SELECT dni,trabajador,empresa,area,cargo,estado,fuente_modulo,actualizado_en,fecha_carga
+                                      FROM trabajadores ORDER BY COALESCE(actualizado_en,fecha_carga) DESC,id DESC LIMIT 30''', fetchall=True))
+    body = _g323_css() + r'''
+    <div class="g323-wrap"><div class="g323-app"><div class="g323-head"><a class="back" href="{{back_url}}"><i class="bi bi-chevron-left"></i></a><div><b>CARGA TRABAJADORES</b><small>{{info.titulo}}</small></div><i class="bi {{info.icon}} ico"></i></div><div class="g323-body">
+      <div class="g323-note g323-ok"><b>Conexión central activa.</b><br>La carga realizada desde {{info.titulo}} se guarda en la misma base usada por los demás módulos.</div>
+      <div class="g323-kpis"><div class="g323-kpi"><small>Total</small><b>{{total}}</b></div><div class="g323-kpi"><small>Activos</small><b>{{activos}}</b></div><div class="g323-kpi"><small>Módulo</small><b><i class="bi {{info.icon}}"></i></b></div></div>
+      <form method="post" enctype="multipart/form-data" class="g323-form"><label>Excel de trabajadores</label><input class="form-control mt-1" type="file" name="archivo" accept=".xlsx,.xlsm" required><button class="g323-btn mt-2"><i class="bi bi-cloud-arrow-up"></i> Cargar base para todos los módulos</button></form>
+      <a class="g323-outline" href="{{url_for('modulo_trabajadores_plantilla_303', modulo=modulo)}}"><i class="bi bi-file-earmark-excel"></i> Plantilla {{info.titulo}}</a>
+      <div class="g323-section">Últimos trabajadores</div><div class="g323-table"><table><thead><tr><th>DNI</th><th>Trabajador</th><th>Área</th><th>Cargo</th><th>Estado</th></tr></thead><tbody>{% for t in ultimos %}<tr><td>{{t.dni}}</td><td>{{t.trabajador or '-'}}</td><td>{{t.area or '-'}}</td><td>{{t.cargo or '-'}}</td><td><span class="g323-status {{'off' if (t.estado or 'ACTIVO')|upper!='ACTIVO' else ''}}">{{t.estado or 'ACTIVO'}}</span></td></tr>{% else %}<tr><td colspan="5">Sin trabajadores.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>'''
+    return render_page(body, info=info, modulo=modulo, total=total, activos=activos,
+                       ultimos=ultimos, back_url=_modulo_config_url_303(modulo), title=f'Carga {info["titulo"]}')
+
+
+def trabajadores_exportar_323():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo administrador puede exportar la base.', 'danger')
+        return redirect(url_for('home'))
+    rows = rows_to_dict(execute('''SELECT dni,trabajador,empresa,area,cargo,actividad,planilla,estado,correo,celular,
+        fecha_nacimiento,direccion,distrito,provincia,departamento,tipo_trabajador,regimen_laboral,tipo_contrato,
+        remuneracion,horas_mes,dia_descanso,origen_datos,fuente_modulo,actualizado_en
+        FROM trabajadores ORDER BY trabajador,dni''', fetchall=True))
+    headers = ['DNI','TRABAJADOR','EMPRESA','AREA','CARGO','ACTIVIDAD','PLANILLA','ESTADO','CORREO','CELULAR',
+               'FECHA_NACIMIENTO','DIRECCION','DISTRITO','PROVINCIA','DEPARTAMENTO','TIPO_TRABAJADOR',
+               'REGIMEN_LABORAL','TIPO_CONTRATO','REMUNERACION','HORAS_MES','DIA_DESCANSO','ORIGEN_DATOS',
+               'FUENTE_MODULO','ACTUALIZADO_EN']
+    return excel_response(headers, rows, f'base_trabajadores_{today_str()}.xlsx', 'TRABAJADORES')
+
+
+def integraciones_rrhh_323():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo administrador puede configurar integraciones.', 'danger')
+        return redirect(url_for('home'))
+    if request.method == 'POST':
+        fuente = limpiar_texto(request.form.get('fuente') or '')
+        if fuente not in ('SQLSERVER', 'NISIRA'):
+            flash('Fuente de integración inválida.', 'danger')
+            return redirect(url_for('integraciones_rrhh_323'))
+        habilitado = 1 if request.form.get('habilitado') == '1' else 0
+        values = (
+            habilitado, limpiar_texto(request.form.get('modo') or 'PREPARADO'),
+            request.form.get('servidor','').strip(), request.form.get('puerto','').strip(),
+            request.form.get('base_datos','').strip(), request.form.get('usuario','').strip(),
+            request.form.get('driver','').strip(), request.form.get('endpoint_url','').strip(),
+            request.form.get('empresa_codigo','').strip(), request.form.get('secreto_env','').strip(),
+            request.form.get('consulta_trabajadores','').strip(), request.form.get('observacion','').strip(),
+            session.get('usuario') or '', now_str(), fuente
+        )
+        execute('''UPDATE integraciones_rrhh SET habilitado=?,modo=?,servidor=?,puerto=?,base_datos=?,usuario=?,driver=?,
+                   endpoint_url=?,empresa_codigo=?,secreto_env=?,consulta_trabajadores=?,observacion=?,actualizado_por=?,actualizado_en=?
+                   WHERE fuente=?''', values, commit=True)
+        flash(f'Configuración {fuente} guardada. La conexión real queda preparada para una siguiente etapa.', 'success')
+        return redirect(url_for('integraciones_rrhh_323'))
+    fuentes = rows_to_dict(execute('SELECT * FROM integraciones_rrhh ORDER BY fuente', fetchall=True))
+    body = _g323_css() + r'''
+    <div class="g323-wrap"><div class="g323-app"><div class="g323-head"><a class="back" href="{{url_for('configuraciones')}}"><i class="bi bi-chevron-left"></i></a><div><b>INTEGRACIONES</b><small>SQL Server y ERP Nisira</small></div><i class="bi bi-database-gear ico"></i></div><div class="g323-body">
+      <div class="g323-note"><b>Preparación segura.</b><br>Esta pantalla guarda servidor, base, usuario técnico y nombre de la variable de entorno que contendrá la clave. <b>No almacena contraseñas en texto plano.</b> Más adelante se puede conectar con pyodbc, API o procedimiento almacenado.</div>
+      {% for f in fuentes %}<form method="post" class="g323-form"><input type="hidden" name="fuente" value="{{f.fuente}}"><div class="d-flex justify-content-between align-items-center mb-2"><b class="text-success"><i class="bi {{'bi-database' if f.fuente=='SQLSERVER' else 'bi-boxes'}}"></i> {{f.fuente}}</b><span class="g323-status {{'off' if not f.habilitado else ''}}">{{'HABILITADO' if f.habilitado else 'PREPARADO'}}</span></div>
+        <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="habilitado" value="1" id="h{{loop.index}}" {{'checked' if f.habilitado else ''}}><label class="form-check-label" for="h{{loop.index}}">Habilitar cuando la conexión esté lista</label></div>
+        <label>Modo</label><select class="form-select mb-2" name="modo"><option {{'selected' if f.modo=='PREPARADO' else ''}}>PREPARADO</option><option {{'selected' if f.modo=='LECTURA' else ''}}>LECTURA</option><option {{'selected' if f.modo=='SINCRONIZACION' else ''}}>SINCRONIZACION</option></select>
+        <div class="row g-2"><div class="col-8"><label>Servidor / host</label><input class="form-control" name="servidor" value="{{f.servidor or ''}}" placeholder="srv-sql o 10.0.0.10"></div><div class="col-4"><label>Puerto</label><input class="form-control" name="puerto" value="{{f.puerto or '1433'}}"></div></div>
+        <label class="mt-2">Base de datos</label><input class="form-control" name="base_datos" value="{{f.base_datos or ''}}" placeholder="NISIRA / RRHH">
+        <label class="mt-2">Usuario técnico</label><input class="form-control" name="usuario" value="{{f.usuario or ''}}">
+        <label class="mt-2">Driver ODBC</label><input class="form-control" name="driver" value="{{f.driver or 'ODBC Driver 18 for SQL Server'}}">
+        <label class="mt-2">Endpoint API (opcional)</label><input class="form-control" name="endpoint_url" value="{{f.endpoint_url or ''}}" placeholder="https://servidor/api/trabajadores">
+        <label class="mt-2">Código empresa Nisira</label><input class="form-control" name="empresa_codigo" value="{{f.empresa_codigo or ''}}">
+        <label class="mt-2">Variable de entorno para clave/token</label><input class="form-control" name="secreto_env" value="{{f.secreto_env or ('SQLSERVER_PASSWORD' if f.fuente=='SQLSERVER' else 'NISIRA_TOKEN')}}">
+        <label class="mt-2">Consulta / procedimiento de trabajadores</label><textarea class="form-control" rows="3" name="consulta_trabajadores" placeholder="SELECT ... o sp_listar_trabajadores">{{f.consulta_trabajadores or ''}}</textarea>
+        <label class="mt-2">Observación</label><textarea class="form-control" rows="2" name="observacion">{{f.observacion or ''}}</textarea>
+        <button class="g323-btn mt-2"><i class="bi bi-save"></i> Guardar preparación {{f.fuente}}</button>
+      </form>{% endfor %}
+      <div class="g323-note g323-ok"><b>Flujo futuro previsto:</b><br>1. Leer trabajadores desde SQL Server/Nisira. 2. Normalizar DNI y campos. 3. Actualizar la tabla central. 4. Registrar auditoría. 5. Refrescar todos los módulos sin cambiar su código.</div>
+    </div></div></div>'''
+    return render_page(body, fuentes=fuentes, title='Integraciones RRHH')
+
+
+def api_trabajador_323(dni):
+    if not session.get('usuario'):
+        return jsonify(ok=False, msg='Sesión vencida.'), 401
+    dni = _g323_dni(dni)
+    if len(dni) != 8:
+        return jsonify(ok=False, msg='DNI inválido.')
+    t = row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?', (dni,), fetchone=True))
+    if not t:
+        return jsonify(ok=False, msg='DNI no encontrado en la base central de trabajadores.')
+    return jsonify(ok=True, trabajador=t, sugerido='ENTRADA', fuente=t.get('origen_datos') or 'BASE_CENTRAL')
+
+
+def home_323():
+    if '_asegurar_sesion_admin_305' in globals():
+        _asegurar_sesion_admin_305()
+    elif not session.get('usuario'):
+        return redirect(url_for('inicio'))
+    is_admin = _is_admin_292() if '_is_admin_292' in globals() else (session.get('rol') == 'admin')
+    body = _g323_css() + r'''
+    <div class="desktop-grid"><div class="phone-wrap"><div class="green-hero" style="min-height:220px"><div class="green-top"><a class="text-white text-decoration-none" href="{{url_for('soporte')}}"><i class="bi bi-headset"></i> Soporte</a>{% if is_admin %}<a class="home-gear-323" href="{{url_for('configuraciones')}}" title="Configuraciones"><i class="bi bi-gear-fill"></i><span>Config.</span></a>{% else %}<span></span>{% endif %}</div><div class="avatar"><i class="bi bi-person-circle"></i></div><div class="login-name">{{ session.get('nombres','ADMINISTRADOR') }}</div><div class="white-input mt-3"></div></div>
+      <div class="top-actions">
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='tareo')}}"><i class="bi bi-list-check"></i>TAREO</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='asistencia')}}"><i class="bi bi-fingerprint"></i>ASIST.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='transporte')}}"><i class="bi bi-bus-front"></i>TRANSP.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='contratacion')}}"><i class="bi bi-person-plus"></i>CONTRAT.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='boleta')}}"><i class="bi bi-file-earmark-text"></i>BOLETA</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='vacaciones')}}"><i class="bi bi-calendar-check"></i>VACAC.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='renovacion')}}"><i class="bi bi-arrow-repeat"></i>RENOV.</a>
+        <a class="tile text-decoration-none" href="{{url_for('modulo_acceso', modulo='horas_extras')}}"><i class="bi bi-clock-history"></i>H. EXTRAS</a>
+        {% if is_admin %}<a class="tile text-decoration-none" href="{{url_for('reportes')}}"><i class="bi bi-file-earmark-bar-graph"></i>REPORTES<br>TAREO</a>{% endif %}
+        {% if is_admin %}<a class="tile text-decoration-none" href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-repeat"></i>SINC.</a>{% endif %}
+      </div><div class="leaf"></div><div class="bottom-sync"><i class="bi bi-arrow-repeat"></i> Actualizado hasta: {{ now }}</div><a href="{{url_for('logout')}}" class="bottom-out"><i class="bi bi-box-arrow-right"></i></a></div>
+      <div class="desk-panel"><h1 class="header-title">APP MÓVIL</h1><div class="card-pro p-4 mb-3"><h4 class="fw-bold text-success mb-1">Base central de trabajadores</h4><div class="text-muted small">La configuración superior permite cargar una sola base para todos los módulos y deja preparada la integración con SQL Server o Nisira.</div></div></div></div>'''
+    return render_page(body, now=now_str(), is_admin=is_admin, title='APP MOVIL')
+
+
+try:
+    _g323_ensure_schema()
+except Exception as e:
+    print('G323 esquema pendiente:', e)
+
+# Reemplazos finales sin duplicar rutas existentes.
+app.view_functions['home'] = home_323
+app.view_functions['configuraciones'] = configuraciones_323
+app.view_functions['cargar_base'] = cargar_base_323
+app.view_functions['plantilla_trabajadores'] = plantilla_trabajadores_323
+app.view_functions['modulo_trabajadores_303'] = modulo_trabajadores_323
+app.view_functions['modulo_trabajadores_plantilla_303'] = modulo_trabajadores_plantilla_323
+app.view_functions['api_trabajador'] = api_trabajador_323
+
+try:
+    app.add_url_rule('/configuraciones/trabajadores/exportar', 'trabajadores_exportar_323', trabajadores_exportar_323, methods=['GET'])
+except Exception:
+    app.view_functions['trabajadores_exportar_323'] = trabajadores_exportar_323
+try:
+    app.add_url_rule('/configuraciones/integraciones', 'integraciones_rrhh_323', integraciones_rrhh_323, methods=['GET','POST'])
+except Exception:
+    app.view_functions['integraciones_rrhh_323'] = integraciones_rrhh_323
+
+# ===================== FIN PATCH 323 =====================
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
