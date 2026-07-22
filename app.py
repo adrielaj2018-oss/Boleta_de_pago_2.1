@@ -21527,6 +21527,133 @@ if 'contratacion_plantilla_trabajadores' in app.view_functions:
 
 # ===================== FIN PATCH 329 =====================
 
+
+# ================= PATCH MOVILIDAD AUTOMATICA 330 =================
+# Correccion final del flujo movil:
+# - acceso /transporte/movil-conductor admite GET y POST;
+# - solo muestra viajes operativos reales (con bus y conductor);
+# - el DNI/QR valido se registra automaticamente, sin boton;
+# - errores de lectura producen aviso visual y sonido, sin guardar.
+
+def _movilidad_rutas_base_330():
+    """Devuelve solo rutas maestras, nunca viajes ya iniciados."""
+    return rows_to_dict(execute("""SELECT id,nombre,origen,destino,sede,hora_retorno,estado,fecha
+                                  FROM transporte_rutas
+                                  WHERE vehiculo_id IS NULL
+                                    AND conductor_id IS NULL
+                                    AND (COALESCE(nombre,'')<>'' OR COALESCE(origen,'')<>'' OR COALESCE(destino,'')<>'')
+                                  ORDER BY id DESC LIMIT 100""", fetchall=True))
+
+
+def conductor_movil_inicio_ruta_330():
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+
+    cid = session.get('conductor_id')
+    if request.method == 'POST':
+        # Conserva el alta de viaje validada de la version anterior.
+        return conductor_movil_inicio_ruta_285()
+
+    bases = _movilidad_rutas_base_330()
+    buses = _buses_activos_285()
+    hoy = today_str()
+    activas = rows_to_dict(execute("""SELECT r.*, v.placa, v.capacidad, c.nombres AS conductor,
+                                      (SELECT COUNT(*) FROM transporte_pasajeros p WHERE p.ruta_id=r.id) AS ocupados
+                                      FROM transporte_rutas r
+                                      JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                      JOIN transporte_conductores c ON c.id=r.conductor_id
+                                      WHERE r.conductor_id=? AND r.fecha=?
+                                        AND UPPER(COALESCE(r.estado,'EN RUTA')) IN ('EN RUTA','INICIADA','ACTIVA')
+                                      ORDER BY r.id DESC LIMIT 30""", (cid, hoy), fetchall=True))
+    body = _movil_cond_285_css() + r"""
+    <div class="phone-wrap"><div class="mv285-card">
+      <div class="mv285-head"><a href="{{url_for('transporte')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Inicio ruta conductor</div></div>
+      <div class="mv285-body">
+        <div class="mv285-pill"><i class="bi bi-person-badge"></i> {{session.get('conductor_nombre')}} · {{session.get('conductor_dni')}}</div>
+        <div class="mv285-info">Seleccione la ruta registrada, el bus y la hora real de inicio. Al comenzar se creará un único viaje operativo.</div>
+        <div class="mv285-section">Comenzar nueva ruta</div>
+        <form method="post" class="mv285-form" id="frmInicioRuta330">
+          <label>Ruta registrada</label>
+          <select name="base_ruta_id" class="form-select" required><option value="">Seleccionar ruta...</option>{% for r in bases %}<option value="{{r.id}}">{{r.nombre or 'RUTA'}} · {{r.origen or '-'}} → {{r.destino or '-'}}</option>{% endfor %}</select>
+          <div class="mv285-grid2 mt-2"><div><label>Bus</label><select name="vehiculo_id" class="form-select" required><option value="">Bus...</option>{% for b in buses %}<option value="{{b.id}}">{{b.placa}} · Cap. {{b.capacidad or 0}}</option>{% endfor %}</select></div><div><label>Hora inicio</label><input name="hora_inicio" type="time" class="form-control" value="{{hora_actual}}" required></div></div>
+          <div class="mv285-grid2 mt-2"><div><label>Km inicio</label><input name="km_inicio" type="number" step="0.01" class="form-control" placeholder="Opcional"></div><div><label>GPS inicial</label><button type="button" class="mv285-outline" onclick="tomarGpsInicio330()"><i class="bi bi-geo-alt"></i> Tomar GPS</button></div></div>
+          <input type="hidden" name="latitud" id="latInicio330"><input type="hidden" name="longitud" id="lonInicio330"><div id="gpsStatus330" class="mv285-status bad">GPS pendiente.</div>
+          <button class="mv285-btn mt-2" type="submit"><i class="bi bi-play-circle"></i> Comenzar registro</button>
+        </form>
+        <div class="mv285-section">Rutas en proceso</div>
+        {% for r in activas %}<a class="mv285-route" href="{{url_for('conductor_movil_ruta', ruta_id=r.id)}}"><i class="bi bi-bus-front bus"></i><div><div class="name">{{r.nombre or 'RUTA'}} · {{r.placa}}</div><div class="meta">{{r.origen or '-'}} → {{r.destino or '-'}} · Inicio {{r.hora_salida or '-'}} · Abordados {{r.ocupados or 0}}</div></div><i class="bi bi-chevron-right chev"></i></a>{% else %}<div class="mv285-empty">No hay viajes iniciados hoy. Las rutas base sin bus no se muestran en esta lista.</div>{% endfor %}
+        <div class="mv285-kpis"><div class="mv285-kpi"><small>En proceso</small><b>{{activas|length}}</b></div><div class="mv285-kpi"><small>Buses</small><b>{{buses|length}}</b></div><div class="mv285-kpi"><small>Rutas</small><b>{{bases|length}}</b></div></div>
+      </div></div></div>
+    <script>function tomarGpsInicio330(){const st=document.getElementById('gpsStatus330'),lat=document.getElementById('latInicio330'),lon=document.getElementById('lonInicio330');if(!navigator.geolocation){st.innerHTML='GPS no disponible.';return;}st.className='mv285-status ok';st.innerHTML='Tomando GPS...';navigator.geolocation.getCurrentPosition(p=>{lat.value=p.coords.latitude;lon.value=p.coords.longitude;st.className='mv285-status ok';st.innerHTML='✓ GPS capturado';},()=>{st.className='mv285-status bad';st.innerHTML='No se pudo tomar GPS. Permita la ubicación.';},{enableHighAccuracy:true,maximumAge:10000,timeout:15000});}</script>
+    """
+    return render_page(body, bases=bases, buses=buses, activas=activas,
+                       hora_actual=datetime.now().strftime('%H:%M'), title='Inicio ruta conductor')
+
+
+def conductor_movil_ruta_330(ruta_id):
+    if not session.get('conductor_id'):
+        flash('Inicie sesión como conductor.', 'danger')
+        return redirect(url_for('conductor_movil_login'))
+    if not _trans_is_allowed_281(ruta_id):
+        flash('Esta ruta no está asignada a su usuario conductor.', 'danger')
+        return redirect(url_for('conductor_movil_inicio_ruta'))
+    ruta = row_to_dict(execute("""SELECT r.*,v.placa,v.capacidad,c.nombres AS conductor
+                                FROM transporte_rutas r
+                                JOIN transporte_vehiculos v ON v.id=r.vehiculo_id
+                                JOIN transporte_conductores c ON c.id=r.conductor_id
+                                WHERE r.id=?""", (ruta_id,), fetchone=True))
+    if not ruta:
+        flash('Viaje operativo no encontrado.', 'danger')
+        return redirect(url_for('conductor_movil_inicio_ruta'))
+    pasajeros = rows_to_dict(execute('SELECT * FROM transporte_pasajeros WHERE ruta_id=? ORDER BY fecha_hora DESC', (ruta_id,), fetchall=True))
+    ocupados=len(pasajeros); capacidad=int(ruta.get('capacidad') or 0); libres=max(0,capacidad-ocupados) if capacidad else 0
+    body = _movil_cond_284_css() + r"""
+    <div class="phone-wrap"><div class="mv284-card"><div class="mv284-head"><a href="{{url_for('conductor_movil_inicio_ruta')}}"><i class="bi bi-chevron-left"></i></a><div class="ttl">Abordaje ruta</div></div><div class="mv284-body">
+      <div class="mv284-routebox"><div class="label">RUTA</div><div class="route-title">{{ruta.origen or '-'}} → {{ruta.destino or '-'}}</div><div>Bus: <b>{{ruta.placa}}</b> | Conductor: <b>{{ruta.conductor}}</b> | Inicio: <b>{{ruta.hora_salida or '-'}}</b> | Ocupados: <b>{{ocupados}}</b></div></div>
+      <form id="frmAbordar330" class="mv284-form" onsubmit="return false"><label>DNI / QR / Código de barras</label><div class="input-group"><input id="dniTransporte330" class="form-control" inputmode="numeric" maxlength="20" required placeholder="ESCANEAR O DIGITAR DNI" autofocus><button type="button" class="btn mv284-camera" onclick="abrirScanner&&abrirScanner('readerTrans330','dniTransporte330')"><i class="bi bi-camera"></i></button></div><div id="readerTrans330" class="scan-box mt-2" style="display:none"></div><div id="transpStatus330" class="field-help">Al completar 8 dígitos se reconocerá y guardará automáticamente.</div><input type="hidden" id="latitudTrans330"><input type="hidden" id="longitudTrans330"></form>
+      <div class="d-grid gap-2 mb-2"><button class="mv284-btn" type="button" onclick="enviarGpsTransporte330({{ruta.id}},false)"><i class="bi bi-geo-alt"></i> Enviar GPS de esta ruta</button><button class="mv284-outline" type="button" onclick="enviarGpsTransporte330({{ruta.id}},true)"><i class="bi bi-broadcast-pin"></i> Iniciar / detener GPS en vivo</button></div>
+      <div class="mv284-kpis"><div class="mv284-kpi"><small>Abordados</small><b>{{ocupados}}</b></div><div class="mv284-kpi"><small>Libres</small><b>{{libres}}</b></div><div class="mv284-kpi"><small>Capacidad</small><b>{{capacidad}}</b></div></div>
+      <div class="mv284-tablewrap"><table class="mv284-table"><thead><tr><th>Hora</th><th>DNI</th><th>Trabajador</th><th>Método</th></tr></thead><tbody>{% for p in pasajeros %}<tr><td>{{p.hora}}</td><td>{{p.dni}}</td><td>{{p.trabajador}}</td><td>{{p.metodo}}</td></tr>{% else %}<tr><td colspan="4" class="text-center text-muted">Sin abordajes.</td></tr>{% endfor %}</tbody></table></div>
+    </div></div></div>
+    <script>
+    (function(){const i=document.getElementById('dniTransporte330'),st=document.getElementById('transpStatus330'),lat=document.getElementById('latitudTrans330'),lon=document.getElementById('longitudTrans330');let busy=false,last='';const getdni=v=>{const m=String(v||'').match(/(?:^|\D)(\d{8})(?:\D|$)/);return m?m[1]:String(v||'').replace(/\D/g,'').slice(-8)};function tonoError(){try{const A=window.AudioContext||window.webkitAudioContext,a=new A(),o=a.createOscillator(),g=a.createGain();o.type='square';o.frequency.value=190;g.gain.value=.16;o.connect(g);g.connect(a.destination);o.start();setTimeout(()=>{o.stop();a.close()},420)}catch(e){}}async function registrar(){const d=getdni(i.value);if(d.length<8){st.className='field-help';st.innerHTML='Esperando 8 dígitos...';return}i.value=d;if(busy||d===last)return;busy=true;st.className='field-help';st.innerHTML='Reconociendo y guardando '+d+'...';try{const fd=new FormData();fd.append('dni',d);fd.append('metodo','QR / CODIGO / DNI AUTOMATICO');fd.append('latitud',lat.value||'');fd.append('longitud',lon.value||'');const r=await fetch('/api/transporte/ruta/{{ruta.id}}/abordar-auto',{method:'POST',body:fd,credentials:'same-origin',cache:'no-store'});const j=await r.json();if(j.ok){last=d;st.className='scan-ok flash';st.innerHTML='✓ '+j.msg;if(typeof beep==='function')beep();i.value='';setTimeout(()=>location.reload(),550)}else{st.className='scan-bad flash';st.innerHTML='✕ '+(j.msg||'Trabajador no reconocido');tonoError();i.select();setTimeout(()=>{last=''},900)}}catch(e){st.className='scan-bad flash';st.innerHTML='✕ Error de conexión. No se guardó.';tonoError()}finally{busy=false}}i.addEventListener('input',registrar);i.addEventListener('paste',()=>setTimeout(registrar,80));i.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();registrar()}});if(navigator.geolocation)navigator.geolocation.getCurrentPosition(p=>{lat.value=p.coords.latitude;lon.value=p.coords.longitude},()=>{},{enableHighAccuracy:true,maximumAge:10000,timeout:15000});})();
+    let gpsWatch330=null;async function enviarGpsTransporte330(rid,live){function post(p){let fd=new FormData();fd.append('latitud',p.coords.latitude);fd.append('longitud',p.coords.longitude);return fetch('/transporte/ruta/'+rid+'/gps',{method:'POST',body:fd,credentials:'same-origin'}).then(r=>r.json())}if(!navigator.geolocation){alert('GPS no disponible');return}if(live){if(gpsWatch330){navigator.geolocation.clearWatch(gpsWatch330);gpsWatch330=null;alert('GPS en vivo detenido');return}gpsWatch330=navigator.geolocation.watchPosition(p=>post(p).catch(()=>{}),()=>alert('Permita ubicación/GPS'),{enableHighAccuracy:true,maximumAge:10000,timeout:15000});alert('GPS en vivo iniciado. Mantenga esta pantalla abierta.');return}navigator.geolocation.getCurrentPosition(async p=>{let j=await post(p);alert(j.msg||'GPS actualizado')},()=>alert('Permita ubicación/GPS'),{enableHighAccuracy:true,maximumAge:10000,timeout:15000})}
+    </script>"""
+    return render_page(body,ruta=ruta,pasajeros=pasajeros,ocupados=ocupados,capacidad=capacidad,libres=libres,title='Abordaje ruta')
+
+
+@app.route('/api/transporte/ruta/<int:ruta_id>/abordar-auto', methods=['POST'])
+def transporte_abordar_auto_330(ruta_id):
+    if not _trans_is_allowed_281(ruta_id):
+        return jsonify(ok=False,msg='Sesión vencida o ruta no asignada.'),401
+    ruta=row_to_dict(execute('SELECT r.*,v.capacidad FROM transporte_rutas r JOIN transporte_vehiculos v ON v.id=r.vehiculo_id WHERE r.id=?',(ruta_id,),fetchone=True))
+    if not ruta:return jsonify(ok=False,msg='Ruta operativa no encontrada.'),404
+    dni=limpiar_dni(request.form.get('dni'))
+    if len(dni)!=8:return jsonify(ok=False,msg='DNI inválido. No se guardó.'),400
+    t=row_to_dict(execute('SELECT * FROM trabajadores WHERE dni=?',(dni,),fetchone=True))
+    if not t:return jsonify(ok=False,msg='Trabajador no reconocido en la base. No se guardó.'),404
+    if scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE ruta_id=? AND dni=?',(ruta_id,dni)):
+        return jsonify(ok=False,msg='El trabajador ya fue abordado en esta ruta.'),409
+    capacidad=int(ruta.get('capacidad') or 0);ocupados=int(scalar('SELECT COUNT(*) AS c FROM transporte_pasajeros WHERE ruta_id=?',(ruta_id,)) or 0)
+    if capacidad and ocupados>=capacidad:return jsonify(ok=False,msg='El bus alcanzó su capacidad. No se guardó.'),409
+    ahora=datetime.now();fecha=ahora.strftime('%Y-%m-%d');hora=ahora.strftime('%H:%M:%S');nombre=t.get('trabajador') or dni
+    execute("""INSERT INTO transporte_pasajeros(ruta_id,dni,trabajador,empresa,area,cargo,fecha,hora,fecha_hora,metodo,latitud,longitud,registrado_por,observacion)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(ruta_id,dni,nombre,t.get('empresa'),t.get('area'),t.get('cargo'),fecha,hora,ahora.strftime('%Y-%m-%d %H:%M:%S'),limpiar_texto(request.form.get('metodo') or 'AUTOMATICO'),request.form.get('latitud',''),request.form.get('longitud',''),_trans_user_281(),'REGISTRO AUTOMATICO'),commit=True)
+    return jsonify(ok=True,msg=f'{nombre} registrado automáticamente.',dni=dni,trabajador=nombre,ocupados=ocupados+1,libres=max(0,capacidad-ocupados-1) if capacidad else 0)
+
+
+# El endpoint historico fue creado solo con GET. Se habilita POST sobre la misma
+# regla para que el formulario DNI/PIN no produzca HTTP 405 en Render.
+for _regla_330 in app.url_map.iter_rules():
+    if _regla_330.rule == '/transporte/movil-conductor':
+        _regla_330.methods.add('POST')
+
+app.view_functions['conductor_movil_inicio_ruta'] = conductor_movil_inicio_ruta_330
+app.view_functions['conductor_movil_panel'] = conductor_movil_inicio_ruta_330
+app.view_functions['conductor_movil_ruta'] = conductor_movil_ruta_330
+# ================= FIN PATCH MOVILIDAD AUTOMATICA 330 =================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
