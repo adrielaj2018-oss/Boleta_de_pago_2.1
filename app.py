@@ -21773,8 +21773,8 @@ def privilegios_modulo_331(modulo):
     <style>
       .pr331-role{border:1px solid #dbe8dc;border-radius:12px;padding:11px;margin:9px 0;background:#fbfffc}
       .pr331-title{display:flex;align-items:center;gap:8px;color:#08713b;font-size:13px;font-weight:950;margin-bottom:7px}
-      .pr331-line{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #edf2ed;padding:9px 1px;font-size:11px;font-weight:850;color:#24402e}
-      .pr331-line:first-of-type{border-top:0}.pr331-line input{width:21px;height:21px;accent-color:#08713b}
+      .pr331-line{display:grid;grid-template-columns:1fr 125px;gap:8px;align-items:center;border-top:1px solid #edf2ed;padding:9px 1px;font-size:11px;font-weight:850;color:#24402e}
+      .pr331-line:first-of-type{border-top:0}.pr331-line select{height:37px;border:1px solid #9bc9a5;border-radius:8px;background:#fff;color:#075d2a;font-size:11px;font-weight:900;padding:0 6px}
       .pr331-help{font-size:9.5px;color:#607568;font-weight:750;display:block;margin-top:2px}
     </style>
     <div class="g323-wrap"><div class="g323-app">
@@ -21784,9 +21784,9 @@ def privilegios_modulo_331(modulo):
         <form method="post" class="g323-form">
           {% for rol,p in [('admin',admin),('usuario',usuario)] %}
           <div class="pr331-role"><div class="pr331-title"><i class="bi {{'bi-person-gear' if rol=='admin' else 'bi-person'}}"></i> {{'ADMINISTRADOR' if rol=='admin' else 'USUARIO'}}</div>
-            <label class="pr331-line"><span>Ingresar al módulo<small class="pr331-help">Permite abrir y utilizar {{info.titulo}}.</small></span><input type="checkbox" name="{{rol}}_ingresar" value="1" {{'checked' if p.puede_ingresar else ''}}></label>
-            <label class="pr331-line"><span>Abrir configuración<small class="pr331-help">Permite entrar a los parámetros propios del módulo.</small></span><input type="checkbox" name="{{rol}}_configurar" value="1" {{'checked' if p.puede_configurar else ''}}></label>
-            <label class="pr331-line"><span>Cargar o actualizar datos<small class="pr331-help">Permite cargas Excel y cambios administrativos.</small></span><input type="checkbox" name="{{rol}}_cargar" value="1" {{'checked' if p.puede_cargar else ''}}></label>
+            <label class="pr331-line"><span>¿Puede entrar?<small class="pr331-help">Abrir y usar {{info.titulo}}.</small></span><select name="{{rol}}_ingresar"><option value="1" {{'selected' if p.puede_ingresar else ''}}>SÍ, PERMITIR</option><option value="0" {{'selected' if not p.puede_ingresar else ''}}>NO, BLOQUEAR</option></select></label>
+            <label class="pr331-line"><span>¿Puede configurar?<small class="pr331-help">Cambiar parámetros del módulo.</small></span><select name="{{rol}}_configurar"><option value="1" {{'selected' if p.puede_configurar else ''}}>SÍ, PERMITIR</option><option value="0" {{'selected' if not p.puede_configurar else ''}}>NO, BLOQUEAR</option></select></label>
+            <label class="pr331-line"><span>¿Puede cargar datos?<small class="pr331-help">Excel y cambios administrativos.</small></span><select name="{{rol}}_cargar"><option value="1" {{'selected' if p.puede_cargar else ''}}>SÍ, PERMITIR</option><option value="0" {{'selected' if not p.puede_cargar else ''}}>NO, BLOQUEAR</option></select></label>
           </div>{% endfor %}
           <button class="g323-btn" type="submit"><i class="bi bi-shield-check"></i> Guardar privilegios</button>
         </form>
@@ -21830,6 +21830,31 @@ except Exception as e:
     print('Privilegios 331 rutas:', e)
 
 
+def _priv_inyectar_html_332(response, marker, contenido):
+    """Inserta HTML tanto si Flask devuelve texto como si devuelve Response."""
+    if request.method != 'GET':
+        return response
+    try:
+        if isinstance(response, str):
+            if marker in response and contenido not in response:
+                return response.replace(marker, contenido + marker, 1)
+            return response
+        if isinstance(response, tuple) and response and isinstance(response[0], str):
+            html = response[0]
+            if marker in html and contenido not in html:
+                html = html.replace(marker, contenido + marker, 1)
+            return (html,) + tuple(response[1:])
+        if hasattr(response, 'get_data'):
+            html = response.get_data(as_text=True)
+            if marker in html and contenido not in html:
+                html = html.replace(marker, contenido + marker, 1)
+                response.set_data(html)
+                response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('Privilegios 332 inyeccion:', e)
+    return response
+
+
 # Inserta la opción de privilegios dentro de cada configuración existente.
 for _priv_mod_331, _priv_ep_331 in list(CONFIG_ENDPOINTS_303.items()):
     if _priv_ep_331 not in app.view_functions:
@@ -21841,18 +21866,9 @@ for _priv_mod_331, _priv_ep_331 in list(CONFIG_ENDPOINTS_303.items()):
             flash(f'El rol {rol.upper()} no tiene permiso para configurar {_priv_info_331(_mod)["titulo"]}.', 'danger')
             return redirect(url_for('home'))
         response = _orig()
-        try:
-            if hasattr(response, 'get_data') and request.method == 'GET':
-                html = response.get_data(as_text=True)
-                marker = '<div class="cfg303-list">'
-                link = '''<div class="cfg303-list" style="margin-bottom:8px"><a class="cfg303-item" href="''' + url_for('privilegios_modulo_331', modulo=_mod) + '''"><i class="bi bi-shield-lock"></i><div><b>Privilegios de acceso</b><small>Otorgar permisos independientes a Administrador y Usuario.</small></div><i class="bi bi-chevron-right chev"></i></a></div>'''
-                if marker in html and 'Privilegios de acceso' not in html:
-                    html = html.replace(marker, link + marker, 1)
-                    response.set_data(html)
-                    response.headers['Content-Length'] = str(len(response.get_data()))
-        except Exception as e:
-            print('Privilegios 331 enlace config:', e)
-        return response
+        marker = '<div class="cfg303-list">'
+        link = '''<div class="cfg303-list" style="margin-bottom:12px"><a class="cfg303-item" style="background:#08713b;color:#fff;border-color:#08713b;min-height:66px" href="''' + url_for('privilegios_modulo_331', modulo=_mod) + '''"><i class="bi bi-shield-lock" style="color:#fff;font-size:25px"></i><div><b style="color:#fff;font-size:13px">DAR PERMISOS A ADMINISTRADOR Y USUARIO</b><small style="color:#eaffee;font-size:10px">Pulse aquí para permitir o bloquear el acceso a este módulo.</small></div><i class="bi bi-chevron-right chev" style="color:#fff"></i></a></div>'''
+        return _priv_inyectar_html_332(response, marker, link)
     app.view_functions[_priv_ep_331] = _priv_config_wrapper_331
 
 
@@ -21876,20 +21892,22 @@ if _priv_modulo_acceso_original_331:
 _priv_configuraciones_original_331 = app.view_functions.get('configuraciones')
 def configuraciones_331():
     response = _priv_configuraciones_original_331()
-    try:
-        if hasattr(response, 'get_data') and request.method == 'GET':
-            html = response.get_data(as_text=True)
-            marker = '<div class="g323-section">Base central</div>'
-            link = '''<div class="g323-section">Seguridad y accesos</div><div class="g323-list"><a class="g323-item" href="''' + url_for('privilegios_resumen_331') + '''"><i class="bi bi-shield-lock"></i><div><b>Privilegios por módulo</b><small>Configure Administrador y Usuario de forma independiente para cada módulo.</small></div><i class="bi bi-chevron-right"></i></a></div>'''
-            if marker in html and 'Privilegios por módulo' not in html:
-                html = html.replace(marker, link + marker, 1)
-                response.set_data(html)
-                response.headers['Content-Length'] = str(len(response.get_data()))
-    except Exception as e:
-        print('Privilegios 331 pantalla configuraciones:', e)
-    return response
+    marker = '<div class="g323-kpis">'
+    link = '''<div style="margin:10px 0 12px"><a href="''' + url_for('privilegios_resumen_331') + '''" style="min-height:72px;background:#08713b;color:#fff!important;border-radius:11px;text-decoration:none;display:flex;align-items:center;gap:11px;padding:12px;box-shadow:0 7px 15px rgba(8,113,59,.22)"><i class="bi bi-shield-lock" style="font-size:29px"></i><span style="flex:1"><b style="display:block;font-size:14px;color:#fff">PERMISOS POR MÓDULO</b><small style="display:block;color:#eaffee;font-weight:800;margin-top:3px">Elija qué puede hacer el ADMINISTRADOR y el USUARIO en cada módulo.</small></span><i class="bi bi-chevron-right" style="font-size:22px"></i></a></div>'''
+    return _priv_inyectar_html_332(response, marker, link)
 if _priv_configuraciones_original_331:
     app.view_functions['configuraciones'] = configuraciones_331
+
+
+# También diferencia claramente "Usuarios" de "Permisos por módulo".
+_priv_usuarios_original_332 = app.view_functions.get('usuarios')
+def usuarios_332():
+    response = _priv_usuarios_original_332()
+    marker = '<form method="post"'
+    link = '''<div class="alert alert-success" style="font-size:12px;font-weight:800"><b>Esta pantalla solo crea cuentas.</b><br>Para decidir a qué módulos puede entrar cada rol, use el botón siguiente.</div><a class="btn btn-green w-100 mb-2" style="height:48px;display:flex;align-items:center;justify-content:center;font-weight:900" href="''' + url_for('privilegios_resumen_331') + '''"><i class="bi bi-shield-lock me-2"></i> CONFIGURAR PERMISOS POR MÓDULO</a>'''
+    return _priv_inyectar_html_332(response, marker, link)
+if _priv_usuarios_original_332:
+    app.view_functions['usuarios'] = usuarios_332
 
 
 def _priv_modulo_endpoint_331(endpoint):
