@@ -21654,6 +21654,305 @@ app.view_functions['conductor_movil_panel'] = conductor_movil_inicio_ruta_330
 app.view_functions['conductor_movil_ruta'] = conductor_movil_ruta_330
 # ================= FIN PATCH MOVILIDAD AUTOMATICA 330 =================
 
+
+# ================= PRIVILEGIOS INDEPENDIENTES POR MODULO 331 =================
+# Cada modulo conserva permisos separados para ADMINISTRADOR y USUARIO.
+# Los permisos se validan en servidor: ocultar un enlace no concede acceso.
+
+PRIVILEGIOS_MODULOS_331 = [
+    'tareo', 'asistencia', 'transporte', 'contratacion', 'boletas',
+    'vacaciones', 'renovacion', 'horas_extras', 'reportes', 'sincronizacion'
+]
+
+
+def _priv_rol_331(rol=None):
+    rol = str(rol or session.get('module_role') or session.get('rol') or 'usuario').lower()
+    return 'admin' if rol == 'admin' else 'usuario'
+
+
+def _priv_schema_331():
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS privilegios_modulo(
+            id {idtype}, modulo TEXT NOT NULL, rol TEXT NOT NULL,
+            puede_ingresar INTEGER DEFAULT 1, puede_configurar INTEGER DEFAULT 0,
+            puede_cargar INTEGER DEFAULT 0, actualizado_por TEXT, actualizado_en TEXT,
+            UNIQUE(modulo, rol))'''))
+        for modulo in PRIVILEGIOS_MODULOS_331:
+            for rol in ('admin', 'usuario'):
+                cur.execute(qmark('SELECT id FROM privilegios_modulo WHERE modulo=? AND rol=?'), (modulo, rol))
+                if not cur.fetchone():
+                    cur.execute(qmark('''INSERT INTO privilegios_modulo(
+                        modulo,rol,puede_ingresar,puede_configurar,puede_cargar,actualizado_por,actualizado_en
+                    ) VALUES(?,?,?,?,?,?,?)'''),
+                    (modulo, rol, 1, 1 if rol == 'admin' else 0,
+                     1 if rol == 'admin' else 0, 'SISTEMA', now_str()))
+        conn.commit()
+    finally:
+        try: cur.close()
+        except Exception: pass
+        conn.close()
+
+
+def _priv_get_331(modulo, rol=None):
+    modulo = str(modulo or '').lower()
+    rol = _priv_rol_331(rol)
+    row = row_to_dict(execute('''SELECT * FROM privilegios_modulo
+                                 WHERE modulo=? AND rol=?''',
+                              (modulo, rol), fetchone=True))
+    if row:
+        return row
+    return {
+        'modulo': modulo, 'rol': rol, 'puede_ingresar': 1,
+        'puede_configurar': 1 if rol == 'admin' else 0,
+        'puede_cargar': 1 if rol == 'admin' else 0
+    }
+
+
+def _priv_ok_331(modulo, accion='ingresar', rol=None):
+    p = _priv_get_331(modulo, rol)
+    campo = {
+        'ingresar': 'puede_ingresar',
+        'configurar': 'puede_configurar',
+        'cargar': 'puede_cargar'
+    }.get(accion, 'puede_ingresar')
+    return bool(int(p.get(campo) or 0))
+
+
+def _priv_save_331(modulo, rol, ingresar, configurar, cargar):
+    old = row_to_dict(execute('SELECT id FROM privilegios_modulo WHERE modulo=? AND rol=?',
+                              (modulo, rol), fetchone=True))
+    values = (int(ingresar), int(configurar), int(cargar),
+              session.get('usuario') or '', now_str())
+    if old:
+        execute('''UPDATE privilegios_modulo SET puede_ingresar=?,puede_configurar=?,
+                   puede_cargar=?,actualizado_por=?,actualizado_en=? WHERE modulo=? AND rol=?''',
+                values + (modulo, rol), commit=True)
+    else:
+        execute('''INSERT INTO privilegios_modulo(
+                   puede_ingresar,puede_configurar,puede_cargar,actualizado_por,
+                   actualizado_en,modulo,rol) VALUES(?,?,?,?,?,?,?)''',
+                values + (modulo, rol), commit=True)
+
+
+def _priv_info_331(modulo):
+    info = MODULOS_303.get(modulo, {}) if 'MODULOS_303' in globals() else {}
+    return {
+        'titulo': info.get('titulo') or modulo.replace('_', ' ').title(),
+        'icon': info.get('icon') or 'bi-grid'
+    }
+
+
+def privilegios_modulo_331(modulo):
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo un administrador puede otorgar o retirar privilegios.', 'danger')
+        return redirect(url_for('home'))
+    modulo = str(modulo or '').lower()
+    if modulo not in PRIVILEGIOS_MODULOS_331:
+        flash('Módulo no válido.', 'danger')
+        return redirect(url_for('configuraciones'))
+    if request.method == 'POST':
+        for rol in ('admin', 'usuario'):
+            ingresar = request.form.get(f'{rol}_ingresar') == '1'
+            configurar = request.form.get(f'{rol}_configurar') == '1'
+            cargar = request.form.get(f'{rol}_cargar') == '1'
+            # Configurar o cargar requiere que el rol también pueda ingresar.
+            if configurar or cargar:
+                ingresar = True
+            _priv_save_331(modulo, rol, ingresar, configurar, cargar)
+        flash(f'Privilegios de {_priv_info_331(modulo)["titulo"]} guardados.', 'success')
+        return redirect(url_for('privilegios_modulo_331', modulo=modulo))
+    admin = _priv_get_331(modulo, 'admin')
+    usuario = _priv_get_331(modulo, 'usuario')
+    info = _priv_info_331(modulo)
+    back_url = _modulo_config_url_303(modulo) if '_modulo_config_url_303' in globals() else url_for('configuraciones')
+    body = (_g323_css() if '_g323_css' in globals() else '') + r'''
+    <style>
+      .pr331-role{border:1px solid #dbe8dc;border-radius:12px;padding:11px;margin:9px 0;background:#fbfffc}
+      .pr331-title{display:flex;align-items:center;gap:8px;color:#08713b;font-size:13px;font-weight:950;margin-bottom:7px}
+      .pr331-line{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #edf2ed;padding:9px 1px;font-size:11px;font-weight:850;color:#24402e}
+      .pr331-line:first-of-type{border-top:0}.pr331-line input{width:21px;height:21px;accent-color:#08713b}
+      .pr331-help{font-size:9.5px;color:#607568;font-weight:750;display:block;margin-top:2px}
+    </style>
+    <div class="g323-wrap"><div class="g323-app">
+      <div class="g323-head"><a class="back" href="{{back_url}}"><i class="bi bi-chevron-left"></i></a><div><b>PRIVILEGIOS {{info.titulo|upper}}</b><small>Administrador y usuario independientes</small></div><i class="bi bi-shield-lock ico"></i></div>
+      <div class="g323-body">
+        <div class="g323-note g323-ok"><b>Control real de acceso.</b><br>Los permisos se validan en el servidor. Si se desactiva un privilegio, el rol no podrá ingresar directamente escribiendo la dirección web.</div>
+        <form method="post" class="g323-form">
+          {% for rol,p in [('admin',admin),('usuario',usuario)] %}
+          <div class="pr331-role"><div class="pr331-title"><i class="bi {{'bi-person-gear' if rol=='admin' else 'bi-person'}}"></i> {{'ADMINISTRADOR' if rol=='admin' else 'USUARIO'}}</div>
+            <label class="pr331-line"><span>Ingresar al módulo<small class="pr331-help">Permite abrir y utilizar {{info.titulo}}.</small></span><input type="checkbox" name="{{rol}}_ingresar" value="1" {{'checked' if p.puede_ingresar else ''}}></label>
+            <label class="pr331-line"><span>Abrir configuración<small class="pr331-help">Permite entrar a los parámetros propios del módulo.</small></span><input type="checkbox" name="{{rol}}_configurar" value="1" {{'checked' if p.puede_configurar else ''}}></label>
+            <label class="pr331-line"><span>Cargar o actualizar datos<small class="pr331-help">Permite cargas Excel y cambios administrativos.</small></span><input type="checkbox" name="{{rol}}_cargar" value="1" {{'checked' if p.puede_cargar else ''}}></label>
+          </div>{% endfor %}
+          <button class="g323-btn" type="submit"><i class="bi bi-shield-check"></i> Guardar privilegios</button>
+        </form>
+        <a class="g323-outline" href="{{url_for('privilegios_resumen_331')}}"><i class="bi bi-grid-3x3-gap"></i> Ver todos los módulos</a>
+      </div>
+    </div></div>'''
+    return render_page(body, modulo=modulo, info=info, admin=admin, usuario=usuario,
+                       back_url=back_url, title=f'Privilegios {info["titulo"]}')
+
+
+def privilegios_resumen_331():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    if session.get('rol') != 'admin':
+        flash('Solo un administrador puede administrar privilegios.', 'danger')
+        return redirect(url_for('home'))
+    rows = []
+    for modulo in PRIVILEGIOS_MODULOS_331:
+        rows.append({'key': modulo, 'info': _priv_info_331(modulo),
+                     'admin': _priv_get_331(modulo, 'admin'),
+                     'usuario': _priv_get_331(modulo, 'usuario')})
+    body = (_g323_css() if '_g323_css' in globals() else '') + r'''
+    <div class="g323-wrap"><div class="g323-app"><div class="g323-head"><a class="back" href="{{url_for('configuraciones')}}"><i class="bi bi-chevron-left"></i></a><div><b>PRIVILEGIOS POR MÓDULO</b><small>Accesos independientes</small></div><i class="bi bi-shield-lock ico"></i></div><div class="g323-body">
+      <div class="g323-note"><b>Seleccione un módulo.</b><br>A = Administrador, U = Usuario. Verde indica acceso habilitado.</div>
+      <div class="g323-list">{% for r in rows %}<a class="g323-item" href="{{url_for('privilegios_modulo_331',modulo=r.key)}}"><i class="bi {{r.info.icon}}"></i><div><b>{{r.info.titulo}}</b><small>Administrador: {{'A' if r.admin.puede_ingresar else '—'}} / Config. {{'Sí' if r.admin.puede_configurar else 'No'}} · Usuario: {{'U' if r.usuario.puede_ingresar else '—'}} / Config. {{'Sí' if r.usuario.puede_configurar else 'No'}}</small></div><i class="bi bi-chevron-right"></i></a>{% endfor %}</div>
+    </div></div></div>'''
+    return render_page(body, rows=rows, title='Privilegios por módulo')
+
+
+try:
+    _priv_schema_331()
+except Exception as e:
+    print('Privilegios 331 esquema pendiente:', e)
+
+try:
+    app.add_url_rule('/configuraciones/privilegios', 'privilegios_resumen_331',
+                     privilegios_resumen_331, methods=['GET'])
+    app.add_url_rule('/configuraciones/privilegios/<modulo>', 'privilegios_modulo_331',
+                     privilegios_modulo_331, methods=['GET', 'POST'])
+except Exception as e:
+    print('Privilegios 331 rutas:', e)
+
+
+# Inserta la opción de privilegios dentro de cada configuración existente.
+for _priv_mod_331, _priv_ep_331 in list(CONFIG_ENDPOINTS_303.items()):
+    if _priv_ep_331 not in app.view_functions:
+        continue
+    _priv_original_331 = app.view_functions[_priv_ep_331]
+    def _priv_config_wrapper_331(_orig=_priv_original_331, _mod=_priv_mod_331):
+        rol = _priv_rol_331()
+        if not _priv_ok_331(_mod, 'configurar', rol):
+            flash(f'El rol {rol.upper()} no tiene permiso para configurar {_priv_info_331(_mod)["titulo"]}.', 'danger')
+            return redirect(url_for('home'))
+        response = _orig()
+        try:
+            if hasattr(response, 'get_data') and request.method == 'GET':
+                html = response.get_data(as_text=True)
+                marker = '<div class="cfg303-list">'
+                link = '''<div class="cfg303-list" style="margin-bottom:8px"><a class="cfg303-item" href="''' + url_for('privilegios_modulo_331', modulo=_mod) + '''"><i class="bi bi-shield-lock"></i><div><b>Privilegios de acceso</b><small>Otorgar permisos independientes a Administrador y Usuario.</small></div><i class="bi bi-chevron-right chev"></i></a></div>'''
+                if marker in html and 'Privilegios de acceso' not in html:
+                    html = html.replace(marker, link + marker, 1)
+                    response.set_data(html)
+                    response.headers['Content-Length'] = str(len(response.get_data()))
+        except Exception as e:
+            print('Privilegios 331 enlace config:', e)
+        return response
+    app.view_functions[_priv_ep_331] = _priv_config_wrapper_331
+
+
+# Valida el privilegio después de autenticar el rol elegido en cada módulo.
+_priv_modulo_acceso_original_331 = app.view_functions.get('modulo_acceso')
+def modulo_acceso_331(modulo):
+    response = _priv_modulo_acceso_original_331(modulo)
+    if request.method == 'POST' and session.get('module_name') == modulo:
+        rol = _priv_rol_331(session.get('module_role'))
+        if not _priv_ok_331(modulo, 'ingresar', rol):
+            session.pop('module_role', None)
+            session.pop('module_name', None)
+            flash(f'El rol {rol.upper()} no tiene acceso habilitado para {_priv_info_331(modulo)["titulo"]}.', 'danger')
+            return redirect(url_for('modulo_acceso', modulo=modulo))
+    return response
+if _priv_modulo_acceso_original_331:
+    app.view_functions['modulo_acceso'] = modulo_acceso_331
+
+
+# Agrega el acceso general a la matriz en la pantalla mostrada en la imagen.
+_priv_configuraciones_original_331 = app.view_functions.get('configuraciones')
+def configuraciones_331():
+    response = _priv_configuraciones_original_331()
+    try:
+        if hasattr(response, 'get_data') and request.method == 'GET':
+            html = response.get_data(as_text=True)
+            marker = '<div class="g323-section">Base central</div>'
+            link = '''<div class="g323-section">Seguridad y accesos</div><div class="g323-list"><a class="g323-item" href="''' + url_for('privilegios_resumen_331') + '''"><i class="bi bi-shield-lock"></i><div><b>Privilegios por módulo</b><small>Configure Administrador y Usuario de forma independiente para cada módulo.</small></div><i class="bi bi-chevron-right"></i></a></div>'''
+            if marker in html and 'Privilegios por módulo' not in html:
+                html = html.replace(marker, link + marker, 1)
+                response.set_data(html)
+                response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('Privilegios 331 pantalla configuraciones:', e)
+    return response
+if _priv_configuraciones_original_331:
+    app.view_functions['configuraciones'] = configuraciones_331
+
+
+def _priv_modulo_endpoint_331(endpoint):
+    ep = str(endpoint or '').lower()
+    if not ep:
+        return ''
+    # Endpoints de configuración exactos.
+    for modulo, config_ep in CONFIG_ENDPOINTS_303.items():
+        if ep == str(config_ep).lower():
+            return modulo
+    reglas = [
+        ('transporte', ('transporte', 'conductor_movil')),
+        ('contratacion', ('contratacion',)),
+        ('boletas', ('boleta',)),
+        ('vacaciones', ('vacacion',)),
+        ('renovacion', ('renovacion',)),
+        ('horas_extras', ('horas_extra', 'he_')),
+        ('sincronizacion', ('sincronizacion',)),
+        ('reportes', ('reporte', 'reportes')),
+        ('asistencia', ('asistencia',)),
+        ('tareo', ('tareo', 'hoja_tareo', 'hojas_tareo')),
+    ]
+    for modulo, prefixes in reglas:
+        if any(ep.startswith(p) for p in prefixes):
+            return modulo
+    return ''
+
+
+@app.before_request
+def _priv_guard_directo_331():
+    ep = str(request.endpoint or '')
+    if not session.get('usuario') or not ep:
+        return None
+    # Nunca bloquear la administración de la propia matriz ni accesos generales.
+    libres = {
+        'static', 'home', 'inicio', 'login', 'logout', 'configuraciones',
+        'configuraciones_331', 'privilegios_resumen_331',
+        'privilegios_modulo_331', 'modulo_acceso', 'usuarios', 'soporte'
+    }
+    if ep in libres:
+        return None
+    modulo = _priv_modulo_endpoint_331(ep)
+    if not modulo:
+        return None
+    rol = _priv_rol_331()
+    accion = 'ingresar'
+    if ep == CONFIG_ENDPOINTS_303.get(modulo):
+        accion = 'configurar'
+    elif ('cargar' in ep or 'import' in ep or 'subir' in ep or
+          ep in ('modulo_trabajadores_303', 'modulo_trabajadores_329')):
+        accion = 'cargar'
+    if _priv_ok_331(modulo, accion, rol):
+        return None
+    titulo = _priv_info_331(modulo)['titulo']
+    texto = {
+        'ingresar': 'ingresar',
+        'configurar': 'abrir la configuración',
+        'cargar': 'cargar o actualizar datos'
+    }[accion]
+    flash(f'El rol {rol.upper()} no tiene privilegio para {texto} en {titulo}.', 'danger')
+    return redirect(url_for('home'))
+# =============== FIN PRIVILEGIOS INDEPENDIENTES POR MODULO 331 ===============
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
