@@ -22184,10 +22184,19 @@ def modulo_acceso_333(modulo):
     total_user = int(scalar(
         "SELECT COUNT(*) AS c FROM usuarios_modulo WHERE modulo=? AND rol='usuario' AND UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO'",
         (canon,)) or 0)
+    config_url = _modulo_config_url_303(canon)
     body = r'''
-    <div class="phone-wrap">
+    <style>
+      .mu335-access .green-top{align-items:center}
+      .mu335-access .mu335-config{color:#fff!important;text-decoration:none;font-size:20px;line-height:1;padding:5px}
+      .mu335-access .g320-config-trigger,.mu335-access .g322-direct-config{display:none!important}
+    </style>
+    <div class="phone-wrap mu335-access">
       <div class="green-hero" style="min-height:245px;border-radius:0 0 22px 22px">
-        <div class="green-top"><a class="text-white text-decoration-none" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><span><i class="bi bi-shield-lock"></i> Acceso propio</span></div>
+        <div class="green-top">
+          <a class="text-white text-decoration-none" href="{{url_for('home')}}" aria-label="Regresar"><i class="bi bi-chevron-left"></i></a>
+          <a class="mu335-config" href="{{config_url}}" aria-label="Configuración del módulo" title="Configuración"><i class="bi bi-gear"></i></a>
+        </div>
         <div class="splash-logo" style="width:112px;height:112px;font-size:48px;margin:14px auto 8px"><i class="bi {{icon}}"></i></div>
         <div class="splash-title">{{label|upper}}</div><div class="login-name">INICIAR SESIÓN DEL MÓDULO</div>
       </div>
@@ -22199,8 +22208,18 @@ def modulo_acceso_333(modulo):
         <div class="text-center text-muted mt-2" style="font-size:10px;font-weight:800">Cuentas activas: {{total_admin}} administrador(es) · {{total_user}} usuario(s)</div>
         {% if session.get('rol')=='admin' %}<a class="btn btn-outline-success w-100 mt-2" href="{{url_for('modulo_usuarios_333',modulo=canon)}}"><i class="bi bi-people"></i> CREAR USUARIOS DE ESTE MÓDULO</a>{% endif %}
       </form>
-    </div>'''
+    </div>
+    <script>
+    (function(){
+      function limpiarAccesoDuplicado(){
+        document.querySelectorAll('.mu335-access .g320-config-trigger,.mu335-access .g322-direct-config').forEach(e=>e.remove());
+      }
+      limpiarAccesoDuplicado();
+      new MutationObserver(limpiarAccesoDuplicado).observe(document.body,{childList:true,subtree:true});
+    })();
+    </script>'''
     return render_page(body, label=label, icon=icon, canon=canon,
+                       config_url=config_url,
                        total_admin=total_admin, total_user=total_user,
                        title='Acceso '+label)
 
@@ -22314,6 +22333,71 @@ def hojas_tareo_334():
 
 app.view_functions['hojas_tareo'] = hojas_tareo_334
 # ================= FIN RESTAURACION COMPLETA TAREO 334 =================
+
+
+# ================= TAREO CLASICO 335 =================
+# Recupera la presentación clásica solicitada y mantiene los accesos funcionales.
+def hojas_tareo_335():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    hojas = rows_to_dict(execute(
+        'SELECT * FROM hojas_tareo ORDER BY fecha DESC, id DESC LIMIT 50',
+        fetchall=True))
+    body = r'''
+    <style>
+      .tare335-page .tare335-top{display:flex;align-items:center;justify-content:space-between;padding:10px 13px 0}
+      .tare335-page .tare335-top a{color:#fff!important;text-decoration:none;font-size:23px;line-height:1;padding:4px}
+      .tare335-page .g320-config-trigger,.tare335-page .g322-direct-config{display:none!important}
+    </style>
+    <div class="phone-wrap desktop-pad tareo-list-page tare335-page">
+      <div class="page-card">
+        <div class="green-hero tareo-hero" style="border-radius:0 0 12px 12px">
+          <div class="tare335-top">
+            <a href="{{url_for('home')}}" aria-label="Regresar"><i class="bi bi-chevron-left"></i></a>
+            <a href="{{url_for('tareo_config')}}" aria-label="Configuración de Tareo" title="Configuración"><i class="bi bi-gear"></i></a>
+          </div>
+          <i class="bi bi-list-check" style="font-size:34px;margin-top:14px"></i>
+          <div class="login-name mt-1">TAREOS</div>
+        </div>
+        <div class="toolstrip tareo-toolbar">
+          <a class="btn-plus-fab" title="Crear hoja" href="{{url_for('crear_hoja')}}"><i class="bi bi-list-task"></i><i class="bi bi-plus-circle-fill"></i></a>
+          <a title="Plantilla Excel" href="{{url_for('plantilla_trabajadores')}}"><i class="bi bi-file-earmark-excel"></i></a>
+          <a title="Sincronizar" href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-clockwise"></i></a>
+        </div>
+        {% for h in hojas %}
+          <div class="swipe-wrap">
+            <div class="swipe-actions">
+              <a class="act-edit" href="{{url_for('editar_hoja',hoja_id=h.id)}}">MODIFICAR</a>
+              <a class="act-send" href="{{url_for('enviar_hoja',hoja_id=h.id)}}">ENVIAR</a>
+              <a class="act-del" href="{{url_for('eliminar_hoja',hoja_id=h.id)}}" onclick="return confirm('¿Eliminar esta hoja?')">ELIMINAR</a>
+            </div>
+            <a class="text-decoration-none" href="{{url_for('detalle_hoja',hoja_id=h.id,tab='labores')}}"><div class="worker-card">
+              <span class="person-dot" style="border-radius:8px"><i class="bi bi-clipboard2-check"></i></span>
+              <div class="worker-title"><div>RESPONSABLE<br><b>{{h.responsable}}</b></div><div class="text-end">PRESUPUESTO<br><b>{{h.tipo_tareo or 'JORNAL'}}</b></div></div>
+              <div class="worker-grid"><div><label>SUCURSAL</label><div class="small-value">{{h.grupo}}</div></div><div><label>PLANILLA</label><div class="small-value">AGR. PACKING</div></div><div><label>DOCUMENTO</label><div class="small-value">{{h.id}}</div></div></div>
+              <div class="small-label mt-2">ZONA CONSUMIDOR</div><div class="small-value">{{h.subgrupo}}</div>
+              <div class="worker-grid"><div><label>FECHA</label><div class="small-value">{{h.fecha}}</div></div><div><label>ESTADO</label><div class="mini-badge bg-y">{{h.estado}}</div></div><div class="text-end"><i class="bi bi-chevron-left text-success"></i></div></div>
+            </div></a>
+          </div>
+        {% else %}<div class="worker-card text-center text-muted">No hay hojas. Presiona <b>+</b> para crear.</div>{% endfor %}
+        <div class="leaf"></div>
+        <div class="bottom-nav"><a href="{{url_for('hojas_tareo')}}"><i class="bi bi-list-check"></i>Listado de Tareos</a><a href="{{url_for('home')}}"><i class="bi bi-file-text"></i>Detalle</a></div>
+      </div>
+    </div>
+    <script>
+    (function(){
+      function limpiarConfigDuplicada(){
+        document.querySelectorAll('.tare335-page .g320-config-trigger,.tare335-page .g322-direct-config').forEach(e=>e.remove());
+      }
+      limpiarConfigDuplicada();
+      new MutationObserver(limpiarConfigDuplicada).observe(document.body,{childList:true,subtree:true});
+    })();
+    </script>'''
+    return render_page(body, hojas=hojas, title='Tareos')
+
+
+app.view_functions['hojas_tareo'] = hojas_tareo_335
+# ================= FIN TAREO CLASICO 335 =================
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
