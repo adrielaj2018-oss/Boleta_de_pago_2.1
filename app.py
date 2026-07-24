@@ -22434,15 +22434,21 @@ def _tareo_clasico_limpio_336(response):
           body.tareo336-work a[href="/tareo/config"],
           body.tareo336-work a[href$="/tareo/config"]{display:none!important}
           body.tareo336-work .page-card{background:#fff!important;border:1px solid #dce4dd!important;border-radius:12px!important;overflow:hidden!important}
-          body.tareo336-work .tab-main{border-top:0!important;display:grid!important;grid-template-columns:repeat(3,1fr)!important}
-          body.tareo336-work .subtabs{display:grid!important;grid-template-columns:repeat(3,1fr)!important;border-bottom:1px solid #e1e8e2!important}
-          body.tareo336-work .tab-main a,body.tareo336-work .subtabs a{display:flex!important;align-items:center!important;justify-content:center!important;min-height:42px!important;padding:7px 4px!important;line-height:1.1!important}
-          body.tareo336-work .panel-green{padding:18px 12px 34px!important;min-height:112px!important}
+          body.tareo336-work .tab-main{border-top:0!important;display:grid!important;grid-template-columns:repeat(3,1fr)!important;border-bottom:1px solid #dce5dd!important}
+          body.tareo336-work .subtabs{display:none!important}
+          body.tareo336-work .tab-main a{display:flex!important;align-items:center!important;justify-content:center!important;min-height:48px!important;padding:8px 5px!important;line-height:1.15!important;font-size:9.5px!important}
+          body.tareo336-work .panel-green{padding:20px 14px 38px!important;min-height:118px!important}
           body.tareo336-work .panel-green h4{max-width:330px!important;margin:6px auto 0!important;line-height:1.2!important}
-          body.tareo336-work .toolstrip{display:flex!important;visibility:visible!important;opacity:1!important;justify-content:center!important;gap:22px!important;margin:-22px 10px 8px!important;position:relative!important;z-index:25!important}
-          body.tareo336-work .info-bar{margin-top:8px!important}
+          body.tareo336-work .toolstrip{display:grid!important;grid-auto-flow:column!important;grid-auto-columns:1fr!important;visibility:visible!important;opacity:1!important;align-items:center!important;justify-items:center!important;gap:0!important;min-height:54px!important;margin:-25px 10px 10px!important;padding:7px 12px!important;position:relative!important;z-index:25!important}
+          body.tareo336-work .toolstrip :is(a,button){display:grid!important;place-items:center!important;width:42px!important;height:38px!important;margin:0!important;padding:0!important;font-size:21px!important}
+          body.tareo336-work .info-bar{margin-top:9px!important;height:27px!important;font-size:9px!important;line-height:1.1!important}
           body.tareo336-work .worker-card{background:#fff!important}
-          body.tareo336-work #createHojaCompact .panel-green{padding-top:20px!important}
+          body.tareo336-work #createHojaCompact .panel-green{padding:20px 15px 24px!important;min-height:118px!important}
+          body.tareo336-work #createHojaCompact .floating-card{margin:12px 10px 14px!important;padding:15px 12px 13px!important;box-shadow:0 4px 13px rgba(0,0,0,.13)!important}
+          body.tareo336-work #createHojaCompact .floating-card>.form-label:first-of-type{display:block!important;margin-top:0!important;margin-bottom:6px!important}
+          body.tareo336-work #createHojaCompact .form-label{margin-top:5px!important;margin-bottom:5px!important;line-height:1.2!important}
+          body.tareo336-work #createHojaCompact .form-control,
+          body.tareo336-work #createHojaCompact .form-select{min-height:38px!important}
         </style>'''
         html = html.replace('</body>', skin + '</body>', 1)
         response.set_data(html)
