@@ -22188,14 +22188,14 @@ def modulo_acceso_333(modulo):
     body = r'''
     <style>
       .mu335-access .green-top{align-items:center}
-      .mu335-access .mu335-config{color:#fff!important;text-decoration:none;font-size:20px;line-height:1;padding:5px}
+      .mu335-access .mu335-gear{display:inline-grid!important;place-items:center!important;color:#fff!important;background:transparent!important;border:0!important;font-size:20px!important;line-height:1!important;padding:5px!important;width:34px!important;height:34px!important;position:relative!important;z-index:50!important}
       .mu335-access .g320-config-trigger,.mu335-access .g322-direct-config{display:none!important}
     </style>
     <div class="phone-wrap mu335-access">
       <div class="green-hero" style="min-height:245px;border-radius:0 0 22px 22px">
         <div class="green-top">
           <a class="text-white text-decoration-none" href="{{url_for('home')}}" aria-label="Regresar"><i class="bi bi-chevron-left"></i></a>
-          <a class="mu335-config" href="{{config_url}}" aria-label="Configuración del módulo" title="Configuración"><i class="bi bi-gear"></i></a>
+          <button class="mu335-gear" type="button" aria-label="Ajustes" onclick="window.location.assign('{{config_url}}')"><i class="bi bi-gear"></i></button>
         </div>
         <div class="splash-logo" style="width:112px;height:112px;font-size:48px;margin:14px auto 8px"><i class="bi {{icon}}"></i></div>
         <div class="splash-title">{{label|upper}}</div><div class="login-name">INICIAR SESIÓN DEL MÓDULO</div>
@@ -22347,6 +22347,11 @@ def hojas_tareo_335():
     <style>
       .tare335-page .tare335-top{display:flex;align-items:center;justify-content:space-between;padding:10px 13px 0}
       .tare335-page .tare335-top a{color:#fff!important;text-decoration:none;font-size:23px;line-height:1;padding:4px}
+      .tare335-page .tare335-gear{display:inline-grid!important;place-items:center!important;color:#fff!important;background:transparent!important;border:0!important;font-size:21px!important;line-height:1!important;padding:4px!important;width:35px!important;height:35px!important;position:relative!important;z-index:50!important}
+      .tare335-tools{display:grid!important;grid-template-columns:1.45fr 1fr 1fr!important;gap:7px!important;margin:-20px 10px 10px!important;padding:7px!important;min-height:54px!important;background:#fff!important;border:1px solid #dce7df!important;border-radius:10px!important;box-shadow:0 5px 13px rgba(0,0,0,.20)!important;position:relative!important;z-index:30!important}
+      .tare335-tools a{display:flex!important;align-items:center!important;justify-content:center!important;gap:5px!important;min-height:39px!important;border:1px solid #b8d8c0!important;border-radius:8px!important;background:#fff!important;color:#08713b!important;text-decoration:none!important;font-size:9px!important;font-weight:950!important}
+      .tare335-tools a:first-child{background:#08713b!important;color:#fff!important;border-color:#08713b!important;font-size:10px!important}
+      .tare335-tools i{font-size:18px!important}
       .tare335-page .g320-config-trigger,.tare335-page .g322-direct-config{display:none!important}
     </style>
     <div class="phone-wrap desktop-pad tareo-list-page tare335-page">
@@ -22354,15 +22359,15 @@ def hojas_tareo_335():
         <div class="green-hero tareo-hero" style="border-radius:0 0 12px 12px">
           <div class="tare335-top">
             <a href="{{url_for('home')}}" aria-label="Regresar"><i class="bi bi-chevron-left"></i></a>
-            <a href="{{url_for('tareo_config')}}" aria-label="Configuración de Tareo" title="Configuración"><i class="bi bi-gear"></i></a>
+            <button class="tare335-gear" type="button" aria-label="Ajustes" onclick="window.location.assign('{{url_for('tareo_config')}}')"><i class="bi bi-gear"></i></button>
           </div>
           <i class="bi bi-list-check" style="font-size:34px;margin-top:14px"></i>
           <div class="login-name mt-1">TAREOS</div>
         </div>
-        <div class="toolstrip tareo-toolbar">
-          <a class="btn-plus-fab" title="Crear hoja" href="{{url_for('crear_hoja')}}"><i class="bi bi-list-task"></i><i class="bi bi-plus-circle-fill"></i></a>
-          <a title="Plantilla Excel" href="{{url_for('plantilla_trabajadores')}}"><i class="bi bi-file-earmark-excel"></i></a>
-          <a title="Sincronizar" href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-clockwise"></i></a>
+        <div class="tare335-tools">
+          <a href="{{url_for('crear_hoja')}}"><i class="bi bi-plus-circle-fill"></i> NUEVO TAREO</a>
+          <a href="{{url_for('plantilla_trabajadores')}}"><i class="bi bi-file-earmark-excel"></i> PLANTILLA</a>
+          <a href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-clockwise"></i> SINCRONIZAR</a>
         </div>
         {% for h in hojas %}
           <div class="swipe-wrap">
