@@ -21971,6 +21971,269 @@ def _priv_guard_directo_331():
     return redirect(url_for('home'))
 # =============== FIN PRIVILEGIOS INDEPENDIENTES POR MODULO 331 ===============
 
+
+# ================= USUARIOS INDEPENDIENTES POR MODULO 333 =================
+# Cada módulo administra sus propias cuentas ADMINISTRADOR / USUARIO.
+
+def _mu_modulo_333(modulo):
+    m = str(modulo or '').strip().lower()
+    return {'boleta': 'boletas', 'hora_extra': 'horas_extras'}.get(m, m)
+
+
+def _mu_schema_333():
+    conn = get_conn(); cur = conn.cursor()
+    try:
+        idtype = 'SERIAL PRIMARY KEY' if is_pg() else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        cur.execute(qmark(f'''CREATE TABLE IF NOT EXISTS usuarios_modulo(
+            id {idtype}, modulo TEXT NOT NULL, usuario TEXT NOT NULL,
+            password_hash TEXT NOT NULL, nombres TEXT, rol TEXT DEFAULT 'usuario',
+            estado TEXT DEFAULT 'ACTIVO', creado_por TEXT, creado_en TEXT,
+            actualizado_por TEXT, actualizado_en TEXT,
+            UNIQUE(modulo, usuario))'''))
+        conn.commit()
+    finally:
+        try: cur.close()
+        except Exception: pass
+        conn.close()
+
+
+def _mu_puede_administrar_333(modulo):
+    modulo = _mu_modulo_333(modulo)
+    if session.get('rol') == 'admin':
+        return True
+    return bool(
+        session.get('module_role') == 'admin' and
+        _mu_modulo_333(session.get('module_name')) == modulo and
+        _priv_ok_331(modulo, 'configurar', 'admin')
+    )
+
+
+def modulo_usuarios_333(modulo):
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    modulo = _mu_modulo_333(modulo)
+    if modulo not in PRIVILEGIOS_MODULOS_331:
+        flash('Módulo no válido.', 'danger')
+        return redirect(url_for('configuraciones'))
+    if not _mu_puede_administrar_333(modulo):
+        flash('No tiene autorización para crear usuarios de este módulo.', 'danger')
+        return redirect(url_for('home'))
+
+    if request.method == 'POST':
+        accion = (request.form.get('accion') or 'guardar').strip().lower()
+        cuenta_id = request.form.get('cuenta_id')
+        if accion == 'estado' and cuenta_id:
+            cuenta = row_to_dict(execute(
+                'SELECT * FROM usuarios_modulo WHERE id=? AND modulo=?',
+                (cuenta_id, modulo), fetchone=True))
+            if cuenta:
+                nuevo = 'INACTIVO' if str(cuenta.get('estado') or 'ACTIVO').upper() == 'ACTIVO' else 'ACTIVO'
+                execute('''UPDATE usuarios_modulo SET estado=?,actualizado_por=?,actualizado_en=?
+                           WHERE id=? AND modulo=?''',
+                        (nuevo, session.get('usuario') or '', now_str(), cuenta_id, modulo), commit=True)
+                flash(f'Cuenta {cuenta.get("usuario")} actualizada a {nuevo}.', 'success')
+            return redirect(url_for('modulo_usuarios_333', modulo=modulo))
+
+        if accion == 'clave' and cuenta_id:
+            clave = request.form.get('nueva_clave') or ''
+            if len(clave) < 4:
+                flash('La nueva contraseña debe tener mínimo 4 caracteres.', 'danger')
+            else:
+                execute('''UPDATE usuarios_modulo SET password_hash=?,actualizado_por=?,actualizado_en=?
+                           WHERE id=? AND modulo=?''',
+                        (generate_password_hash(clave), session.get('usuario') or '',
+                         now_str(), cuenta_id, modulo), commit=True)
+                flash('Contraseña actualizada correctamente.', 'success')
+            return redirect(url_for('modulo_usuarios_333', modulo=modulo))
+
+        usuario = (request.form.get('nuevo_usuario') or '').strip()
+        nombres = limpiar_texto(request.form.get('nombres') or '', upper=False)
+        clave = request.form.get('clave') or ''
+        rol = (request.form.get('rol') or 'usuario').strip().lower()
+        estado = (request.form.get('estado') or 'ACTIVO').strip().upper()
+        if not usuario or len(usuario) < 3:
+            flash('Ingrese un usuario de mínimo 3 caracteres.', 'danger')
+        elif len(clave) < 4:
+            flash('La contraseña debe tener mínimo 4 caracteres.', 'danger')
+        elif rol not in ('admin', 'usuario'):
+            flash('El tipo de cuenta no es válido.', 'danger')
+        else:
+            existente = row_to_dict(execute(
+                'SELECT id FROM usuarios_modulo WHERE modulo=? AND usuario=?',
+                (modulo, usuario), fetchone=True))
+            if existente:
+                flash('Ese usuario ya existe dentro de este módulo.', 'danger')
+            else:
+                execute('''INSERT INTO usuarios_modulo(
+                    modulo,usuario,password_hash,nombres,rol,estado,creado_por,creado_en,
+                    actualizado_por,actualizado_en) VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                    (modulo, usuario, generate_password_hash(clave), nombres, rol, estado,
+                     session.get('usuario') or '', now_str(), session.get('usuario') or '', now_str()),
+                    commit=True)
+                flash(f'Usuario {usuario} creado para {_priv_info_331(modulo)["titulo"]}.', 'success')
+        return redirect(url_for('modulo_usuarios_333', modulo=modulo))
+
+    cuentas = rows_to_dict(execute(
+        '''SELECT id,modulo,usuario,nombres,rol,estado,creado_por,creado_en,actualizado_en
+           FROM usuarios_modulo WHERE modulo=?
+           ORDER BY CASE WHEN rol='admin' THEN 0 ELSE 1 END, usuario''',
+        (modulo,), fetchall=True))
+    info = _priv_info_331(modulo)
+    back_url = _modulo_config_url_303(modulo)
+    body = (_g323_css() if '_g323_css' in globals() else '') + r'''
+    <style>
+      .mu333-form{border:1px solid #cde2d1;background:#fbfffc;border-radius:12px;padding:12px;margin:10px 0}
+      .mu333-form label{font-size:10.5px;font-weight:950;color:#176a35;margin:5px 0 3px}
+      .mu333-form .form-control,.mu333-form .form-select{height:39px!important;border-radius:9px!important;font-size:12px!important;font-weight:800}
+      .mu333-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .mu333-card{border:1px solid #dfe9e1;border-radius:11px;padding:10px;margin-top:8px;background:#fff}
+      .mu333-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+      .mu333-head b{font-size:12px;color:#173b24}.mu333-head small{font-size:9.5px;color:#65766a;font-weight:750}
+      .mu333-badge{border-radius:6px;padding:4px 7px;font-size:8px;font-weight:950;background:#dcfce7;color:#166534}
+      .mu333-badge.user{background:#dbeafe;color:#1e40af}.mu333-badge.off{background:#fee2e2;color:#991b1b}
+      .mu333-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
+      .mu333-mini{height:35px;border:1px solid #08713b;border-radius:8px;background:#fff;color:#08713b;font-size:9.5px;font-weight:900}
+    </style>
+    <div class="g323-wrap"><div class="g323-app">
+      <div class="g323-head"><a class="back" href="{{back_url}}"><i class="bi bi-chevron-left"></i></a><div><b>USUARIOS {{info.titulo|upper}}</b><small>Cuentas exclusivas de este módulo</small></div><i class="bi bi-people ico"></i></div>
+      <div class="g323-body">
+        <div class="g323-note g323-ok"><b>Cuentas independientes.</b><br>Los usuarios creados aquí solamente podrán iniciar sesión en <b>{{info.titulo}}</b>. Puede crear administradores y usuarios normales.</div>
+        <form method="post" class="mu333-form">
+          <input type="hidden" name="accion" value="guardar">
+          <label>Usuario</label><input name="nuevo_usuario" class="form-control" placeholder="Ejemplo: omar.transporte" required autocomplete="off">
+          <label>Nombres completos</label><input name="nombres" class="form-control" placeholder="Nombres del responsable" required>
+          <label>Contraseña</label><input name="clave" type="password" class="form-control" minlength="4" placeholder="Mínimo 4 caracteres" required autocomplete="new-password">
+          <div class="mu333-grid">
+            <div><label>Tipo de cuenta</label><select name="rol" class="form-select"><option value="usuario">USUARIO</option><option value="admin">ADMINISTRADOR</option></select></div>
+            <div><label>Estado</label><select name="estado" class="form-select"><option>ACTIVO</option><option>INACTIVO</option></select></div>
+          </div>
+          <button class="g323-btn mt-2"><i class="bi bi-person-plus"></i> CREAR USUARIO DE {{info.titulo|upper}}</button>
+        </form>
+
+        <div class="g323-section">Usuarios creados ({{cuentas|length}})</div>
+        {% for u in cuentas %}<div class="mu333-card">
+          <div class="mu333-head"><div><b>{{u.usuario}}</b><br><small>{{u.nombres or 'Sin nombres'}} · Creado {{u.creado_en or '-'}}</small></div><div><span class="mu333-badge {{'user' if u.rol!='admin' else ''}}">{{'ADMINISTRADOR' if u.rol=='admin' else 'USUARIO'}}</span> <span class="mu333-badge {{'off' if u.estado!='ACTIVO' else ''}}">{{u.estado}}</span></div></div>
+          <div class="mu333-actions">
+            <form method="post"><input type="hidden" name="accion" value="estado"><input type="hidden" name="cuenta_id" value="{{u.id}}"><button class="mu333-mini">{{'DESACTIVAR' if u.estado=='ACTIVO' else 'ACTIVAR'}}</button></form>
+            <form method="post" onsubmit="return confirmarClave333(this)"><input type="hidden" name="accion" value="clave"><input type="hidden" name="cuenta_id" value="{{u.id}}"><input type="hidden" name="nueva_clave"><button class="mu333-mini">CAMBIAR CLAVE</button></form>
+          </div>
+        </div>{% else %}<div class="g323-note">Todavía no se crearon usuarios para este módulo.</div>{% endfor %}
+      </div>
+    </div></div>
+    <script>function confirmarClave333(f){const c=prompt('Digite la nueva contraseña (mínimo 4 caracteres):');if(c===null)return false;if(c.length<4){alert('La contraseña debe tener mínimo 4 caracteres.');return false;}f.querySelector('[name=nueva_clave]').value=c;return true;}</script>'''
+    return render_page(body, modulo=modulo, info=info, cuentas=cuentas,
+                       back_url=back_url, title=f'Usuarios {info["titulo"]}')
+
+
+def modulo_acceso_333(modulo):
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    solicitado = str(modulo or '').lower()
+    canon = _mu_modulo_333(solicitado)
+    data = _module_targets_293().get(solicitado) or _module_targets_293().get(canon)
+    if not data:
+        flash('Módulo no encontrado.', 'danger')
+        return redirect(url_for('home'))
+    label, icon, ep_admin, ep_user = data
+    if request.method == 'POST':
+        modo = (request.form.get('modo') or 'usuario').strip().lower()
+        usuario = (request.form.get('usuario') or '').strip()
+        clave = request.form.get('password') or ''
+        rol_buscado = 'admin' if modo == 'admin' else 'usuario'
+        cuenta = row_to_dict(execute(
+            '''SELECT * FROM usuarios_modulo WHERE modulo=? AND usuario=?
+               AND rol=? AND UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO' ''',
+            (canon, usuario, rol_buscado), fetchone=True))
+        ok = bool(cuenta and check_password_hash(cuenta.get('password_hash') or '', clave))
+
+        # El administrador general funciona como superadministrador y recuperación.
+        if not ok and rol_buscado == 'admin':
+            global_admin = row_to_dict(execute(
+                '''SELECT * FROM usuarios WHERE usuario=? AND rol='admin'
+                   AND UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO' ''',
+                (usuario,), fetchone=True))
+            if global_admin and check_password_hash(global_admin.get('password_hash') or '', clave):
+                cuenta = {'id': None, 'usuario': usuario,
+                          'nombres': global_admin.get('nombres') or usuario, 'rol': 'admin'}
+                ok = True
+
+        if not ok:
+            flash(f'Usuario o contraseña incorrectos para {label}.', 'danger')
+            return redirect(url_for('modulo_acceso', modulo=solicitado))
+        if not _priv_ok_331(canon, 'ingresar', rol_buscado):
+            flash(f'El acceso de {rol_buscado.upper()} está bloqueado para {label}.', 'danger')
+            return redirect(url_for('modulo_acceso', modulo=solicitado))
+
+        session['module_role'] = rol_buscado
+        # Se conserva el nombre usado históricamente por cada módulo
+        # (por ejemplo "boleta") y, aparte, la clave canónica de seguridad.
+        session['module_name'] = solicitado
+        session['module_name_key'] = canon
+        session['module_user_id'] = cuenta.get('id')
+        session['module_user'] = cuenta.get('usuario')
+        session['module_user_nombre'] = cuenta.get('nombres') or cuenta.get('usuario')
+        posible_dni = limpiar_dni(cuenta.get('usuario'))
+        if len(posible_dni) == 8:
+            session['dni'] = posible_dni
+        flash(f'Bienvenido(a) a {label}: {session["module_user_nombre"]}.', 'success')
+        return redirect(url_for(ep_admin if rol_buscado == 'admin' else ep_user))
+
+    total_admin = int(scalar(
+        "SELECT COUNT(*) AS c FROM usuarios_modulo WHERE modulo=? AND rol='admin' AND UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO'",
+        (canon,)) or 0)
+    total_user = int(scalar(
+        "SELECT COUNT(*) AS c FROM usuarios_modulo WHERE modulo=? AND rol='usuario' AND UPPER(COALESCE(estado,'ACTIVO'))='ACTIVO'",
+        (canon,)) or 0)
+    body = r'''
+    <div class="phone-wrap">
+      <div class="green-hero" style="min-height:245px;border-radius:0 0 22px 22px">
+        <div class="green-top"><a class="text-white text-decoration-none" href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i></a><span><i class="bi bi-shield-lock"></i> Acceso propio</span></div>
+        <div class="splash-logo" style="width:112px;height:112px;font-size:48px;margin:14px auto 8px"><i class="bi {{icon}}"></i></div>
+        <div class="splash-title">{{label|upper}}</div><div class="login-name">INICIAR SESIÓN DEL MÓDULO</div>
+      </div>
+      <form method="post" class="floating-card login-form" style="margin-top:-18px">
+        <div class="role-toggle mb-2"><label><input type="radio" name="modo" value="usuario" checked><span>USUARIO</span></label><label><input type="radio" name="modo" value="admin"><span>ADMINISTRADOR</span></label></div>
+        <input name="usuario" class="form-control mb-2" placeholder="Usuario de {{label}}" required autofocus autocomplete="username">
+        <input name="password" type="password" class="form-control mb-3" placeholder="Contraseña" required autocomplete="current-password">
+        <button class="btn btn-green w-100" style="height:46px;font-size:17px"><i class="bi bi-box-arrow-in-right"></i> INGRESAR</button>
+        <div class="text-center text-muted mt-2" style="font-size:10px;font-weight:800">Cuentas activas: {{total_admin}} administrador(es) · {{total_user}} usuario(s)</div>
+        {% if session.get('rol')=='admin' %}<a class="btn btn-outline-success w-100 mt-2" href="{{url_for('modulo_usuarios_333',modulo=canon)}}"><i class="bi bi-people"></i> CREAR USUARIOS DE ESTE MÓDULO</a>{% endif %}
+      </form>
+    </div>'''
+    return render_page(body, label=label, icon=icon, canon=canon,
+                       total_admin=total_admin, total_user=total_user,
+                       title='Acceso '+label)
+
+
+try:
+    _mu_schema_333()
+except Exception as e:
+    print('Usuarios módulo 333 esquema pendiente:', e)
+
+try:
+    app.add_url_rule('/configuraciones/<modulo>/usuarios', 'modulo_usuarios_333',
+                     modulo_usuarios_333, methods=['GET', 'POST'])
+except Exception as e:
+    print('Usuarios módulo 333 ruta:', e)
+
+
+# Botón visible dentro de cada configuración de módulo.
+for _mu_mod_333, _mu_ep_333 in list(CONFIG_ENDPOINTS_303.items()):
+    if _mu_ep_333 not in app.view_functions:
+        continue
+    _mu_original_333 = app.view_functions[_mu_ep_333]
+    def _mu_config_wrapper_333(_orig=_mu_original_333, _mod=_mu_mod_333):
+        response = _orig()
+        marker = '<div class="cfg303-list">'
+        link = '''<div class="cfg303-list" style="margin-bottom:12px"><a class="cfg303-item" style="background:#eaf8ee;border:2px solid #08713b;min-height:66px" href="''' + url_for('modulo_usuarios_333', modulo=_mod) + '''"><i class="bi bi-people" style="font-size:25px"></i><div><b style="color:#075d2a;font-size:13px">CREAR USUARIOS DE ESTE MÓDULO</b><small style="color:#315e3f;font-size:10px">Crear administradores y usuarios exclusivos de ''' + _priv_info_331(_mod)['titulo'] + '''.</small></div><i class="bi bi-chevron-right chev"></i></a></div>'''
+        return _priv_inyectar_html_332(response, marker, link)
+    app.view_functions[_mu_ep_333] = _mu_config_wrapper_333
+
+
+# Reemplazo final del inicio de sesión por módulo.
+app.view_functions['modulo_acceso'] = modulo_acceso_333
+# ================= FIN USUARIOS INDEPENDIENTES POR MODULO 333 =================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
