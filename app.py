@@ -22345,10 +22345,9 @@ def hojas_tareo_335():
         fetchall=True))
     body = r'''
     <style>
-      .tare335-page .tare335-top{display:flex;align-items:center;justify-content:space-between;padding:10px 13px 0}
+      .tare335-page .tare335-top{display:flex;align-items:center;justify-content:flex-start;padding:10px 13px 0}
       .tare335-page .tare335-top a{color:#fff!important;text-decoration:none;font-size:23px;line-height:1;padding:4px}
-      .tare335-page .tare335-gear{display:inline-grid!important;place-items:center!important;color:#fff!important;background:transparent!important;border:0!important;font-size:21px!important;line-height:1!important;padding:4px!important;width:35px!important;height:35px!important;position:relative!important;z-index:50!important}
-      .tare335-tools{display:grid!important;grid-template-columns:1.45fr 1fr 1fr!important;gap:7px!important;margin:-20px 10px 10px!important;padding:7px!important;min-height:54px!important;background:#fff!important;border:1px solid #dce7df!important;border-radius:10px!important;box-shadow:0 5px 13px rgba(0,0,0,.20)!important;position:relative!important;z-index:30!important}
+      .tare335-tools{display:grid!important;grid-template-columns:1.35fr 1fr!important;gap:7px!important;margin:-20px 10px 10px!important;padding:7px!important;min-height:54px!important;background:#fff!important;border:1px solid #dce7df!important;border-radius:10px!important;box-shadow:0 5px 13px rgba(0,0,0,.20)!important;position:relative!important;z-index:30!important}
       .tare335-tools a{display:flex!important;align-items:center!important;justify-content:center!important;gap:5px!important;min-height:39px!important;border:1px solid #b8d8c0!important;border-radius:8px!important;background:#fff!important;color:#08713b!important;text-decoration:none!important;font-size:9px!important;font-weight:950!important}
       .tare335-tools a:first-child{background:#08713b!important;color:#fff!important;border-color:#08713b!important;font-size:10px!important}
       .tare335-tools i{font-size:18px!important}
@@ -22359,7 +22358,6 @@ def hojas_tareo_335():
         <div class="green-hero tareo-hero" style="border-radius:0 0 12px 12px">
           <div class="tare335-top">
             <a href="{{url_for('home')}}" aria-label="Regresar"><i class="bi bi-chevron-left"></i></a>
-            <button class="tare335-gear" type="button" aria-label="Ajustes" onclick="window.location.assign('{{url_for('tareo_config')}}')"><i class="bi bi-gear"></i></button>
           </div>
           <i class="bi bi-list-check" style="font-size:34px;margin-top:14px"></i>
           <div class="login-name mt-1">TAREOS</div>
@@ -22367,7 +22365,6 @@ def hojas_tareo_335():
         <div class="tare335-tools">
           <a href="{{url_for('crear_hoja')}}"><i class="bi bi-plus-circle-fill"></i> NUEVO TAREO</a>
           <a href="{{url_for('plantilla_trabajadores')}}"><i class="bi bi-file-earmark-excel"></i> PLANTILLA</a>
-          <a href="{{url_for('sincronizacion')}}"><i class="bi bi-arrow-clockwise"></i> SINCRONIZAR</a>
         </div>
         {% for h in hojas %}
           <div class="swipe-wrap">
@@ -22403,6 +22400,57 @@ def hojas_tareo_335():
 
 app.view_functions['hojas_tareo'] = hojas_tareo_335
 # ================= FIN TAREO CLASICO 335 =================
+
+
+# ================= LIMPIEZA VISUAL TAREO 336 =================
+# La configuración del módulo solo se muestra en la pantalla de acceso
+# Usuario/Administrador. Se retiran accesos duplicados del flujo operativo.
+@app.after_request
+def _tareo_clasico_limpio_336(response):
+    try:
+        ctype = str(response.content_type or '').lower()
+        path = str(request.path or '').lower()
+        es_operacion_tareo = (
+            path == '/hojas' or path.startswith('/hojas/') or
+            path.startswith('/hoja/') or
+            (path.startswith('/tareo/') and path != '/tareo/config')
+        )
+        if 'text/html' not in ctype or not es_operacion_tareo:
+            return response
+        html = response.get_data(as_text=True)
+        if not html or '<html' not in html.lower():
+            return response
+        if '<body class="' in html:
+            html = html.replace('<body class="', '<body class="tareo336-work ', 1)
+        elif "<body class='" in html:
+            html = html.replace("<body class='", "<body class='tareo336-work ", 1)
+        else:
+            html = re.sub(r'<body(\s|>)', r'<body class="tareo336-work"\1',
+                          html, count=1, flags=re.I)
+        skin = r'''
+        <style id="tareo336-classic-clean">
+          html body.tareo336-work .g320-config-trigger.g320-config-trigger,
+          html body.tareo336-work .g322-direct-config.g322-direct-config,
+          body.tareo336-work a[href="/tareo/config"],
+          body.tareo336-work a[href$="/tareo/config"]{display:none!important}
+          body.tareo336-work .page-card{background:#fff!important;border:1px solid #dce4dd!important;border-radius:12px!important;overflow:hidden!important}
+          body.tareo336-work .tab-main{border-top:0!important;display:grid!important;grid-template-columns:repeat(3,1fr)!important}
+          body.tareo336-work .subtabs{display:grid!important;grid-template-columns:repeat(3,1fr)!important;border-bottom:1px solid #e1e8e2!important}
+          body.tareo336-work .tab-main a,body.tareo336-work .subtabs a{display:flex!important;align-items:center!important;justify-content:center!important;min-height:42px!important;padding:7px 4px!important;line-height:1.1!important}
+          body.tareo336-work .panel-green{padding:18px 12px 34px!important;min-height:112px!important}
+          body.tareo336-work .panel-green h4{max-width:330px!important;margin:6px auto 0!important;line-height:1.2!important}
+          body.tareo336-work .toolstrip{display:flex!important;visibility:visible!important;opacity:1!important;justify-content:center!important;gap:22px!important;margin:-22px 10px 8px!important;position:relative!important;z-index:25!important}
+          body.tareo336-work .info-bar{margin-top:8px!important}
+          body.tareo336-work .worker-card{background:#fff!important}
+          body.tareo336-work #createHojaCompact .panel-green{padding-top:20px!important}
+        </style>'''
+        html = html.replace('</body>', skin + '</body>', 1)
+        response.set_data(html)
+        response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception as e:
+        print('Tareo clásico 336:', e)
+    return response
+# ================= FIN LIMPIEZA VISUAL TAREO 336 =================
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
