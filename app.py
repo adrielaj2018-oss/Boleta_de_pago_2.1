@@ -22234,6 +22234,87 @@ for _mu_mod_333, _mu_ep_333 in list(CONFIG_ENDPOINTS_303.items()):
 app.view_functions['modulo_acceso'] = modulo_acceso_333
 # ================= FIN USUARIOS INDEPENDIENTES POR MODULO 333 =================
 
+
+# ================= RESTAURACION COMPLETA TAREO 334 =================
+# Corrige la portada de Tareo afectada por las capas visuales globales:
+# - elimina v.1.0 y el acceso Config. de la cabecera;
+# - coloca flecha de regreso;
+# - conserva Configuración de Tareo como opción visible dentro del módulo;
+# - recupera un botón claro para crear hojas/tareos;
+# - mantiene listado y acciones originales.
+
+def hojas_tareo_334():
+    if not session.get('usuario'):
+        return redirect(url_for('login'))
+    hojas = rows_to_dict(execute(
+        'SELECT * FROM hojas_tareo ORDER BY fecha DESC, id DESC LIMIT 100',
+        fetchall=True))
+    abiertas = sum(1 for h in hojas if str(h.get('estado') or '').upper() == 'ABIERTA')
+    enviadas = sum(1 for h in hojas if str(h.get('estado') or '').upper() == 'ENVIADA')
+    body = r'''
+    <style>
+      .tare334-page{padding-top:8px!important}
+      .tare334-card{border:1px solid #d7ddd8;border-radius:13px;background:#fff;overflow:hidden;box-shadow:0 5px 15px rgba(0,0,0,.10)}
+      .tare334-head{height:138px;background:#2f773b;color:#fff;position:relative;text-align:center;padding:18px 48px 12px}
+      .tare334-back{position:absolute;left:14px;top:17px;width:39px;height:39px;border-radius:999px;color:#fff!important;text-decoration:none;display:grid;place-items:center;font-size:30px}
+      .tare334-head>.ico{font-size:35px;line-height:1;margin-top:12px}.tare334-head>.ttl{font-size:13px;font-weight:950;margin-top:8px}
+      .tare334-body{padding:10px;background:#fff}
+      .tare334-new{min-height:51px;border-radius:10px;background:#08713b;color:#fff!important;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px;font-weight:950;box-shadow:0 6px 13px rgba(8,113,59,.20)}
+      .tare334-new i{font-size:23px}.tare334-help{margin:8px 0;border:1px solid #b8d7ff;background:#eef6ff;color:#0b2e83;border-radius:9px;padding:8px 10px;font-size:10.5px;font-weight:850;text-align:center}
+      .tare334-config{min-height:44px;margin-top:8px;border:2px solid #08713b;border-radius:10px;background:#f5fff7;color:#075d2a!important;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;font-weight:950}
+      .tare334-config i{font-size:19px}
+      .tare334-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:9px 0}
+      .tare334-kpi{border:1px solid #acd3b4;background:#f8fff9;color:#166534;border-radius:8px;text-align:center;padding:7px 3px}.tare334-kpi small{display:block;font-size:8.5px;font-weight:900}.tare334-kpi b{display:block;font-size:18px}
+      .tare334-row{border:1px solid #dfe7df;border-radius:10px;background:#fff;padding:10px;margin-top:8px;box-shadow:0 3px 9px rgba(0,0,0,.055)}
+      .tare334-top{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:9px;color:#66806c;font-weight:900}.tare334-top b{display:block;color:#176a35;font-size:12px;margin-top:2px}
+      .tare334-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px}.tare334-grid div{background:#f8fbf8;border-radius:7px;padding:5px;font-size:8px;color:#66806c;font-weight:850}.tare334-grid b{display:block;color:#315f39;font-size:9.5px;margin-top:2px}
+      .tare334-actions{display:grid;grid-template-columns:1.25fr 1fr 1fr 1fr;gap:5px;margin-top:8px}.tare334-actions a{min-height:34px;border:1px solid #08713b;border-radius:7px;color:#08713b!important;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:3px;font-size:8.5px;font-weight:950}.tare334-actions .open{background:#08713b;color:#fff!important}.tare334-actions .danger{border-color:#dc2626;color:#b91c1c!important}
+      .tare334-empty{border:1px dashed #8cc79b;background:#f8fff9;border-radius:11px;padding:18px 10px;text-align:center;color:#315f39;font-size:12px;font-weight:850;margin-top:9px}.tare334-empty i{display:block;font-size:31px;color:#08713b;margin-bottom:5px}
+      .tare334-foot{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid #e5e7eb;margin:12px -10px -10px}.tare334-foot a{padding:9px;text-align:center;text-decoration:none;color:#477b4d;font-size:9.5px;font-weight:900}.tare334-foot i{display:block;font-size:17px;margin-bottom:2px}
+      /* La capa global no debe volver a crear el botón Config. en esta portada. */
+      .tare334-page .g320-config-trigger,.tare334-page .g322-direct-config{display:none!important}
+    </style>
+    <div class="phone-wrap tare334-page"><div class="tare334-card">
+      <div class="tare334-head">
+        <a class="tare334-back" href="{{url_for('home')}}" aria-label="Volver"><i class="bi bi-chevron-left"></i></a>
+        <div class="ico"><i class="bi bi-list-check"></i></div><div class="ttl">TAREOS</div>
+      </div>
+      <div class="tare334-body">
+        <a class="tare334-new" href="{{url_for('crear_hoja')}}"><i class="bi bi-plus-circle-fill"></i> NUEVO TAREO</a>
+        <div class="tare334-help">Pulse “Nuevo Tareo” para crear una hoja y comenzar a registrar labores, trabajadores y avances.</div>
+        <a class="tare334-config" href="{{url_for('tareo_config')}}">
+          <i class="bi bi-gear"></i> CONFIGURACIÓN DE TAREO
+        </a>
+        <div class="tare334-kpis"><div class="tare334-kpi"><small>Total</small><b>{{hojas|length}}</b></div><div class="tare334-kpi"><small>Abiertas</small><b>{{abiertas}}</b></div><div class="tare334-kpi"><small>Enviadas</small><b>{{enviadas}}</b></div></div>
+        {% for h in hojas %}<div class="tare334-row">
+          <div class="tare334-top"><div>RESPONSABLE<b>{{h.responsable or '-'}}</b></div><div>ESTADO<br><span class="status-pill">{{h.estado or 'ABIERTA'}}</span></div></div>
+          <div class="tare334-grid"><div>ACTIVIDAD<b>{{h.grupo or '-'}}</b></div><div>LABOR<b>{{h.subgrupo or '-'}}</b></div><div>FECHA<b>{{h.fecha or '-'}}</b></div></div>
+          <div class="tare334-actions">
+            <a class="open" href="{{url_for('detalle_hoja',hoja_id=h.id,tab='labores')}}"><i class="bi bi-box-arrow-in-right"></i> ABRIR</a>
+            <a href="{{url_for('editar_hoja',hoja_id=h.id)}}"><i class="bi bi-pencil"></i> MODIFICAR</a>
+            <a href="{{url_for('enviar_hoja',hoja_id=h.id)}}"><i class="bi bi-send"></i> ENVIAR</a>
+            <a class="danger" href="{{url_for('eliminar_hoja',hoja_id=h.id)}}" onclick="return confirm('¿Eliminar esta hoja?')"><i class="bi bi-trash"></i> ELIMINAR</a>
+          </div>
+        </div>{% else %}<div class="tare334-empty"><i class="bi bi-clipboard-plus"></i>No hay hojas creadas.<br>Pulse <b>Nuevo Tareo</b> para comenzar.</div>{% endfor %}
+        <div class="tare334-foot"><a href="{{url_for('hojas_tareo')}}"><i class="bi bi-list-check"></i>Listado de tareos</a><a href="{{url_for('home')}}"><i class="bi bi-chevron-left"></i>Volver</a></div>
+      </div>
+    </div></div>
+    <script>
+    (function(){
+      function limpiarConfigTareo(){
+        document.querySelectorAll('.tare334-page .g320-config-trigger,.tare334-page .g322-direct-config').forEach(e=>e.remove());
+      }
+      limpiarConfigTareo();
+      new MutationObserver(limpiarConfigTareo).observe(document.body,{childList:true,subtree:true});
+    })();
+    </script>'''
+    return render_page(body, hojas=hojas, abiertas=abiertas, enviadas=enviadas,
+                       title='Tareos')
+
+
+app.view_functions['hojas_tareo'] = hojas_tareo_334
+# ================= FIN RESTAURACION COMPLETA TAREO 334 =================
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5000'))
     app.run(host='0.0.0.0', port=port, debug=False)
